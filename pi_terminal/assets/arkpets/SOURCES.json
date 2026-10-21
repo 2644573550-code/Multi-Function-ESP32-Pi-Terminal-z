@@ -1,0 +1,29 @@
+{
+  "repository": "https://github.com/isHarryh/Ark-Models",
+  "commit": "8a3857c250a5c271429aefa82c660ff35803166e",
+  "model": "models/002_amiya",
+  "originalFiles": {
+    "build_char_002_amiya.skel": "41908ed5c73ed9c5b5616a7c45d61275c29319fbb6a46068df5a4d0c6f5c7bff",
+    "build_char_002_amiya.png": "618d7ce9cc18e4ef46cb5f513ffebc0b6b7b7e08f8e0f12a7abb3ff93547d7e4",
+    "build_char_002_amiya.atlas": "696114f96f2a2366fc4a373bd1d08c7569f9eb279305347364ffd629eab9d9b5"
+  },
+  "export": {
+    "spine": "3.8.99.1",
+    "libgdx": "1.12.1",
+    "fps": 24,
+    "frameSize": [
+      256,
+      256
+    ],
+    "footY": 155.18817138671875,
+    "conversionVersion": 4,
+    "quality": "standard"
+  },
+  "sprites": {
+    "idle.png": "a5a36e6eedd30520db851f4117a8d451e6a9a4dea8aeaa601afca05f6c1d52d5",
+    "interact.png": "46cdd74776aaaceba401f02b63684b9faa3a6684477ac7529462ad4b9b788b65",
+    "walk.png": "dd567a66d23bc0571895e9aea39e27bdc7dc3d3e704bf1c954afdd3a88b69a0a",
+    "sit.png": "9d8097d59deb404b9780d5d4463923e9aa8354703aaf9fee605643a3e302c108",
+    "sleep.png": "5d0192ba81a875de3d4996d09a32b49c92d0e847a8c0ed8501241efc81ccc57e"
+  }
+}

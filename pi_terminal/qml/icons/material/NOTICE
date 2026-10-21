@@ -1,0 +1,4 @@
+Google Material Icons Round, licensed under Apache License 2.0.
+See ../LICENSE for the complete license and SOURCES.json for each original source URL and SHA-256.
+The glyph paths are unmodified. The SVG root fill color is modified for light/dark application surfaces.
+Assets are bundled locally; the application does not download icons at runtime.

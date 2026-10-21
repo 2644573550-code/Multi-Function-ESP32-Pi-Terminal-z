@@ -1,0 +1,18 @@
+{
+  "python": "python3",
+  "public_key": "/etc/orange-pi-terminal/publisher.pem",
+  "cache": "",
+  "modules": {
+    "80": {
+      "token": "REPLACE_WITH_PRODUCT_DEVICE_TOKEN",
+      "allow_disconnect": true,
+      "ble": {
+        "device_name": "MODULE_EXAMPLE",
+        "address": "AA:BB:CC:DD:EE:FF",
+        "service_uuid": "9b860001-214c-4de0-a9f4-f70e6a100001",
+        "write_uuid": "9b860002-214c-4de0-a9f4-f70e6a100001",
+        "notify_uuid": "9b860003-214c-4de0-a9f4-f70e6a100001"
+      }
+    }
+  }
+}

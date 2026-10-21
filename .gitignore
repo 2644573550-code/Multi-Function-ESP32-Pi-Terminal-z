@@ -1,0 +1,56 @@
+.vscode/
+**/node_modules/
+.claude/
+
+# ESP-IDF build artifacts
+/build/
+**/build/
+**/build-*/
+
+# sdkconfig（保留 sdkconfig.defaults 作模板）
+sdkconfig
+sdkconfig.old
+sdkconfig.ci
+
+# Component manager
+managed_components/
+dependencies.lock
+.espressif/
+
+
+# Compiled output
+*.bin
+*.elf
+*.map
+*.o
+*.obj
+
+# Python
+*.pyc
+__pycache__/
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup
+*.bak
+
+# Logs
+*.log
+build/log/
+
+# VSCode Local History 插件
+.history/
+
+# 归档包（源码已在仓库内，无需重复）
+*.zip
+*.rar

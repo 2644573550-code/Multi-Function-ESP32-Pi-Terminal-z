@@ -1,0 +1,21 @@
+{
+  "id": "example.device",
+  "name": "示例模块",
+  "version": "2.0.4",
+  "module_id": 80,
+  "package_id": "example.device-2.0.4-arm64",
+  "package_version": "2.0.4",
+  "host_arch": ["aarch64", "arm64"],
+  "library": "libexample_module.so",
+  "qml_page": "qml/ExamplePage.qml",
+  "control_protocol": "pogo-control-v1",
+  "data_protocol": "module-defined-v1",
+  "abi_version": 1,
+  "min_host_api": 1,
+  "max_payload": 65532,
+  "qt_major": 6,
+  "unload_contract": "synchronous-stop-v1",
+  "capabilities": ["sample.read", "sample.configure"],
+  "permissions": ["transport.ble", "transport.hotspot_lan"],
+  "actions": ["open", "start", "stop", "request_disconnect", "drop_link", "stale_data"]
+}

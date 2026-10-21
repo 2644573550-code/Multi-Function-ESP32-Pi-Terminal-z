@@ -1,0 +1,23 @@
+{
+    "uBlock Filters": {
+        "source": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/filters.txt"
+    },
+    "uBlock Filters - Privacy": {
+        "source": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/privacy.txt" 
+    },
+    "uBlock Filters - Resource Abuse": {
+        "source": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/resource-abuse.txt"
+    },
+    "uBlock Filters - Unbreak": {
+        "source": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/unbreak.txt"
+    },
+    "EasyList": {
+        "source": "https://easylist.to/easylist/easylist.txt"
+    },
+    "EasyPrivacy": {
+        "source": "https://easylist.to/easylist/easyprivacy.txt"
+    },
+    "I don't care about cookie warnings": {
+        "source": "https://www.i-dont-care-about-cookies.eu/abp"
+    }
+}

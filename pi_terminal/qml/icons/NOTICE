@@ -1,0 +1,8 @@
+extension.svg is the unmodified Material Design "extension" icon by Google.
+Source: https://github.com/google/material-design-icons/blob/master/src/action/extension/materialicons/24px.svg
+License: Apache License 2.0 (see LICENSE).
+
+eraser.svg and module-default.svg are original illustrations created for this
+terminal at the user's request. They are not Google Material Icons glyphs.
+All Google Material Icons Round sources and original hashes are recorded in
+material/SOURCES.json; only their theme fill colors are changed.

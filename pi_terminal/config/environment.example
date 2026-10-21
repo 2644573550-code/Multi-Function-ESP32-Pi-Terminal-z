@@ -1,0 +1,2 @@
+# Copy to /etc/orange-pi-terminal/environment. Use the stable USB Serial/JTAG path.
+ORANGE_PI_CONTROL_DEVICE=/dev/serial/by-id/usb-ESP32_Host-if00

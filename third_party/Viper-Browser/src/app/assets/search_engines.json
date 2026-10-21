@@ -1,0 +1,25 @@
+{
+    "Default": "StartPage",
+    "Engines": [
+        {
+            "Name": "Google",
+            "Query": "https://www.google.com/search?q=%s"
+        },
+        {
+            "Name": "DuckDuckGo",
+            "Query": "https://duckduckgo.com/?q=%s"
+        },
+        {
+            "Name": "StartPage",
+            "PostURL": "https://www.startpage.com/do/search",
+            "PostTemplate": "language=english&cat=web&query=%s",
+            "Query": "https://www.startpage.com/do/dsearch?query=%s&cat=web&pl=opensearch&language=english"
+        },
+        {
+            "Name": "SearX",
+            "PostURL": "https://searx.org/",
+            "PostTemplate": "q=%s&time_range=&categories=general&language=en-US",
+            "Query": "https://searx.org/?q=%s&categories=general&language=en-US"
+        }
+    ]
+}

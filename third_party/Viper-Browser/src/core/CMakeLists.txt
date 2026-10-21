@@ -1,0 +1,122 @@
+include_directories(
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+add_subdirectory(database)
+ 
+set(viper_src
+    adblock/AdBlockFilter.cpp
+    adblock/AdBlockFilterContainer.cpp
+    adblock/AdBlockFilterParser.cpp
+    adblock/AdBlockLog.cpp
+    adblock/AdBlockLogTableModel.cpp
+    adblock/AdBlockManager.cpp
+    adblock/AdBlockModel.cpp
+    adblock/AdBlockRequestHandler.cpp
+    adblock/AdBlockSubscription.cpp
+    adblock/FilterBucket.cpp
+    adblock/RecommendedSubscriptions.cpp
+    app/BrowserApplication.cpp
+    app/BrowserScripts.cpp
+    autofill/AutoFill.cpp
+    autofill/AutoFillBridge.cpp
+    bookmarks/BookmarkExporter.cpp
+    bookmarks/BookmarkFolderModel.cpp
+    bookmarks/BookmarkImporter.cpp
+    bookmarks/BookmarkManager.cpp
+    bookmarks/BookmarkStore.cpp
+    bookmarks/BookmarkNode.cpp
+    bookmarks/BookmarkTableModel.cpp
+    cookies/CookieJar.cpp
+    cookies/CookieTableModel.cpp
+    cookies/DetailedCookieTableModel.cpp
+    credentials/CredentialStore.cpp
+    database/DatabaseWorker.cpp
+    database/bindings/QtSQLite.cpp
+    downloads/InternalDownloadItem.cpp
+    extensions/ExtStorage.cpp
+    highlighters/HTMLHighlighter.cpp
+    highlighters/JavaScriptHighlighter.cpp
+    history/FavoritePagesManager.cpp
+    history/HistoryManager.cpp
+    history/HistoryStore.cpp
+    history/HistoryTableModel.cpp
+    history/URLRecord.cpp
+    history/WebPageThumbnailStore.cpp
+    icons/FaviconManager.cpp
+    icons/FaviconStore.cpp
+    icons/FaviconStoreBridge.cpp
+    ipc/BrowserIPC.cpp
+    network/BlockedSchemeHandler.cpp
+    network/HttpRequest.cpp
+    network/NetworkAccessManager.cpp
+    network/RequestInterceptor.cpp
+    network/SchemeRegistry.cpp
+    network/SecurityManager.cpp
+    network/ViperNetworkReply.cpp
+    network/ViperSchemeHandler.cpp
+    search/SearchEngineManager.cpp
+    session/SessionManager.cpp
+    settings/AppInitSettings.cpp
+    settings/Settings.cpp
+    settings/WebSettings.cpp
+    text_finder/ITextFinder.cpp
+    text_finder/TextEditorTextFinder.cpp
+    text_finder/WebPageTextFinder.cpp
+    threading/DatabaseTaskScheduler.cpp
+    url_suggestion/BookmarkSuggestor.cpp
+    url_suggestion/HistorySuggestor.cpp
+    url_suggestion/URLSuggestion.cpp
+    url_suggestion/URLSuggestionListModel.cpp
+    url_suggestion/URLSuggestionWorker.cpp
+    user_agents/UserAgentManager.cpp
+    user_scripts/UserScript.cpp
+    user_scripts/UserScriptManager.cpp
+    user_scripts/UserScriptModel.cpp
+    user_scripts/WebEngineScriptAdapter.cpp
+    utility/CommonUtil.cpp
+    utility/FastHash.cpp
+    web/public_suffix/PublicSuffixManager.cpp
+    web/public_suffix/PublicSuffixRuleParser.cpp
+    web/public_suffix/PublicSuffixTreeNode.cpp
+    web/public_suffix/PublicSuffixTree.cpp
+    web/URL.cpp
+    web/WebActionProxy.cpp
+    web/WebHistory.cpp
+    web/WebHitTestResult.cpp
+    web/WebPage.cpp
+)
+
+#if (KF5Wallet_FOUND)
+#  set(viper_src ${viper_src} credentials/CredentialStoreKWallet.cpp)
+#endif()
+
+set(viper_core_deps
+    ${viper_src}
+)
+
+if(VIPER_EMBEDDED)
+    qt6_add_resources(viper_core_resources "${VIPER_SOURCE_DIR}/src/app/assets/application.qrc")
+    list(APPEND viper_src ${viper_core_resources})
+endif()
+
+add_library(viper-core STATIC ${viper_src})
+set_target_properties(viper-core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(VIPER_EMBEDDED)
+    target_compile_definitions(viper-core PRIVATE VIPER_TERMINAL_EMBEDDED=1)
+endif()
+target_link_libraries(viper-core
+    sqlite-wrapper-cpp
+    Qt6::Core
+    Qt6::Concurrent
+    Qt6::Gui
+    Qt6::Network
+    Qt6::PrintSupport
+    Qt6::Svg
+    Qt6::QuickWidgets
+    Qt6::Widgets
+    Qt6::WebChannel
+    Qt6::WebEngineCore
+    Qt6::WebEngineWidgets
+    Qt6::WebEngineQuick
+)

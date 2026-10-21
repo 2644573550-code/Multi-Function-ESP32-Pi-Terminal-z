@@ -1,0 +1,8 @@
+{
+  "name": "terminal-music-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Optional standalone API server; the Qt player does not require Node on the Pi",
+  "scripts": { "start": "node server.cjs" },
+  "dependencies": { "@neteaseapireborn/api": "4.29.7" }
+}

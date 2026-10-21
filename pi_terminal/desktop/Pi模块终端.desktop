@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=打开模块终端
+Name[zh_CN]=打开模块终端
+Comment=重新打开 Raspberry Pi 模块调试终端
+Exec=/usr/bin/systemctl --user restart pi-module-terminal.service
+Icon=applications-engineering
+Terminal=false
+Categories=Utility;
+StartupNotify=true
