@@ -1,0 +1,46 @@
+{
+  "module_id": 80,
+  "version": "3.0.0",
+  "transport": "fixed_hotspot_lan",
+  "package_transport": "data",
+  "passed": [
+    "host_native_history_and_power_policy_tests",
+    "arm64_cross_compile",
+    "pi_native_test_runner",
+    "pi_qt642_fixture_preview",
+    "signed_package_install_local",
+    "esp32s3_compile",
+    "module_flash_verified",
+    "physical_lan_session_ready",
+    "pi_plugin_loaded",
+    "live_sensor_and_battery_display",
+    "day_week_switch",
+    "real_history_persistence"
+  ],
+  "not_tested": [
+    "seven_days_actual_elapsed_collection",
+    "physical_external_power_detection_not_wired",
+    "physical_low_battery_discharge",
+    "hardware_power_latch_not_installed",
+    "physical_touch_endurance"
+  ],
+  "files": {
+    "firmware/partition-table.bin": "5295e8c42d6fb5f95e4e8a185932c6191d27cfc5078322475347e40e71af815a",
+    "firmware/module_firmware.bin": "dd6f8de19129e8603da60f3f2214335181c652eb7bfec507eeefbd4153e9979d",
+    "signed-package/package.json": "8da4a10d235c1c921361b74fb07b65436de85de0a81335ad36fbab8752798b7d",
+    "signed-package/package.tar.zst": "2f3dd52c6cc31901ab972f47aac2ccd50101813afc655155d062b532086d5276"
+  },
+  "lcd_update": {
+    "background": "#000000",
+    "font": "Noto Sans CJK SC 12/14 + Roboto numeric 24/36, 4bpp grayscale",
+    "wire_format": "RGB565 big-endian",
+    "canonical_project": "esp/S3_Pi_Module",
+    "native_pixel_tests": "passed",
+    "firmware_compile": "passed",
+    "flash": "verified by esptool",
+    "physical_color_confirmation": "pending user visual check",
+    "pi_session_recovered": true,
+    "language": "zh-CN",
+    "chinese_glyph_coverage": "passed"
+  }
+}
