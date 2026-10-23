@@ -1,6 +1,6 @@
 <div align="center">
 
-![Pi Terminal：触屏终端与真实外壳 STL 的等距分解展示](docs/assets/terminal-hero.svg)
+![Pi Terminal 连接工作台：终端、控制桥和插接模块的等距机制示意](docs/assets/connection-atelier.svg)
 
 # Multi-Function ESP32 · Pi Terminal
 
@@ -14,7 +14,7 @@
 ![CAD](https://img.shields.io/badge/CAD-STL%20%C2%B7%20STEP%20%C2%B7%203MF-a07736?style=flat-square)
 ![Status](https://img.shields.io/badge/status-in%20development-a07736?style=flat-square)
 
-[认识项目](#认识项目) · [功能与边界](#功能与边界) · [硬件与外壳](#硬件与外壳) · [开始开发](#开始开发) · [项目路线图](#项目路线图)
+[认识项目](#认识项目) · [连接工作台](#连接工作台) · [功能与边界](#功能与边界) · [技术图解](#技术图解) · [硬件与外壳](#硬件与外壳) · [开始开发](#开始开发) · [项目路线图](#项目路线图)
 
 </div>
 
@@ -55,6 +55,34 @@
 </table>
 
 > **项目状态**：仍在开发与实机验证中。以下介绍依据当前主线源码；“已有实现”不代表每台设备都已完成验收。原有路线图的文字与复选框状态完整保留在文末。
+
+## 连接工作台
+
+**接上设备，不代表模块已经可以使用。** 控制桥发现模块只是起点：固定业务通道、认证会话、签名包、用户信任、原生插件与页面准备必须各自完成。
+
+新的 [交互连接工作台](docs/showcase/connection.html) 使用 **Anatomy iso-kit** 构建 65 个实体部件：终端、USB 连接件、控制桥电路板、导轨、插座和可移动模块。终端屏幕、模块插接位置、无线弧线与状态读数由同一个演示模型驱动，而不是各自循环播放的装饰动画。
+
+| 在工作台上操作 | 观察到什么 | 对应实现 |
+| :--- | :--- | :--- |
+| 逐步接入 / 播放接入过程 | `attached → connecting → downloading_package`；认证后才接收包 | `ConnectionManager.cpp` |
+| 检查包与确认信任 | 数据链路路径进入 `verifying_package`；在 `awaiting_trust` 停下，等待你确认 | `PackageReceiver.cpp`、包工具与信任门槛 |
+| 加载功能 | `loading_plugin → ready`，终端指示灯和“插件已加载 / 已认证”一起变化 | `ModuleManager.cpp`、C ABI / QML |
+| 拔出触点 | 模块沿导轨退出，状态变为 `contact_detached`；无线弧线仍亮、插件仍在 | 物理触点与业务会话分离 |
+| 模拟数据丢失 / 恢复 | 进入 `data_lost`，无线弧线变暗；已加载插件重新认证后恢复 | 不跨 BLE/LAN 模式偷偷回退 |
+| 模拟认证失败 | 留在 `error`，只能显式重试；不冒充“已就绪” | 身份与会话校验 |
+| 关闭会话 | `disconnecting → unloading → closed`，先退出页面，再收束插件和释放库 | 同步卸载契约 |
+
+> **这是源码语义演示，不是设备监视器。** 工作台是机制解释用的概念造型，不是实体外壳复刻或电气针脚图；不会连接真实设备、读取 token、下载模块包或执行 `.so`，不生成虚假传感器读数。包下载路径不同，宿主状态序列也有差异，页面会按显式包策略处理。
+
+GitHub README 只显示静态 SVG，不能运行交互脚本。克隆仓库后在根目录执行：
+
+```sh
+python3 -m http.server 8000 --bind 127.0.0.1
+# 连接状态工作台：http://127.0.0.1:8000/docs/showcase/connection.html
+# 真实 STL / WebGL：http://127.0.0.1:8000/docs/showcase/
+```
+
+工作台支持键盘可聚焦按钮、手机布局、减少动态效果偏好；离屏或切换标签时停止自动演示。所有状态迁移遵守当前 `SessionStateMachine.cpp` 的合法边。**BLE-only / LAN-only 是互斥的业务会话**；临时热点包下载不等于开启双业务模式。
 
 ## 功能与边界
 
@@ -108,7 +136,56 @@ flowchart LR
 
 参见 [源码地图](docs/project-code-map.md)、[运行时模块](docs/native-runtime-modules.md) 与 [SDK 开发指南](module-devkit/docs/AI-CODING-GUIDE.md)。
 
+## 技术图解
+
+下面使用项目刚重绘的最新版插图。读图顺序建议为：**职责 → 接入 → 状态 → 插件 → 传输 → 包验证**。这些图描述源码中的机制，不表示已经重新完成所有实机验收。
+
+### 01 / 看懂系统，先分清两条链路
+
+![模块系统架构：Pi 运行时、Host 控制桥、认证无线业务和 Pi 侧插件](docs/figures/01_system_architecture.png)
+
+**控制桥报告设备接入，认证无线通道传业务，Pi 插件承载模块功能。** 内置 `terminal_*` 共享库与可加载的外接模块插件不是同一种生命周期。
+
+### 02 / 从识别模块到真正可用
+
+![从 attach 到 ready：认证、包验证、信任和插件加载流程](docs/figures/03_pogo_handshake.png)
+
+只有 `ready && loaded && !stopping` 时模块功能才算可用。首次信任不会因为包有有效签名就被自动略过；触点拔出也不等于无线业务结束。
+
+<details>
+<summary><strong>展开其余 6 张机制图：控制/数据、状态机、插件、策略、连接、包验证</strong></summary>
+
+#### 控制面与数据面
+
+![PBR1 控制面与认证 BLE/LAN 数据面的职责边界](docs/figures/02_control_data_plane.png)
+
+#### 会话状态机
+
+![模块会话状态、触点分离、数据恢复及有序退出](docs/figures/04_state_machine.png)
+
+#### 插件生命周期
+
+![先验证和信任，再加载；先关闭页面，再同步停止和卸载插件](docs/figures/05_plugin_lifecycle.png)
+
+#### 会话与插件包的传输策略
+
+![固定 BLE 或 LAN 会话与独立插件包路径的允许组合](docs/figures/06_transport_selection.png)
+
+#### 硬件逻辑连接
+
+![Pi、控制桥与功能模块的逻辑连接，不作为针脚接线图](docs/figures/07_hardware_connection.png)
+
+#### 签名模块包
+
+![签名包的分段接收、逐层验证、信任门槛和内容寻址缓存](docs/figures/08_plugin_package_transfer.png)
+
+</details>
+
+需要完整技术说明时，阅读 [更新后的 Word 技术文档](docs/RaspberryPi_ESP32_Modular_Terminal_Technical_Spec.docx)。文档与图表是说明性材料，不代替实际板卡图纸、目标构建和实机验证。
+
 ## 硬件与外壳
+
+![真实 STL 生成的主机外壳分离展示封面](docs/assets/terminal-hero.svg)
 
 ![仓库真实 STL 模型：桌面主机、圆台外壳、花盆底座和一体化支架](docs/assets/enclosure-gallery.png)
 
@@ -218,7 +295,7 @@ bash build_scripts/test_terminal.sh
 
 ## 素材与第三方说明
 
-- 本页封面与模型图基于仓库 STL 生成。视觉采用 [Anatomy](https://github.com/wheresryan22/anatomy) 启发的等距工程陈列风格；展示页与生成器为本项目代码，不依赖 Anatomy 运行时。重建说明见 [展示资源说明](docs/showcase/README.md)。
+- 连接工作台的 SVG 几何使用 [Anatomy](https://github.com/wheresryan22/anatomy) iso-kit 生成（MIT © 2026 Ryan），保留许可证于 SVG 内；交互状态模型为项目源码语义演示，不包含真实设备控制。真实外壳封面与模型图仍由仓库 STL 生成，和概念连接工作台分开标明。来源与使用方式见 [展示资源说明](docs/showcase/README.md)。
 - Viper-Browser、YesPlayMusic、字体与图标分别保留自己的授权与来源说明。YesPlayMusic 是参考代码，不是终端的 Electron 播放运行路径。
 - [频道源说明](pi_terminal/assets/tv/SOURCE.md) 说明了第三方直播流的来源、网络与使用限制，不代表官方授权分发。
 - 当前仓库根目录未提供统一的主项目 LICENSE；不要从第三方目录的许可证推导出主项目代码、CAD 或角色素材可自由商用。使用或再分发前，请核对相应授权并向维护者确认。
