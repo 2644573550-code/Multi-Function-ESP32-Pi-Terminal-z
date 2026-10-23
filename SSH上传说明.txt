@@ -1,0 +1,126 @@
+SSH 上传说明 —— 把 enclosure-cad 推到主项目分支
+=====================================================================
+仓库:Axe665/Multi-Function-ESP32-Pi-Terminal(树莓派终端代码仓库)
+目标:新增分支 enclosure-cad
+本地路径:C:\Users\SomaRia\Desktop\pj\enclosure-cad
+状态:✅ 已提交(3 个 commit / 77 个文件 / 17.6 MB)
+       ⏳ 等待:把公钥加到 GitHub 后即可推送
+
+=====================================================================
+一、当前唯一的阻碍
+=====================================================================
+  SSH 测试结果:
+    $ ssh -T git@github.com
+    git@github.com: Permission denied (publickey).
+
+  原因:本地生成的 SSH 公钥还没加到你的 GitHub 账号里。
+  (git 已装好 2.55.0;密钥已生成;远端已配置)
+
+=====================================================================
+二、需要你做的事(2 分钟)
+=====================================================================
+  第 1 步:复制下面这一整行公钥(注意是一行,不要断行)
+
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGLaRffmnkc7UzDPw5HuNzMPoFt8s02KcsRVM08SCldc axe665-enclosure-cad
+
+  第 2 步:打开 GitHub
+    https://github.com/settings/ssh/new
+    · Title 随便填:enclosure-cad-win
+    · Key type:Authentication Key
+    · Key:粘贴上面那一行
+    · 点 Add SSH key(需要输入 GitHub 密码确认)
+
+  第 3 步:告诉我"加好了",我立刻执行推送。
+    或者你自己在终端执行(推荐让我来,我能确认结果):
+
+    cd C:\Users\SomaRia\Desktop\pj\enclosure-cad
+    git push -u origin enclosure-cad
+
+=====================================================================
+三、密钥文件位置(已生成)
+=====================================================================
+  私钥:C:\Users\SomaRia\.ssh\id_ed25519_github
+  公钥:C:\Users\SomaRia\.ssh\id_ed25519_github.pub
+  指纹:SHA256:mbAgWl5MK47NZFh+rstpTplEdd+fri/EFpKY6CNoNxU
+  类型:ed25519(无密码短语,方便自动推送)
+
+  SSH 配置已写入 C:\Users\SomaRia\.ssh\config:
+    Host github.com
+        HostName github.com
+        User git
+        IdentityFile ~/.ssh/id_ed25519_github
+        IdentitiesOnly yes
+
+  → 以后任何 git 操作都会自动用这把钥匙,不用再输入。
+
+=====================================================================
+四、推送后会是什么样(预期)
+=====================================================================
+  GitHub 上会出现新分支 enclosure-cad,内容:
+
+  enclosure-cad/
+  ├── README.md                    项目总说明(含零件表/打印参数/装配步骤)
+  ├── .gitignore / .gitattributes
+  ├── host-shell/     29 文件  小爱风格主机外壳
+  │   ├── blender/    Host_Shell.blend, Host_Shell_split.blend
+  │   ├── freecad/    Host_Shell.FCStd, .step, .stl
+  │   ├── stl/        8 个零件
+  │   ├── step/       4 个面板
+  │   └── 3mf/        12 个打印文件(含拼盘)
+  ├── cone-case/      10 文件  圆台外壳(Body + Lid)
+  ├── pot-base/        9 文件  花盆底座(原版 / FINAL / 临时版)
+  ├── stand/           5 文件  一体化支架
+  ├── docs/           17 文件  检验与装配报告
+  └── scripts/         4 文件  FreeCAD 参数化脚本
+
+  提交记录:
+    c56b295 chore: 修正 .gitattributes
+    f05f54d chore: 补充 Host_Shell.FCStd 与总 STL
+    d209f95 feat: 收录全部 3D 打印外壳 CAD(Blender + FreeCAD 双版本)
+
+=====================================================================
+五、备选方案(如果你不想用 SSH)
+=====================================================================
+  方案 A:HTTPS + Personal Access Token
+    1. GitHub → Settings → Developer settings → Personal access tokens
+       → Tokens (classic) → Generate new token → 勾选 repo
+    2. 复制 token,执行:
+       cd C:\Users\SomaRia\Desktop\pj\enclosure-cad
+       git remote set-url origin https://github.com/Axe665/Multi-Function-ESP32-Pi-Terminal.git
+       git push -u origin enclosure-cad
+       (用户名 Axe665,密码处粘贴 token)
+
+  方案 B:GitHub Desktop / GitHub CLI
+    · 用 GitHub Desktop 打开该文件夹 → Publish branch
+    · 或安装 gh:winget install GitHub.cli → gh auth login → git push
+
+  方案 C:打 zip 手动传
+    我可以把整个仓库打成 zip,你在网页上手动上传(不推荐,会丢提交历史)
+
+=====================================================================
+六、推送后建议
+=====================================================================
+  · 在 GitHub 上开 Pull Request:enclosure-cad → main
+    这样主项目里能看到完整的变更对比,也方便以后追加
+  · 如果只想当"存档分支",可以直接留着不合并
+  · 以后修改 CAD 后:
+      cd C:\Users\SomaRia\Desktop\pj\enclosure-cad
+      git add -A
+      git commit -m "update: 说明改了什么"
+      git push
+
+=====================================================================
+七、本次已完成的全部工作
+=====================================================================
+  ✅ 收集 4 个子项目的最终零件(主机外壳 / 圆台外壳 / 花盆底座 / 支架)
+  ✅ 生成 Blender 版本:.blend × 4(单位已设为毫米,含灯光相机)
+  ✅ 收集 FreeCAD 版本:.FCStd × 6 + 参数化脚本 × 4
+  ✅ 整理 STL / STEP / 3MF(共 77 个文件)
+  ✅ 归档 17 份检验与装配报告
+  ✅ 写 README.md(零件表、尺寸、打印参数、装配步骤、已知问题)
+  ✅ 安装 git 2.55.0
+  ✅ 生成 SSH 密钥 + 配置 ~/.ssh/config
+  ✅ 初始化仓库,建立分支 enclosure-cad,3 次提交
+  ✅ 配置远端 origin(git@github.com:Axe665/Multi-Function-ESP32-Pi-Terminal.git)
+  ⏳ 等你添加公钥 → 即可 push
+=====================================================================
