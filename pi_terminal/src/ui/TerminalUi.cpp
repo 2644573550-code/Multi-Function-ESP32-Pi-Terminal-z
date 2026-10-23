@@ -3,6 +3,7 @@
 #include "TextFormatter.h"
 #include "PetSpriteItem.h"
 #include "PetLibrary.h"
+#include "GstVideoItem.h"
 #include <QtQml/qqml.h>
 #include <mutex>
 
@@ -13,5 +14,6 @@ void initializeTerminalUi() {
         qmlRegisterType<TextFormatter>("Terminal.Native", 1, 0, "TextFormatter");
         qmlRegisterType<PetSpriteItem>("Terminal.Native", 1, 0, "PetSpriteItem");
         qmlRegisterType<PetLibrary>("Terminal.Native", 1, 0, "PetLibrary");
+        qmlRegisterType<GstVideoItem>("Terminal.Native", 1, 0, "GstVideoItem");
     });
 }

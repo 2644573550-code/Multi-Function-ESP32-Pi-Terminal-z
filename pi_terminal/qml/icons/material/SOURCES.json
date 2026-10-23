@@ -234,5 +234,13 @@
   "more_horiz": {
     "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/navigation/more_horiz/materialiconsround/24px.svg",
     "sha256": "144aa1cb9a16b6bd9d738f6f57850ce88ca6c05d2daf3d0b74ac97c6ccde1c28"
+  },
+  "tv": {
+    "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/hardware/tv/materialiconsround/24px.svg",
+    "sha256": "6de1650dc2f1807bdf949a15a87b0ceb05126798fe76b0e6dfaefbedc5c195ae"
+  },
+  "keyboard_tv": {
+    "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/hardware/keyboard/materialiconsround/24px.svg",
+    "sha256": "ac956c3f6e837546ce0f863fd230cb374771d4603ea2be17bb2c7de2fc15eb7e"
   }
 }

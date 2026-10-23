@@ -1,0 +1,618 @@
+{
+  "generated": "2026-10-23",
+  "source": "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all_status.m3u8",
+  "note": "第三方公开聚合列表，链接不保证长期有效；仅个人使用。",
+  "categories": [
+    {
+      "id": "cctv",
+      "title": "央视",
+      "channels": [
+        {
+          "name": "CCTV-1",
+          "logo": "https://i.imgur.com/TpA3cUl.png",
+          "sources": [
+            {
+              "url": "http://120.40.39.246:352/newlive/live/hls/1/live.m3u8",
+              "height": 1080,
+              "width": 1920,
+              "bitrate": 9196
+            },
+            {
+              "url": "http://74.91.26.218:82/live/cctv1hd.m3u8",
+              "height": 720,
+              "bitrate": 3485,
+              "width": 1280
+            }
+          ]
+        },
+        {
+          "name": "CCTV-2",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/CCTV2.png",
+          "sources": [
+            {
+              "url": "http://120.40.39.246:352/newlive/live/hls/2/live.m3u8",
+              "height": 1080,
+              "bitrate": 9076
+            },
+            {
+              "url": "http://74.91.26.218:82/live/cctv2hd.m3u8",
+              "height": 720,
+              "bitrate": 1740,
+              "width": 1280
+            }
+          ]
+        },
+        {
+          "name": "CCTV-3",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/CCTV3.png",
+          "sources": [
+            {
+              "url": "http://74.91.26.218:82/live/cctv3hd.m3u8",
+              "height": 720,
+              "bitrate": 628
+            },
+            {
+              "url": "http://113.57.140.161:10081/newlive/live/hls/3/live.m3u8",
+              "height": 1080,
+              "bitrate": 8005
+            },
+            {
+              "url": "http://120.40.39.246:352/newlive/live/hls/3/live.m3u8",
+              "height": 1080,
+              "bitrate": 8667
+            }
+          ]
+        },
+        {
+          "name": "CCTV-5",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/CCTV5.png",
+          "sources": [
+            {
+              "url": "http://38.75.136.137:98/gslb/dsdqpub/cctv5hd.m3u8?auth=testpub",
+              "height": 1080,
+              "bitrate": 3389
+            },
+            {
+              "url": "http://153.0.171.163:85/tsfile/live/1015_1.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 1080,
+              "bitrate": 7380
+            },
+            {
+              "url": "http://207.56.13.146:81/cdnlive/cctv5.m3u8",
+              "height": 720,
+              "bitrate": 258,
+              "width": 1280
+            }
+          ]
+        },
+        {
+          "name": "CCTV-8",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/CCTV8.png",
+          "sources": [
+            {
+              "url": "http://207.56.13.146:81/cdnlive/cctv8.m3u8",
+              "height": 720,
+              "bitrate": 280
+            }
+          ]
+        },
+        {
+          "name": "CCTV-11",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/CCTV11.png",
+          "sources": [
+            {
+              "url": "http://101.66.194.176:9901/tsfile/live/0011_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 2367
+            },
+            {
+              "url": "http://124.228.160.112:9901/tsfile/live/0011_2.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 576,
+              "bitrate": 2282
+            }
+          ]
+        },
+        {
+          "name": "CCTV-12",
+          "logo": "",
+          "sources": [
+            {
+              "url": "http://74.91.26.218:82/live/cctv12hd.m3u8",
+              "height": 720,
+              "bitrate": 584
+            }
+          ]
+        },
+        {
+          "name": "CCTV-13",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/CCTV13.png",
+          "sources": [
+            {
+              "url": "http://74.91.26.218:82/live/cctv13hd.m3u8",
+              "height": 720,
+              "bitrate": 762
+            },
+            {
+              "url": "https://event.pull.hebtv.com/jishi/cp1.m3u8",
+              "height": 1080,
+              "bitrate": 4473
+            }
+          ]
+        },
+        {
+          "name": "CCTV-14",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/CCTV14.png",
+          "sources": [
+            {
+              "url": "https://event.pull.hebtv.com/jishi/cp2.m3u8",
+              "height": 1080,
+              "bitrate": 4473
+            },
+            {
+              "url": "http://74.91.26.218:82/live/cctv14hd.m3u8",
+              "height": 1080,
+              "bitrate": 727
+            }
+          ]
+        },
+        {
+          "name": "CCTV-15",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/CCTV15.png",
+          "sources": [
+            {
+              "url": "http://101.66.198.18:9901/tsfile/live/0015_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 2043
+            },
+            {
+              "url": "http://101.66.194.29:9901/tsfile/live/0015_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 2043
+            },
+            {
+              "url": "http://101.66.198.84:9901/tsfile/live/0015_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 2043
+            }
+          ]
+        },
+        {
+          "name": "CCTV-16",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/CCTV16.png",
+          "sources": [
+            {
+              "url": "http://207.56.13.146:81/cdnlive/cctv16.m3u8",
+              "height": 720,
+              "bitrate": 363
+            },
+            {
+              "url": "http://113.57.140.161:10081/newlive/live/hls/17/live.m3u8",
+              "height": 1080,
+              "bitrate": 9014
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "local",
+      "title": "地方省市",
+      "channels": [
+        {
+          "name": "东南卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/东南卫视.png",
+          "sources": [
+            {
+              "url": "http://101.66.195.232:9901/tsfile/live/0137_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 1080,
+              "bitrate": 7545
+            },
+            {
+              "url": "http://live.zohi.tv/video/s10001-fztv-3/index.m3u8",
+              "height": 1080,
+              "bitrate": 4273
+            }
+          ]
+        },
+        {
+          "name": "东方卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/东方卫视.png",
+          "sources": [
+            {
+              "url": "http://bp-resource-dfl.bestv.cn/155/3/video.m3u8",
+              "height": 1080,
+              "bitrate": 3423
+            }
+          ]
+        },
+        {
+          "name": "云南卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/云南卫视.png",
+          "sources": [
+            {
+              "url": "http://101.66.195.232:9901/tsfile/live/0119_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 2040
+            },
+            {
+              "url": "http://101.66.194.176:9901/tsfile/live/0119_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 2040
+            }
+          ]
+        },
+        {
+          "name": "兵团卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/兵团卫视.png",
+          "sources": [
+            {
+              "url": "http://59.39.89.130:60901/tsfile/live/0125_9.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 576,
+              "bitrate": 2331
+            }
+          ]
+        },
+        {
+          "name": "内蒙古卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/内蒙古卫视.png",
+          "sources": [
+            {
+              "url": "http://218.13.170.98:9901/tsfile/live/0109_1.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 576,
+              "bitrate": 2289
+            }
+          ]
+        },
+        {
+          "name": "吉林卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/吉林卫视.png",
+          "sources": [
+            {
+              "url": "http://101.66.194.176:9901/tsfile/live/0116_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 1938
+            }
+          ]
+        },
+        {
+          "name": "天津卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/天津卫视.png",
+          "sources": [
+            {
+              "url": "http://120.198.95.220:9901/tsfile/live/1067_1.m3u8?key=txiptv&playlive=1&down=1",
+              "height": 576,
+              "bitrate": 5359
+            },
+            {
+              "url": "http://153.0.171.163:9901/tsfile/live/0135_1.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 576,
+              "bitrate": 2300
+            },
+            {
+              "url": "http://221.226.51.220:50081/newlive/live/hls/26/live.m3u8",
+              "height": 1080,
+              "bitrate": 8289
+            }
+          ]
+        },
+        {
+          "name": "宁夏卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/宁夏卫视.png",
+          "sources": [
+            {
+              "url": "http://218.13.170.98:9901/tsfile/live/0112_1.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 576,
+              "bitrate": 2291
+            }
+          ]
+        },
+        {
+          "name": "山东卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/山东卫视.png",
+          "sources": [
+            {
+              "url": "http://120.198.95.220:9901/tsfile/live/1063_1.m3u8?key=txiptv&playlive=1&down=1",
+              "height": 576,
+              "bitrate": 4518
+            }
+          ]
+        },
+        {
+          "name": "山西卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/山西卫视.png",
+          "sources": [
+            {
+              "url": "http://101.66.198.18:9901/tsfile/live/0118_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 1996
+            },
+            {
+              "url": "http://101.66.198.184:9901/tsfile/live/0118_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 1895
+            },
+            {
+              "url": "http://101.66.194.29:9901/tsfile/live/0118_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 2349
+            },
+            {
+              "url": "http://101.66.195.232:9901/tsfile/live/0118_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 1982
+            }
+          ]
+        },
+        {
+          "name": "广东卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/广东卫视.png",
+          "sources": [
+            {
+              "url": "http://120.238.94.82:9901/tsfile/live/1009_1.m3u8",
+              "height": 1080,
+              "bitrate": 7329
+            },
+            {
+              "url": "http://120.40.39.246:352/newlive/live/hls/34/live.m3u8",
+              "height": 1080,
+              "bitrate": 9107
+            }
+          ]
+        },
+        {
+          "name": "广西卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/广西卫视.png",
+          "sources": [
+            {
+              "url": "http://101.66.195.232:9901/tsfile/live/0113_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 1919
+            },
+            {
+              "url": "http://101.66.194.176:9901/tsfile/live/0113_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 1919
+            },
+            {
+              "url": "http://101.66.194.29:9901/tsfile/live/0113_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 2099
+            },
+            {
+              "url": "http://101.66.198.18:9901/tsfile/live/0113_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 2099
+            }
+          ]
+        },
+        {
+          "name": "延边卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/延边卫视.png",
+          "sources": [
+            {
+              "url": "https://srs.iyb983.cn/video/CYS/index.m3u8",
+              "height": 1080,
+              "bitrate": 1626
+            },
+            {
+              "url": "https://srs.iyb983.cn:443/video/CYS/index.m3u8",
+              "height": 1080,
+              "bitrate": 1626
+            }
+          ]
+        },
+        {
+          "name": "新疆卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/新疆卫视.png",
+          "sources": [
+            {
+              "url": "http://218.84.12.186:8001/hls/main/playlist.m3u8?zxinjd;http://218.84.12.186:8001/hls/main/playlist.m3u8zxinjd",
+              "height": 1080,
+              "bitrate": 1242
+            }
+          ]
+        },
+        {
+          "name": "江苏卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/江苏卫视.png",
+          "sources": [
+            {
+              "url": "http://101.66.194.29:9901/tsfile/live/0017_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 1080,
+              "bitrate": 7234
+            },
+            {
+              "url": "http://113.57.140.161:10081/newlive/live/hls/31/live.m3u8",
+              "height": 1080,
+              "bitrate": 9116
+            },
+            {
+              "url": "http://120.40.39.246:352/newlive/live/hls/31/live.m3u8",
+              "height": 1080,
+              "bitrate": 9002
+            }
+          ]
+        },
+        {
+          "name": "江西卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/江西卫视.png",
+          "sources": [
+            {
+              "url": "http://112.27.5.218:9901/tsfile/live/faacts/0138_1.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 1080,
+              "bitrate": 3156
+            }
+          ]
+        },
+        {
+          "name": "河北卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/河北卫视.png",
+          "sources": [
+            {
+              "url": "http://event.pull.hebtv.com/jishi/weishi_tingyun.m3u8",
+              "height": 540,
+              "bitrate": 1486,
+              "width": 960
+            },
+            {
+              "url": "http://101.66.198.18:9901/tsfile/live/0117_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 1080,
+              "bitrate": 6352
+            },
+            {
+              "url": "http://101.66.195.232:9901/tsfile/live/0117_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 1080,
+              "bitrate": 7308
+            },
+            {
+              "url": "http://101.66.198.84:9901/tsfile/live/0117_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 1080,
+              "bitrate": 6353
+            }
+          ]
+        },
+        {
+          "name": "河南卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/河南卫视.png",
+          "sources": [
+            {
+              "url": "https://dxtx.hntv.tv/live/lypd.m3u8?txSecret=10c771842a0be59e8b575d765173ec96&txTime=7B923E0A&wsSecret=985ebb910dd1e9ad9603ffd7670bd155&wsTime=1791183481",
+              "height": 1080,
+              "bitrate": 1827
+            },
+            {
+              "url": "http://221.226.51.220:50081/newlive/live/hls/37/live.m3u8",
+              "height": 1080,
+              "bitrate": 8366
+            }
+          ]
+        },
+        {
+          "name": "浙江卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/浙江卫视.png",
+          "sources": [
+            {
+              "url": "http://ali-xwl.cztv.com/live/channel01720Plxw.m3u8",
+              "height": 720,
+              "width": 1280,
+              "bitrate": 1321
+            },
+            {
+              "url": "http://ali-xwl.cztv.com/live/channel011080Plxw.m3u8",
+              "height": 1080,
+              "width": 1920,
+              "bitrate": 1658
+            }
+          ]
+        },
+        {
+          "name": "深圳卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/深圳卫视.png",
+          "sources": [
+            {
+              "url": "http://120.198.95.220:9901/tsfile/live/1048_1.m3u8?key=txiptv&playlive=1&down=1",
+              "height": 1080,
+              "bitrate": 7569
+            },
+            {
+              "url": "http://120.238.94.82:9901/tsfile/live/1065_1.m3u8",
+              "height": 1080,
+              "bitrate": 7750
+            }
+          ]
+        },
+        {
+          "name": "甘肃卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/甘肃卫视.png",
+          "sources": [
+            {
+              "url": "http://113.25.252.226:9901/tsfile/live/1047_1.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 576,
+              "bitrate": 2289
+            }
+          ]
+        },
+        {
+          "name": "西藏卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/西藏卫视.png",
+          "sources": [
+            {
+              "url": "http://59.39.89.130:60901/tsfile/live/0125_4.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 576,
+              "bitrate": 2333
+            },
+            {
+              "url": "http://112.27.5.218:9901/tsfile/live/0111_1.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 576,
+              "bitrate": 4184
+            }
+          ]
+        },
+        {
+          "name": "贵州卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/贵州卫视.png",
+          "sources": [
+            {
+              "url": "http://36.136.38.87:9901/tsfile/live/0120_1.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 576,
+              "bitrate": 2191
+            },
+            {
+              "url": "http://101.66.198.84:9901/tsfile/live/0120_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 1080,
+              "bitrate": 7350
+            },
+            {
+              "url": "http://101.66.198.184:9901/tsfile/live/0120_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 1080,
+              "bitrate": 7350
+            }
+          ]
+        },
+        {
+          "name": "陕西卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/陕西卫视.png",
+          "sources": [
+            {
+              "url": "http://101.66.194.29:9901/tsfile/live/0136_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 576,
+              "bitrate": 1965
+            }
+          ]
+        },
+        {
+          "name": "香港卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/香港卫视.png",
+          "sources": [
+            {
+              "url": "https://hkstv.tv/api/m3u8-proxy?url=http%3A%2F%2Fwebcast.hkstv.tv%2Flivestream%2Fmutfysrq%2Fplaylist.m3u8",
+              "height": 720,
+              "bitrate": 2410
+            }
+          ]
+        },
+        {
+          "name": "黑龙江卫视",
+          "logo": "https://gitee.com/mytv-android/myTVlogo/raw/main/img/黑龙江卫视.png",
+          "sources": [
+            {
+              "url": "http://36.136.38.87:9901/tsfile/live/0143_1.m3u8?key=txiptv&playlive=1&authid=0",
+              "height": 576,
+              "bitrate": 2223
+            },
+            {
+              "url": "http://101.66.195.232:9901/tsfile/live/0143_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 1080,
+              "bitrate": 6971
+            },
+            {
+              "url": "http://101.66.194.29:9901/tsfile/live/0143_1.m3u8?key=txiptv&playlive=0&authid=0",
+              "height": 1080,
+              "bitrate": 7270
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

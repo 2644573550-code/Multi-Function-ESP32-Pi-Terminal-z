@@ -54,3 +54,6 @@ build/log/
 # 归档包（源码已在仓库内，无需重复）
 *.zip
 *.rar
+
+# 电视频道生成缓存（tools/build_tv_channels.py）
+pi_terminal/assets/tv/.cache/
