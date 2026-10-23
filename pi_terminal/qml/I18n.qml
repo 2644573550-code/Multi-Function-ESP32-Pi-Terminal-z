@@ -12,6 +12,17 @@ QtObject {
         return result
     }
     readonly property var words: ({
+        "网络电视":"Internet TV", "央视":"CCTV", "地方省市":"Local channels", "其他":"Others", "直播":"Live",
+        "搜索节目":"Search channels", "没有匹配的节目":"No matching channel", "暂无节目":"No channels",
+        "清除搜索":"Clear search", "选择线路":"Choose stream", "切换到高码率线路？":"Switch to a higher bitrate?",
+        "高码率占用更多带宽，树莓派可能因此卡顿。确定切换到 ":"Higher bitrate needs more bandwidth and may stutter on the Pi. Switch to ",
+        " 吗？":"?", "取消":"Cancel", "确认切换":"Switch",
+        "选择一个频道开始播放":"Choose a channel to start", "正在连接":"Connecting",
+        "重新连接":"Reconnect", "播放失败":"Playback failed",
+        "该频道暂时没有可用源":"No stream available for this channel",
+        "所有源均无法播放，请换一个频道":"All streams failed, try another channel",
+        "频道数据加载失败":"Failed to load channel data",
+        "频道数据解析失败":"Failed to parse channel data",
         "启动桌宠":"Start desktop pet", "关闭桌宠":"Stop desktop pet", "桌宠管理":"Manage desktop pets",
         "大小与画质":"Size and quality",
         "渲染质量":"Render quality", "流畅 · 128 px / 64 MiB":"Economy · 128 px / 64 MiB",

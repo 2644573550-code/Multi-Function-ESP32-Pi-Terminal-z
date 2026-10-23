@@ -57,6 +57,18 @@ class SystemTools : public QObject {
 public:
     Q_INVOKABLE QString saveCameraFrame(const QString &frame, const QUrl &destination);
     Q_INVOKABLE QString cameraPhotoPath() const;
+    // 内置网络电视频道表（qrc:/tv/china.json）。QML 的 XHR 默认禁止读本地文件，
+    // 所以由 C++ 读取后交给 QML 解析。
+    Q_INVOKABLE QString tvChannelData() const;
+    // 仅用于性能/回归测试：TERMINAL_TV_URL 直接指定一个 HLS 源，跳过频道表。
+    Q_INVOKABLE QString tvTestUrl() const { return qEnvironmentVariable("TERMINAL_TV_URL"); }
+
+    // 测试/演示用：指定启动时直接播放的频道名（TERMINAL_TV_CHANNEL=浙江卫视）。
+    Q_INVOKABLE QString tvChannelName() const { return qEnvironmentVariable("TERMINAL_TV_CHANNEL"); }
+    // 仅用于开发期自动化：设置 TERMINAL_TV_AUTOPLAY=1 时自动进入电视页并播放首个频道
+    Q_INVOKABLE bool tvAutoplay() const;
+    // 仅测试：TERMINAL_TV_FULLSCREEN=1 时进入电视页即全屏。
+    Q_INVOKABLE bool tvForceFullscreen() const { return qEnvironmentVariableIsSet("TERMINAL_TV_FULLSCREEN"); }
     bool musicCliAvailable() const;
     bool musicNetworkOnline() const { return musicNetworkOnline_; }
     bool musicCliAuthenticated() const { return musicCliAuthenticated_; }

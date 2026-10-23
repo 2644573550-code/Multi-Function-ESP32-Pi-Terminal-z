@@ -44,6 +44,19 @@ QString SystemTools::cameraPhotoPath() const {
     return QDir(directory).filePath("camera-"+QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss-zzz")+".png");
 }
 
+bool SystemTools::tvAutoplay() const {
+    return qEnvironmentVariableIsSet("TERMINAL_TV_AUTOPLAY");
+}
+
+QString SystemTools::tvChannelData() const {
+    QFile file(QStringLiteral(":/tv/china.json"));
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning("内置电视频道表缺失: %s", qPrintable(file.fileName()));
+        return {};
+    }
+    return QString::fromUtf8(file.readAll());
+}
+
 QVariantMap SystemTools::localMusicMetadata(const QString &relative) const {
     if (localMusicMetadataCache_.contains(relative)) return localMusicMetadataCache_.value(relative);
     const auto path = safePath(relative);

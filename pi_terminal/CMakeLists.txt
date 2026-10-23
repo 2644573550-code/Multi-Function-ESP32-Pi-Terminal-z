@@ -107,10 +107,42 @@ qt_add_library(terminal_ui SHARED
     src/ui/TerminalUi.cpp src/ui/TerminalUi.h
     src/ui/BlurItem.cpp src/ui/BlurItem.h src/ui/TextFormatter.h
     src/ui/PetSpriteItem.cpp src/ui/PetSpriteItem.h
-    src/ui/PetLibrary.cpp src/ui/PetLibrary.h)
+    src/ui/PetLibrary.cpp src/ui/PetLibrary.h
+    src/ui/GstVideoItem.cpp src/ui/GstVideoItem.h)
 target_compile_definitions(terminal_ui PRIVATE ARKPETS_CONVERTER_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/tools/arkpets")
 target_include_directories(terminal_ui PUBLIC src)
 target_link_libraries(terminal_ui PUBLIC Qt6::Quick Qt6::Qml PRIVATE Qt6::QuickControls2 Qt6::OpenGL)
+
+# ── 自研 GStreamer 播放内核 ──
+# 开发头文件随仓库提供（third_party/gst/<arch>，由 tools/fetch_gst_headers.sh 生成），
+# 不需要在新机器上安装 *-dev 包；运行时用系统已有的 GStreamer（Qt Multimedia 本来就依赖它）。
+if(CMAKE_CROSSCOMPILING)
+    set(GST_ROOT "${CMAKE_SYSROOT}/usr")
+    set(GST_GLIB_ARCH "${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu/glib-2.0/include")
+else()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+        set(GST_ARCH arm64)
+    else()
+        set(GST_ARCH amd64)
+    endif()
+    set(GST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/gst/${GST_ARCH}")
+    set(GST_GLIB_ARCH "${GST_ROOT}/include/glib-arch")
+    if(NOT EXISTS "${GST_ROOT}/include/glib-arch/glibconfig.h")
+        message(FATAL_ERROR
+            "缺少 ${GST_ROOT}。请执行 `${CMAKE_CURRENT_SOURCE_DIR}/../tools/fetch_gst_headers.sh` 生成（免 root）。")
+    endif()
+    target_link_directories(terminal_ui PRIVATE "${GST_ROOT}/lib")
+endif()
+target_include_directories(terminal_ui PUBLIC
+    "${GST_ROOT}/include/gstreamer-1.0"
+    "${GST_ROOT}/include/glib-2.0"
+    "${GST_GLIB_ARCH}")
+target_link_libraries(terminal_ui PRIVATE gstreamer-1.0 gstapp-1.0 gstvideo-1.0 gobject-2.0 glib-2.0)
+
+# 最小视频探针（开发/性能测试用，不参与安装）
+qt_add_executable(tv_probe tools/tv_probe.cpp)
+target_link_libraries(tv_probe PRIVATE terminal_ui Qt6::Quick)
+
 
 qt_add_executable(orange_pi_terminal
     src/main.cpp src/app/TerminalApplication.cpp src/app/TerminalApplication.h
@@ -141,6 +173,7 @@ list(APPEND UI_QML_FILES qml/CachedBlur.qml)
 list(APPEND UI_QML_FILES qml/StartupSplash.qml)
 list(APPEND UI_QML_FILES qml/DesktopPet.qml)
 list(APPEND UI_QML_FILES qml/PetManager.qml)
+list(APPEND UI_QML_FILES qml/TvPlayer.qml)
 foreach(qml_file IN LISTS UI_QML_FILES)
     get_filename_component(qml_name "${qml_file}" NAME)
     set_source_files_properties("${qml_file}" PROPERTIES QT_RESOURCE_ALIAS "${qml_name}")
@@ -160,6 +193,7 @@ qt_add_resources(terminal_system pinyin_dictionary PREFIX /pinyin BASE assets/pi
 qt_add_resources(terminal_system pinyin_frequency PREFIX /pinyin BASE assets/pinyin FILES assets/pinyin/jieba-dict.txt assets/pinyin/JIEBA-LICENSE)
 set_source_files_properties(assets/orange_pi_terminal.svg PROPERTIES QT_RESOURCE_ALIAS orange_pi_terminal.svg)
 qt_add_resources(terminal_ui app_icon PREFIX /icons FILES assets/orange_pi_terminal.svg)
+qt_add_resources(terminal_ui tv_channels PREFIX /tv BASE assets/tv FILES assets/tv/china.json assets/tv/SOURCE.md)
 qt_add_resources(terminal_ui arkpets_sprites PREFIX /arkpets BASE assets/arkpets
     FILES assets/arkpets/amiya/idle.png assets/arkpets/amiya/walk.png
           assets/arkpets/amiya/interact.png assets/arkpets/amiya/sit.png
