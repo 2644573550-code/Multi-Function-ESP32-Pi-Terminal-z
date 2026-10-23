@@ -1,2 +1,13 @@
-﻿# 大文件标记(便于将来用 Git LFS)
-*.FCStd filter=lfs diff=lfs merge=lfs -text
+﻿# 统一使用 LF 存储,Windows 检出时由 git 处理
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+
+# 二进制文件
+*.stl binary
+*.step binary
+*.stp binary
+*.3mf binary
+*.blend binary
+*.FCStd binary
+*.png binary
