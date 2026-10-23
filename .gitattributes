@@ -1,0 +1,2 @@
+﻿# 大文件标记(便于将来用 Git LFS)
+*.FCStd filter=lfs diff=lfs merge=lfs -text
