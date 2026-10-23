@@ -1,5 +1,15 @@
 # README 展示资源
 
+## 连接状态工作台
+
+同一下方本地 HTTP 服务打开 `http://127.0.0.1:8000/docs/showcase/connection.html`。
+
+`connection.html` 是纯前端源码语义演示，不连接设备，也不读写真实产品配置。`docs/assets/connection-atelier.svg` 使用 Anatomy `kit/iso-kit.mjs` 的 `slabOf`、`cylinder`、`solidSvg`、`fitProjection`、`topMatrix`、`faceTextSvg` 等方法生成 65 个实体部件。依据其指南采用四阶实体阴影、倒角、安装脚、板上器件、插接导轨和面内屏幕；插接运动采用时间步进的指数跟随，离屏/后台停止，减少动态效果时直接落位。造型是连接工作原理的概念装置，不是 STL 几何或真实 pinout。
+
+状态边依据 `pi_terminal/src/core/SessionStateMachine.cpp`，ready、接收、信任、恢复及释放顺序依据 `ConnectionManager.cpp`，传输约束依据 `TransportPolicy.h`。画面、屏幕文字、指示灯和侧栏只读取同一个演示模型。未加入虚构的测量、下载百分比或吞吐量；自动接入在首次信任处暂停，需要用户明确操作。新图和 Word 文档链接在 README 技术图解中，原外壳 WebGL 浏览器保持独立入口。
+
+Anatomy 来源：<https://github.com/wheresryan22/anatomy>，使用提交 `1482e8469b0a9e0d8cc18ea2740a01423d29ae80`。完整 MIT 许可证保留于生成 SVG 的 XML 注释（© 2026 Ryan）。静态 SVG 已包含所需样式和几何，没有远程依赖；运行页面不需要安装 Anatomy，也不需要保留其整份源码仓库。
+
 ## 模型浏览页
 
 在仓库根目录执行：
@@ -35,4 +45,4 @@ python3 tools/generate_readme_art.py
 
 主机没有补画不存在的屏幕、面板或电路板；圆台没有补画盖件。色彩是展示材质，不代表打印材料或零件真实颜色。图中三角面数量从 STL 读取，不是估计值。静态渲染器采用正交投影与深度缓冲，仍不替代 CAD 工具的干涉、拓扑、配合或支撑检查。
 
-视觉参考 [Anatomy](https://github.com/wheresryan22/anatomy) 的等距实物陈列、克制配色和技术卡片风格。未复制其 kit、示例或运行时代码；使用项目模型自行生成素材。
+本节的真实外壳图由项目 STL 自行渲染；连接工作台另行使用 Anatomy 生成 SVG，来源与许可见上节。
