@@ -1,0 +1,8 @@
+# CAD and source files are stored exactly as committed to preserve their original line endings.
+*.stl binary
+*.step binary
+*.stp binary
+*.3mf binary
+*.blend binary
+*.FCStd binary
+*.png binary

@@ -1,0 +1,13 @@
+﻿# 系统与工具
+.DS_Store
+Thumbs.db
+desktop.ini
+*.blend1
+*.FCBak
+*.fuse*
+__pycache__/
+*.pyc
+
+# 临时文件
+*.tmp
+_temp/
