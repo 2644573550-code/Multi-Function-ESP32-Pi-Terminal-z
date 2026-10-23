@@ -33,6 +33,6 @@
 - [ ] 联网功能数据安全控制
 
 ## bug fixes or improving features
-- [ ] 视频播放器 后端从QT Multimedia -> VLC
-- [ ] 增加一个joystick用来控制网页浏览
-- [ ] 浏览器界面优化 增大网页显示面积 布局排版优化 + 可见的bug fixes
+- [ ] 视频播放器 后端从QT Multimedia -> VLC 目前已经完成 并且根据树莓派性能做了测试 还不错？ 需要实机验证
+- [ ] 增加一个joystick用来控制网页浏览+适老化功能 还未测试
+- [ ] 浏览器界面优化 增大网页显示面积 布局排版优化 + 可见的bug fixes planed 等待上一个计划完成
