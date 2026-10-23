@@ -1,9 +1,4 @@
-﻿# 统一使用 LF 存储,Windows 检出时由 git 处理
-*.py text eol=lf
-*.md text eol=lf
-*.txt text eol=lf
-
-# 二进制文件
+# CAD and source files are stored exactly as committed to preserve their original line endings.
 *.stl binary
 *.step binary
 *.stp binary
