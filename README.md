@@ -66,7 +66,7 @@
 | 音乐 | 原生音乐服务、在线 API、本地播放、歌词与整曲缓存后的跳转 | [音乐实现](docs/native-music.md)。在线 API 按需拉起；可用性受上游服务及网络影响。 |
 | 本地视频与网络电视 | 本地视频使用 Qt Multimedia；电视页面使用 `GstVideoItem` / GStreamer，含频道与线路选择 | [电视内核说明](docs/tv-hls-player-notes.md)。VLC 迁移仍见路线图，不能把开发分支状态当作主线实现。 |
 | 文件与系统 | 文件操作、图片预览、文本编辑、受限 USB 存储访问、系统音量及播报时媒体降音 | [系统库与运行时](docs/native-runtime-modules.md)。USB 与音量控制需要相应系统服务。 |
-| 渲染与个性化 | 双槽背景模糊缓存、普通/节能模式；默认关闭的桌宠彩蛋 | [模糊设计](docs/blur-performance.md) · [桌宠说明](README-Arkpets.md)。桌宠显示为图集动画，不是实时 3D 人物。 |
+| 渲染与个性化 | 双槽背景模糊缓存、普通/节能渲染模式 | [模糊设计](docs/blur-performance.md)。 |
 | 环境模块示例 | 温度、空气湿度、气压、照度、电量和日/周温度历史 | [智能盆栽](module-devkit/examples/smart-planter/README.md) · [验证范围](module-devkit/examples/smart-planter/VALIDATION.md)。**没有土壤传感器或浇水执行器**。 |
 
 <details>
@@ -213,14 +213,13 @@ bash build_scripts/test_terminal.sh
 | 真实环境模块与测试边界 | [智能盆栽示例](module-devkit/examples/smart-planter/README.md) · [验证记录](module-devkit/examples/smart-planter/VALIDATION.md) |
 | 外壳文件、打印与装配 | [CAD 总览](hardware/enclosure/README.md) · [文件说明](docs/enclosure-cad-merge.md) |
 | 界面、媒体与浏览器 | [UI 回归](docs/pi-ui-regression.md) · [音乐](docs/native-music.md) · [电视](docs/tv-hls-player-notes.md) · [浏览器](docs/viper-browser-port.md) |
-| 桌宠彩蛋 | [使用说明](README-Arkpets.md) · [本地实现](docs/arkpets-local.md) |
 
 文档可能记录特定时刻或本机环境；发生冲突时优先核对当前源代码、目标构建配置与对应版本的验证记录。
 
 ## 素材与第三方说明
 
 - 本页封面与模型图基于仓库 STL 生成。视觉采用 [Anatomy](https://github.com/wheresryan22/anatomy) 启发的等距工程陈列风格；展示页与生成器为本项目代码，不依赖 Anatomy 运行时。重建说明见 [展示资源说明](docs/showcase/README.md)。
-- Viper-Browser、YesPlayMusic、字体、图标及桌宠素材分别保留自己的授权与来源说明。YesPlayMusic 是参考代码，不是终端的 Electron 播放运行路径。
+- Viper-Browser、YesPlayMusic、字体与图标分别保留自己的授权与来源说明。YesPlayMusic 是参考代码，不是终端的 Electron 播放运行路径。
 - [频道源说明](pi_terminal/assets/tv/SOURCE.md) 说明了第三方直播流的来源、网络与使用限制，不代表官方授权分发。
 - 当前仓库根目录未提供统一的主项目 LICENSE；不要从第三方目录的许可证推导出主项目代码、CAD 或角色素材可自由商用。使用或再分发前，请核对相应授权并向维护者确认。
 
