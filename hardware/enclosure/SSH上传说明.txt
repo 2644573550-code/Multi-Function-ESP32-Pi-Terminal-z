@@ -56,9 +56,9 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGLaRffmnkc7UzDPw5HuNzMPoFt8s02KcsRVM08SCldc
 =====================================================================
 四、推送后会是什么样(预期)
 =====================================================================
-  GitHub 上会出现新分支 enclosure-cad,内容:
+  GitHub 上会出现新分支 enclosure-cad,主项目根目录只多一个 hardware/ 文件夹,内容:
 
-  enclosure-cad/
+  hardware/enclosure/
   ├── README.md                    项目总说明(含零件表/打印参数/装配步骤)
   ├── .gitignore / .gitattributes
   ├── host-shell/     29 文件  小爱风格主机外壳

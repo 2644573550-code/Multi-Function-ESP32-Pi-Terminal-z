@@ -3,6 +3,9 @@
 本分支收录 **Multi-Function-ESP32-Pi-Terminal** 主项目配套的全部 3D 打印外壳的最终设计文件,
 同时提供 **Blender** 与 **FreeCAD** 两套可编辑版本,以及直接可打印的 STL / STEP / 3MF。
 
+> 位置:`hardware/enclosure/`(主项目主线是程序代码 `pi_terminal/`、`module-devkit/`,
+> 本目录只放配套的机械/外壳 CAD,不占用仓库根目录)
+>
 > 分支:`enclosure-cad` · 主项目 [`Axe665/Multi-Function-ESP32-Pi-Terminal`](https://github.com/Axe665/Multi-Function-ESP32-Pi-Terminal)
 
 ---
@@ -10,7 +13,7 @@
 ## 目录结构
 
 ```
-enclosure-cad/
+hardware/enclosure/
 ├── host-shell/            小爱风格主机外壳(桌面主机,双分体式)
 │   ├── blender/           Host_Shell.blend / Host_Shell_split.blend
 │   ├── freecad/           Host_Shell.FCStd + STEP + 总 STL
@@ -165,7 +168,7 @@ enclosure-cad/
 
 ---
 
-## 文档索引(`docs/`)
+## 文档索引(`hardware/enclosure/docs/`)
 
 | 文件 | 内容 |
 |---|---|
