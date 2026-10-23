@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Pi Terminal · 结构实验室</title>
+<style>
+:root{font-family:Inter,"Noto Sans CJK SC",system-ui,sans-serif;color:#183329;background:#f3f3eb;font-synthesis:none;--line:#d0d9cc;--green:#214c3d}
+*{box-sizing:border-box}body{margin:0}a{color:var(--green)}button{font:inherit;cursor:pointer;min-height:48px;border:1px solid var(--line);background:transparent;color:inherit;border-radius:10px;padding:10px 16px}button:hover{background:#e2e8dc}button:focus-visible,canvas:focus-visible,a:focus-visible{outline:3px solid #a07736;outline-offset:4px}button[aria-pressed=true]{background:var(--green);color:white;border-color:var(--green)}button:disabled{opacity:.4;cursor:default}
+header{max-width:1480px;margin:auto;padding:28px 36px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}header a{text-decoration:none;font-size:14px}header strong{letter-spacing:2px;font-size:14px}.edition{font-size:11px;color:#5a6c60;letter-spacing:2px}
+main{max-width:1480px;margin:auto;display:grid;grid-template-columns:340px 1fr;min-height:calc(100vh - 85px)}aside{padding:44px 30px 30px 36px;border-right:1px solid var(--line)}.eyebrow{font-size:11px;letter-spacing:3px;color:#6b785f}.title{font-weight:500;font-size:48px;line-height:1.15;letter-spacing:-2px;margin:22px 0}aside p{color:#5a6c60;font-size:14px;line-height:1.9}.models{display:grid;gap:10px;margin:28px 0}.models button{text-align:left;display:grid;gap:6px;padding:14px 16px}.models small{opacity:.7;font-size:11px;letter-spacing:1px}.note{font-size:12px;padding-top:20px;border-top:1px solid var(--line)}
+.lab{padding:30px;min-width:0;display:flex;flex-direction:column}.frame{position:relative;flex:1;min-height:490px;border:1px solid var(--line);border-radius:18px;overflow:hidden;background-color:#e7ece4;background-image:radial-gradient(#bccbb8 .7px,transparent .7px);background-size:24px 24px}.frame:before{content:"";position:absolute;left:22%;right:22%;bottom:20%;height:6%;background:#9aab96;filter:blur(28px);opacity:.22;border-radius:50%;pointer-events:none}.fig{position:absolute;left:24px;top:22px;font:11px ui-monospace,monospace;letter-spacing:2px;pointer-events:none}.corner{position:absolute;right:24px;top:22px;color:#61705e;font-size:11px;pointer-events:none}canvas{position:absolute;width:100%;height:100%;display:block;touch-action:none;cursor:grab}canvas:active{cursor:grabbing}.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:20px 0}.toolbar .spacer{flex:1}.readout{font:12px ui-monospace,monospace;color:#526758;line-height:1.8;border-top:1px solid var(--line);padding:16px 0;min-height:58px}.hint{position:absolute;bottom:20px;left:24px;font-size:11px;color:#61705e;pointer-events:none}.fallback{position:absolute;inset:70px 20px 55px;width:calc(100% - 40px);height:calc(100% - 125px);object-fit:contain}.footer{font-size:12px;color:#61705e;margin:0 0 10px;line-height:1.8}#source{margin-left:14px}.status{font-size:12px;color:#526758}
+@media(max-width:850px){main{grid-template-columns:1fr}aside{padding:26px 22px;border-right:0;border-bottom:1px solid var(--line)}header{padding:20px 22px}.title{font-size:36px}.models{grid-template-columns:1fr 1fr;margin:22px 0 0}.note{display:none}.lab{padding:18px}.frame{min-height:440px}.edition{display:none}.toolbar button{padding:10px 12px}.hint{right:20px;line-height:1.6}.corner{display:none}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<header><strong>PI TERMINAL / LAB</strong><span class="edition">MATERIAL STUDIES · 01—04</span><a href="../../README.md">项目 README ↗</a></header>
+<main>
+<aside>
+<div class="eyebrow">HARDWARE / OPEN THE OBJECT</div>
+<h1 class="title">从屏幕，<br>到实体。</h1>
+<p>四组外壳设计，一套模块化终端。<br>拖动观察真实 STL，探索壳体、螺纹与支撑结构。</p>
+<nav class="models" aria-label="选择模型">
+<button data-model="0" aria-pressed="true">桌面主机<small>01 / HOST SHELL</small></button>
+<button data-model="1" aria-pressed="false">圆台外壳<small>02 / CONE CASE</small></button>
+<button data-model="2" aria-pressed="false">花盆底座<small>03 / POT BASE</small></button>
+<button data-model="3" aria-pressed="false">一体化支架<small>04 / ONE-PIECE STAND</small></button>
+</nav>
+<p class="note">模型直接从仓库文件加载，不从外站下载。主机只展示上下壳；圆台只展示主体。分离展示仅用于观察，不代表装配间距或配合验证。</p>
+<a href="../../hardware/enclosure/README.md">查看 CAD 与打印说明 ↗</a>
+</aside>
+<section class="lab" aria-label="三维模型预览">
+<div class="frame">
+<canvas id="scene" tabindex="0" aria-label="三维模型。拖动旋转，方向键旋转，加减号缩放，Home 重置。"></canvas>
+<img class="fallback" src="../assets/enclosure-gallery.png" alt="四组外壳 STL 的静态展示" hidden>
+<span class="fig">FIG. <span id="figure">01</span> / MESH STUDY</span><span class="corner">LOCAL GEOMETRY · NO CDN</span>
+<span class="hint">拖动旋转 · 滚轮缩放 · 方向键旋转 · Home 重置</span>
+</div>
+<div class="toolbar"><button id="reset">重置视角</button><button id="zoom-in" aria-label="放大">＋</button><button id="zoom-out" aria-label="缩小">−</button><span class="spacer"></span><button id="explode" aria-pressed="false">分离上下壳</button></div>
+<div class="readout" id="status" role="status" aria-live="polite">正在读取模型…</div>
+<p class="footer">正交投影 / 按需绘制 / 无自动旋转 <a id="source" href="../../hardware/enclosure/host-shell/stl/">源文件 ↗</a><br>这是一份几何预览，不是工程仿真或打印验收。GitHub 文件预览不运行本页；请使用本地 HTTP 服务。</p>
+</section>
+</main>
+<script>
+'use strict';
+const root='../../hardware/enclosure/';
+const models=[
+ {name:'桌面主机 · 上下壳',dir:'host-shell/stl/',files:['Shell_Lower.stl','Shell_Upper.stl'],color:[.84,.81,.69]},
+ {name:'圆台外壳 · 主体',dir:'cone-case/stl/',files:['Cone_Case_Body.stl'],color:[.56,.73,.63]},
+ {name:'花盆底座 · FINAL',dir:'pot-base/stl/',files:['Pot_Base_FINAL_内壁3mm_倒角优化.stl'],color:[.84,.68,.42]},
+ {name:'一体化支架',dir:'stand/stl/',files:['Stand.stl'],color:[.57,.68,.77]}
+];
+const canvas=document.querySelector('canvas'),status=document.querySelector('#status');
+const gl=canvas.getContext('webgl',{alpha:true,antialias:true});
+let selected=0,sequence=0,meshes=[],yaw=-.95,pitch=.55,zoom=1,exploded=false,summary='',program;
+function message(text){status.textContent=text;}
+function fallback(text){canvas.hidden=true;document.querySelector('.fallback').hidden=false;message(text);document.querySelectorAll('.toolbar button').forEach(b=>b.disabled=true);}
+function compile(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;}
+function init(){
+ const vertex=`attribute vec3 position;attribute vec3 normal;uniform float yaw,pitch,zoom,aspect,shift;varying vec3 n;
+ vec3 rotate(vec3 p){float a=cos(yaw),b=sin(yaw),c=cos(pitch),d=sin(pitch);vec3 q=vec3(a*p.x-b*p.y,b*p.x+a*p.y,p.z);return vec3(q.x,c*q.y+d*q.z,d*q.y-c*q.z);}
+ void main(){vec3 p=position;p.z+=shift;vec3 r=rotate(p);n=rotate(normal);gl_Position=vec4(r.x*zoom/aspect,r.y*zoom,r.z*.3,1.);}`;
+ const fragment=`precision mediump float;varying vec3 n;uniform vec3 color;void main(){vec3 v=normalize(n);float shade=.65+.30*dot(v,normalize(vec3(-.4,.7,1.)));gl_FragColor=vec4(color*shade,1.);}`;
+ program=gl.createProgram();gl.attachShader(program,compile(gl.VERTEX_SHADER,vertex));gl.attachShader(program,compile(gl.FRAGMENT_SHADER,fragment));gl.linkProgram(program);
+ if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
+ gl.useProgram(program);gl.enable(gl.DEPTH_TEST);
+}
+function parse(buffer){
+ const data=new DataView(buffer);if(buffer.byteLength<84)throw Error('STL 文件不完整');
+ const count=data.getUint32(80,true);if(buffer.byteLength!==84+50*count)throw Error('需要有效的二进制 STL 文件');
+ const vertices=new Float32Array(count*18),low=[Infinity,Infinity,Infinity],high=[-Infinity,-Infinity,-Infinity];
+ for(let i=0;i<count;i++){
+  const offset=84+50*i,points=[];
+  for(let j=0;j<3;j++){const p=[];for(let k=0;k<3;k++){const v=data.getFloat32(offset+12+j*12+k*4,true);if(!Number.isFinite(v))throw Error('无效坐标');p.push(v);low[k]=Math.min(low[k],v);high[k]=Math.max(high[k],v);}points.push(p);}
+  const u=points[1].map((v,k)=>v-points[0][k]),v=points[2].map((v,k)=>v-points[0][k]);
+  const n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]],len=Math.hypot(...n)||1;
+  for(let j=0;j<3;j++){vertices.set(points[j],i*18+j*6);vertices.set(n.map(x=>x/len),i*18+j*6+3);}
+ }
+ return {vertices,low,high,count};
+}
+function render(){
+ if(!gl||!program||gl.isContextLost())return;
+ const box=canvas.getBoundingClientRect(),ratio=Math.min(window.devicePixelRatio||1,1.5);
+ const width=Math.max(1,Math.round(box.width*ratio)),height=Math.max(1,Math.round(box.height*ratio));
+ if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}
+ gl.viewport(0,0,width,height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+ for(const [name,value] of Object.entries({yaw,pitch,zoom,aspect:width/height}))gl.uniform1f(gl.getUniformLocation(program,name),value);
+ gl.uniform3fv(gl.getUniformLocation(program,'color'),models[selected].color);
+ for(let i=0;i<meshes.length;i++){
+  const m=meshes[i];gl.bindBuffer(gl.ARRAY_BUFFER,m.buffer);
+  for(const [name,offset] of [['position',0],['normal',12]]){const location=gl.getAttribLocation(program,name);gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,3,gl.FLOAT,false,24,offset);}
+  gl.uniform1f(gl.getUniformLocation(program,'shift'),exploded&&i===1?.28:0);
+  gl.drawArrays(gl.TRIANGLES,0,m.count*3);
+ }
+}
+function reset(){yaw=-.95;pitch=.55;zoom=1;render();}
+async function load(index){
+ const current=++sequence;selected=index;exploded=false;reset();meshes.forEach(m=>gl.deleteBuffer(m.buffer));meshes=[];render();
+ document.querySelectorAll('[data-model]').forEach(b=>b.setAttribute('aria-pressed',Number(b.dataset.model)===index));
+ document.querySelector('#explode').disabled=index!==0;document.querySelector('#explode').setAttribute('aria-pressed','false');
+ document.querySelector('#figure').textContent=String(index+1).padStart(2,'0');
+ const model=models[index];document.querySelector('#source').href=root+model.dir;message('正在读取 '+model.name+'…');
+ try{
+  const items=await Promise.all(model.files.map(async file=>{const response=await fetch(root+model.dir+encodeURIComponent(file));if(!response.ok)throw Error('HTTP '+response.status);return parse(await response.arrayBuffer());}));
+  if(current!==sequence)return;
+  const low=[0,1,2].map(k=>Math.min(...items.map(m=>m.low[k]))),high=[0,1,2].map(k=>Math.max(...items.map(m=>m.high[k])));
+  const center=low.map((v,k)=>(v+high[k])/2),dimensions=high.map((v,k)=>v-low[k]);const scale=1.25/Math.max(...dimensions);
+  for(const item of items){for(let i=0;i<item.vertices.length;i+=6)for(let k=0;k<3;k++)item.vertices[i+k]=(item.vertices[i+k]-center[k])*scale;const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,item.vertices,gl.STATIC_DRAW);meshes.push({buffer,count:item.count});}
+  summary=`${model.name} / ${items.reduce((a,m)=>a+m.count,0).toLocaleString()} triangles / STL 包围盒 ${dimensions.map(x=>x.toFixed(1)).join(' × ')}（按毫米解释）`;
+  message(summary);render();
+ }catch(error){if(current===sequence)message('模型加载失败：'+error.message+'。请从仓库根目录启动 HTTP 服务，并检查源文件路径。');}
+}
+if(!gl){fallback('浏览器未提供 WebGL，已显示静态模型图。');document.querySelectorAll('[data-model]').forEach(b=>b.disabled=true);}
+else{
+ try{
+  init();load(0);
+  document.querySelectorAll('[data-model]').forEach(b=>b.addEventListener('click',()=>load(Number(b.dataset.model))));
+  document.querySelector('#reset').onclick=reset;
+  function magnify(factor){zoom=Math.max(.45,Math.min(2.5,zoom*factor));render();}
+  document.querySelector('#zoom-in').onclick=()=>magnify(1.15);document.querySelector('#zoom-out').onclick=()=>magnify(1/1.15);
+  document.querySelector('#explode').onclick=event=>{exploded=!exploded;event.currentTarget.setAttribute('aria-pressed',exploded);message(summary+(exploded?' / 分离示意，非装配间距':''));render();};
+  let dragging=false,lastX=0,lastY=0;
+  canvas.addEventListener('pointerdown',event=>{dragging=true;lastX=event.clientX;lastY=event.clientY;canvas.setPointerCapture(event.pointerId);canvas.focus();});
+  canvas.addEventListener('pointermove',event=>{if(!dragging)return;yaw+=(event.clientX-lastX)*.009;pitch=Math.max(-1.4,Math.min(1.4,pitch+(event.clientY-lastY)*.009));lastX=event.clientX;lastY=event.clientY;render();});
+  for(const name of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(name,()=>dragging=false);
+  canvas.addEventListener('wheel',event=>{event.preventDefault();magnify(Math.exp(-event.deltaY*.001));},{passive:false});
+  canvas.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','+','=','-','Home'].includes(event.key))return;event.preventDefault();if(event.key==='Home')return reset();if(['+','=','-'].includes(event.key))return magnify(event.key==='-'?1/1.1:1.1);yaw+=(event.key==='ArrowRight'?.12:event.key==='ArrowLeft'?-.12:0);pitch=Math.max(-1.4,Math.min(1.4,pitch+(event.key==='ArrowUp'?.12:event.key==='ArrowDown'?-.12:0)));render();});
+  new ResizeObserver(render).observe(canvas);
+  canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();fallback('WebGL 上下文已丢失。静态图仍可查看，刷新页面可重试。');});
+ }catch(error){fallback('WebGL 初始化失败：'+error.message);}
+}
+</script>
+</body>
+</html>
