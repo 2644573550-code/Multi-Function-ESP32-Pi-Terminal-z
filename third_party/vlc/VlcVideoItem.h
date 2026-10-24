@@ -23,6 +23,7 @@ class VlcVideoItem : public QQuickPaintedItem {
     Q_PROPERTY(bool seekable READ seekable NOTIFY statusChanged)
     Q_PROPERTY(qreal volume READ volume WRITE setVolume NOTIFY volumeChanged)
     Q_PROPERTY(bool muted READ muted WRITE setMuted NOTIFY mutedChanged)
+    Q_PROPERTY(int outputHeight READ outputHeight WRITE setOutputHeight NOTIFY outputHeightChanged)
     Q_PROPERTY(QString errorString READ errorString NOTIFY errorChanged)
     Q_PROPERTY(qulonglong decodedFrames READ decodedFrames NOTIFY statusChanged)
 public:
@@ -40,6 +41,8 @@ public:
     void setVolume(qreal volume);
     bool muted() const { return muted_; }
     void setMuted(bool muted);
+    int outputHeight() const { return outputHeight_; }
+    void setOutputHeight(int height);
     QString errorString() const { return error_; }
     qulonglong decodedFrames() const { return decodedFrames_.load(); }
     Q_INVOKABLE void play();
@@ -51,6 +54,7 @@ signals:
     void statusChanged();
     void volumeChanged();
     void mutedChanged();
+    void outputHeightChanged();
     void errorChanged();
 private:
     bool ensurePlayer();
@@ -66,9 +70,13 @@ private:
     libvlc_instance_t *instance_ = nullptr;
     libvlc_media_player_t *player_ = nullptr;
     QTimer timer_;
+    QTimer outputRestartTimer_;
     QUrl source_;
     qint64 position_ = 0, duration_ = 0;
     bool playing_ = false, loading_ = false, seekable_ = false, muted_ = false;
+    int outputHeight_ = 480;
+    bool outputRestartPending_ = false, outputRestartPaused_ = false;
+    qint64 outputRestartPosition_ = 0;
     qreal volume_ = 0.8;
     QString error_;
     QMutex frameMutex_;

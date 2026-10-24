@@ -24,6 +24,8 @@ Item {
     implicitWidth: 184; implicitHeight: 184
     visible: switchedOn
     enabled: switchedOn && !!targetView && !targetView.loading && targetView.visible && !faulted
+    readonly property bool preparing: switchedOn && !!targetView && !faulted &&
+        (targetView.loading || pending || !trackingInstalled)
 
     // Do not clear pending on reset: an old request must finish or time out
     // before another can be issued, even across target switches.
@@ -41,7 +43,7 @@ Item {
         if (timedOut) { faulted = true; stop() }
     }
     function install() {
-        if (!targetView || targetView.loading || trackingInstalled || pending) return
+        if (!switchedOn || !targetView || targetView.loading || trackingInstalled || pending) return
         pending = true
         const request = ++requestToken
         const document = documentToken
@@ -92,7 +94,10 @@ Item {
         }
     }
     onTargetViewChanged: { stop(); invalidateDocument(); install() }
-    onSwitchedOnChanged: stop()
+    onSwitchedOnChanged: {
+        stop()
+        if (switchedOn) install()
+    }
     onVisibleChanged: if (!visible) stop()
     onEnabledChanged: if (!enabled) stop()
     Component.onCompleted: install()

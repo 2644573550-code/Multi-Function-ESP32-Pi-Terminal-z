@@ -26,6 +26,8 @@ private slots:
     }
     void functional() {
         VlcVideoItem item;
+        QCOMPARE(item.outputHeight(), 480);
+        item.setOutputHeight(600); QCOMPARE(item.outputHeight(), 480);
         item.setVolume(2); QCOMPARE(item.volume(), 1.0);
         item.setVolume(-1); QCOMPARE(item.volume(), 0.0);
         item.setVolume(std::numeric_limits<double>::quiet_NaN()); QCOMPARE(item.volume(), 0.0);
@@ -40,12 +42,36 @@ private slots:
         QVERIFY(qAbs(item.position() - paused) < 150);
         item.setPosition(3000);
         item.play();
+        QTRY_VERIFY_WITH_TIMEOUT(item.playing(), 5000);
         QTRY_VERIFY_WITH_TIMEOUT(item.position() >= 2800, 5000);
+        item.setPosition(2500);
+        QTRY_VERIFY_WITH_TIMEOUT(qAbs(item.position() - 2500) < 350, 3000);
+        item.setOutputHeight(720);
+        QCOMPARE(item.outputHeight(), 720);
+        QTRY_VERIFY_WITH_TIMEOUT(item.playing(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(qAbs(item.position() - 2500) < 500, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(item.decodedFrames() > 0, 5000);
+        item.setOutputHeight(1080);
+        QCOMPARE(item.outputHeight(), 1080);
+        QTRY_VERIFY_WITH_TIMEOUT(item.playing(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(qAbs(item.position() - 2500) < 500, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(item.decodedFrames() > 0, 5000);
+        item.setOutputHeight(480);
+        QTRY_VERIFY_WITH_TIMEOUT(item.playing(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(qAbs(item.position() - 2500) < 500, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(item.decodedFrames() > 0, 5000);
         item.setVolume(0.45); item.setMuted(false);
         QCOMPARE(item.volume(), 0.45); QVERIFY(!item.muted());
         item.setPosition(item.duration() - 250);
         QTRY_VERIFY_WITH_TIMEOUT(!item.playing(), 5000);
         QVERIFY(!item.loading());
+        QVERIFY(item.seekable());
+        QVERIFY(item.position() >= item.duration() - 750);
+        item.setPosition(1500);
+        QVERIFY(qAbs(item.position() - 1500) < 300);
+        item.play();
+        QTRY_VERIFY_WITH_TIMEOUT(item.playing(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(item.position() >= 1300, 3000);
         item.stop(); QVERIFY(!item.playing()); QCOMPARE(item.position(), qint64(0));
         item.play(); QTRY_VERIFY_WITH_TIMEOUT(item.playing(), 5000);
         item.setSource(QUrl::fromLocalFile(clip().toLocalFile() + ".missing"));

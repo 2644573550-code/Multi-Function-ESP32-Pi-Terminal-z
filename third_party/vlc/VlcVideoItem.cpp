@@ -17,6 +17,18 @@ VlcVideoItem::VlcVideoItem(QQuickItem *parent) : QQuickPaintedItem(parent) {
     setOpaquePainting(true);
     timer_.setInterval(33); // Bound scene updates; never enqueue one task per frame.
     connect(&timer_, &QTimer::timeout, this, &VlcVideoItem::refreshStatus);
+    outputRestartTimer_.setSingleShot(true);
+    connect(&outputRestartTimer_, &QTimer::timeout, this, [this] {
+        if (!outputRestartPending_) return;
+        outputRestartPending_ = false;
+        outputRestartPosition_ = 0;
+        if (outputRestartPaused_ && player_) {
+            libvlc_media_player_pause(player_);
+            playing_ = false;
+        }
+        outputRestartPaused_ = false;
+        emit statusChanged();
+    });
 }
 
 VlcVideoItem::~VlcVideoItem() {
@@ -32,11 +44,13 @@ VlcVideoItem::~VlcVideoItem() {
 
 bool VlcVideoItem::ensurePlayer() {
     if (player_) return true;
-    const char *args[] = {"--no-video-title-show", "--no-osd", "--quiet"};
-    instance_ = libvlc_new(3, args);
     if (!instance_) {
-        setError(QStringLiteral("VLC initialization failed; check VLC plugins/runtime."));
-        return false;
+        const char *args[] = {"--no-video-title-show", "--no-osd", "--quiet"};
+        instance_ = libvlc_new(3, args);
+        if (!instance_) {
+            setError(QStringLiteral("VLC initialization failed; check VLC plugins/runtime."));
+            return false;
+        }
     }
     player_ = libvlc_media_player_new(instance_);
     if (!player_) {
@@ -102,7 +116,25 @@ void VlcVideoItem::play() {
     playbackError_ = false;
     setError({});
     libvlc_media_t *current = libvlc_media_player_get_media(player_);
-    // setSource() clears the previously attached media; pause/resume retains it.
+    // VLC 3 does not reliably restart a media player left in Ended. Recreate
+    // the player and media, then seek after the new decoder reports seekable.
+    if (current && libvlc_media_player_get_state(player_) == libvlc_Ended) {
+        const qint64 resumeAt = duration_ > 0 && position_ >= duration_
+            ? 0 : qBound<qint64>(0, position_, duration_);
+        libvlc_media_release(current);
+        current = nullptr;
+        libvlc_media_player_stop(player_);
+        libvlc_media_player_release(player_);
+        player_ = nullptr;
+        if (!ensurePlayer()) return;
+        if (resumeAt > 0) {
+            outputRestartPending_ = true;
+            outputRestartPaused_ = false;
+            outputRestartPosition_ = resumeAt;
+            outputRestartTimer_.start(3000);
+        }
+    }
+    // setSource()/stop() clears the attached media; pause/resume retains it.
     if (!current) {
         const QByteArray encoded = source_.toEncoded();
         libvlc_media_t *media = libvlc_media_new_location(instance_, encoded.constData());
@@ -130,19 +162,36 @@ void VlcVideoItem::pause() {
 
 void VlcVideoItem::stop() {
     timer_.stop();
+    outputRestartTimer_.stop();
+    outputRestartPending_ = false;
     if (player_) {
         libvlc_media_player_stop(player_);
         libvlc_media_player_set_media(player_, nullptr);
     }
     playing_ = loading_ = seekable_ = false;
     position_ = 0;
+    decodedFrames_ = 0;
+    presentedFrames_ = 0;
+    {
+        QMutexLocker guard(&frameMutex_);
+        frame_ = QImage();
+    }
+    update();
     emit statusChanged();
 }
 
 void VlcVideoItem::setPosition(qint64 position) {
-    if (!player_ || !seekable_) return;
-    libvlc_media_player_set_time(player_, qBound<qint64>(0, position, duration_));
-    refreshStatus();
+    if (!player_ || position < 0) return;
+    const auto state = libvlc_media_player_get_state(player_);
+    const bool ended = state == libvlc_Ended;
+    if (!seekable_ && !ended) return;
+    const qint64 target = qBound<qint64>(0, position, duration_);
+    libvlc_media_player_set_time(player_, target);
+    position_ = target;
+    // VLC can keep reporting Ended after a successful seek. Reading status
+    // immediately would replace the requested position with the end position.
+    if (ended) emit statusChanged();
+    else refreshStatus();
 }
 
 void VlcVideoItem::setVolume(qreal volume) {
@@ -161,6 +210,40 @@ void VlcVideoItem::setMuted(bool muted) {
     emit mutedChanged();
 }
 
+void VlcVideoItem::setOutputHeight(int height) {
+    if (height != 480 && height != 720 && height != 1080) return;
+    if (outputHeight_ == height) return;
+
+    const auto state = player_ ? libvlc_media_player_get_state(player_) : libvlc_NothingSpecial;
+    const bool restart = state == libvlc_Playing || state == libvlc_Paused ||
+                         state == libvlc_Opening || state == libvlc_Buffering;
+    const bool wasPaused = state == libvlc_Paused;
+    const qint64 resumePosition = seekable_ ? position_ : 0;
+
+    outputHeight_ = height;
+    emit outputHeightChanged();
+    if (!restart) {
+        // A stopped/ended item will use this output cap on its next play.
+        if (state == libvlc_Ended) stop();
+        return;
+    }
+
+    stop();
+    if (player_) {
+        // Stopping and reusing a VLC player may leave its vmem output pipeline
+        // in the old negotiated format. Releasing it guarantees the selected
+        // output cap is negotiated from scratch.
+        libvlc_media_player_release(player_);
+        player_ = nullptr;
+    }
+    if (!ensurePlayer()) return;
+    outputRestartPending_ = true;
+    outputRestartPaused_ = wasPaused;
+    outputRestartPosition_ = resumePosition;
+    play();
+    outputRestartTimer_.start(3000);
+}
+
 void VlcVideoItem::applyAudio() {
     if (!player_) return;
     libvlc_audio_set_volume(player_, qRound(volume_ * 100));
@@ -173,9 +256,29 @@ void VlcVideoItem::refreshStatus() {
     const bool wasPlaying = playing_;
     playing_ = state == libvlc_Playing;
     loading_ = state == libvlc_Opening || state == libvlc_Buffering;
-    position_ = qMax<qint64>(0, libvlc_media_player_get_time(player_));
     duration_ = qMax<qint64>(0, libvlc_media_player_get_length(player_));
-    seekable_ = libvlc_media_player_is_seekable(player_) != 0;
+    if (state == libvlc_Ended) {
+        if (duration_ > 0) position_ = duration_;
+        // Keep the last in-playback seekability result while VLC is Ended.
+    } else {
+        position_ = qMax<qint64>(0, libvlc_media_player_get_time(player_));
+        seekable_ = libvlc_media_player_is_seekable(player_) != 0;
+    }
+    if (outputRestartPending_ && state == libvlc_Playing &&
+        (outputRestartPosition_ <= 0 || (seekable_ && duration_ > 0))) {
+        if (outputRestartPosition_ > 0 && seekable_) {
+            libvlc_media_player_set_time(player_, qBound<qint64>(0, outputRestartPosition_, duration_));
+            position_ = qBound<qint64>(0, outputRestartPosition_, duration_);
+        }
+        outputRestartPending_ = false;
+        outputRestartTimer_.stop();
+        if (outputRestartPaused_) {
+            libvlc_media_player_pause(player_);
+            playing_ = false;
+        }
+        outputRestartPosition_ = 0;
+        outputRestartPaused_ = false;
+    }
     if (playing_ && !wasPlaying) applyAudio();
     const auto frames = decodedFrames_.load();
     if (frames != presentedFrames_) { presentedFrames_ = frames; update(); }
@@ -194,8 +297,12 @@ unsigned VlcVideoItem::setup(void **opaque, char *chroma, unsigned *width,
                              unsigned *height, unsigned *pitches, unsigned *lines) {
     auto *self = static_cast<VlcVideoItem *>(*opaque);
     if (!*width || !*height) return 0;
-    // A portable CPU-copy path, capped at 720p to bound Pi memory/bandwidth.
-    const QSize size = QSize(int(*width), int(*height)).scaled(1280, 720, Qt::KeepAspectRatio);
+    // VLC RV32 frames are copied into Qt Quick memory; keep a user-selectable
+    // resolution cap so Raspberry Pi 3 users can trade detail for CPU/bandwidth.
+    const unsigned maxHeight = unsigned(self->outputHeight_);
+    const unsigned maxWidth = (maxHeight * 16U) / 9U;
+    const QSize size = QSize(int(*width), int(*height)).scaled(
+        int(maxWidth), int(maxHeight), Qt::KeepAspectRatio);
     *width = qMin(*width, unsigned(qMax(1, size.width())));
     *height = qMin(*height, unsigned(qMax(1, size.height())));
     pitches[0] = (*width * 4 + 31) & ~31U;

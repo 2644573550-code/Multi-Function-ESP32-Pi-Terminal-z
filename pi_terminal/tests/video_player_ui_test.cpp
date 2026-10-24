@@ -51,6 +51,35 @@ private slots:
         auto *backend = page->findChild<QQuickItem *>(QStringLiteral("vlcVideoOutput"));
         QVERIFY(backend);
         QVERIFY(!page->findChild<QObject *>(QStringLiteral("qtMultimediaVideoOutput")));
+        QCOMPARE(page->property("outputHeight").toInt(), 480);
+        QVERIFY(page->findChild<QObject *>(QStringLiteral("videoOutputFormatSelector")));
+        QVERIFY(page->findChild<QObject *>(QStringLiteral("videoOutputFormatSelectorFullscreen")));
+        auto *warningDialog = page->findChild<QObject *>(QStringLiteral("videoHighOutputWarning"));
+        QVERIFY(warningDialog);
+        auto *formatSelector = page->findChild<QObject *>(QStringLiteral("videoOutputFormatSelector"));
+        QVERIFY(formatSelector);
+        QCOMPARE(formatSelector->property("count").toInt(), 3);
+        QVERIFY(QMetaObject::invokeMethod(page, "chooseOutputHeight", Q_ARG(QVariant, QVariant(720))));
+        QCOMPARE(page->property("outputHeight").toInt(), 720);
+        QVERIFY(QMetaObject::invokeMethod(page, "chooseOutputHeight", Q_ARG(QVariant, QVariant(1080))));
+        QTRY_VERIFY(warningDialog->property("visible").toBool());
+        QCOMPARE(warningDialog->property("x").toInt(), (window.width() - warningDialog->property("width").toInt()) / 2);
+        QCOMPARE(warningDialog->property("y").toInt(), (window.height() - warningDialog->property("height").toInt()) / 2);
+        QCOMPARE(page->property("outputHeight").toInt(), 720); // High mode waits for explicit confirmation.
+        auto *cancel = page->findChild<QQuickItem *>(QStringLiteral("videoHighOutputCancel"));
+        QVERIFY(cancel);
+        QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier,
+            cancel->mapToScene(QPointF(cancel->width()/2, cancel->height()/2)).toPoint());
+        QTRY_VERIFY(!warningDialog->property("visible").toBool());
+        QCOMPARE(page->property("outputHeight").toInt(), 720);
+        QVERIFY(QMetaObject::invokeMethod(page, "chooseOutputHeight", Q_ARG(QVariant, QVariant(1080))));
+        QTRY_VERIFY(warningDialog->property("visible").toBool());
+        auto *confirm = page->findChild<QQuickItem *>(QStringLiteral("videoHighOutputConfirm"));
+        QVERIFY(confirm);
+        QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier,
+            confirm->mapToScene(QPointF(confirm->width()/2, confirm->height()/2)).toPoint());
+        QTRY_VERIFY(!warningDialog->property("visible").toBool());
+        QCOMPARE(page->property("outputHeight").toInt(), 1080);
         page->setProperty("pageIndex", 1);
         QTest::qWait(50);
         QVERIFY(backend->width() > 0 && backend->height() > 0);
@@ -58,6 +87,7 @@ private slots:
         page->setProperty("volume", 0.5); page->setProperty("muted", true);
         QCOMPARE(backend->property("volume").toDouble(), 0.5);
         QVERIFY(backend->property("muted").toBool());
+        QCOMPARE(backend->property("outputHeight").toInt(), 1080);
         tools.gain = 0.5; emit tools.gainChanged();
         QTRY_VERIFY(qAbs(backend->property("volume").toDouble() - 0.25) < 0.01);
         QVERIFY(QMetaObject::invokeMethod(page, "pauseMedia"));

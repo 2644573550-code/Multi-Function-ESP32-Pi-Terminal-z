@@ -35,6 +35,7 @@ Item {
     property int pendingSourceIndex: -1
     property string pendingSourceLabel: ""
     property bool fullscreen: false
+    property bool previousWindowMaximized: false
     property bool controlsVisible: true
     property point lastMouse: Qt.point(-1, -1)
 
@@ -83,6 +84,15 @@ Item {
 
     function setFullscreen(value) {
         if (fullscreen === value) return
+        if (!hostWindow) return
+        if (value) {
+            previousWindowMaximized = hostWindow.visibility === Window.Maximized
+            hostWindow.showFullScreen()
+        } else if (previousWindowMaximized) {
+            hostWindow.showMaximized()
+        } else {
+            hostWindow.showNormal()
+        }
         fullscreen = value
         controlsVisible = true
         if (value) controlsTimer.restart(); else controlsTimer.stop()

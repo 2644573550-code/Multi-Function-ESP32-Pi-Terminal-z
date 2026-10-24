@@ -31,6 +31,15 @@ Item {
     property bool muted: false
     property bool fullscreen: false
     property real volume: 0.8
+    property int outputHeight: 480
+    readonly property var outputFormats: [
+        {height: 480, label: "480p", detail: I18n.t("省资源")},
+        {height: 720, label: "720p", detail: I18n.t("平衡")},
+        {height: 1080, label: "1080p", detail: I18n.t("高规格")}
+    ]
+    readonly property real outputFormatMenuWidth:
+        Math.max(150 * root.uiScale,
+                 ( ("1080p · " + I18n.t("高规格")).length * Theme.body * 0.72) + Theme.gap * 2)
     property real announcementGain: systemTools.mediaGain
     Behavior on announcementGain { NumberAnimation { duration: 120 } }
     property bool fullscreenControlsVisible: true
@@ -104,6 +113,22 @@ Item {
         const seconds = Math.max(0, Math.floor(ms / 1000))
         return Math.floor(seconds / 60).toString().padStart(2, "0") + ":" + (seconds % 60).toString().padStart(2, "0")
     }
+    function chooseOutputHeight(height) {
+        if (height === 1080) {
+            Qt.callLater(function() { highOutputWarning.open() })
+            return
+        }
+        outputHeight = height
+    }
+    function outputFormatIndex(height) {
+        for (let i = 0; i < outputFormats.length; ++i)
+            if (outputFormats[i].height === height) return i
+        return 0
+    }
+    onOutputHeightChanged: {
+        if (outputFormatCombo) outputFormatCombo.currentIndex = outputFormatIndex(outputHeight)
+        if (outputFormatComboFullscreen) outputFormatComboFullscreen.currentIndex = outputFormatIndex(outputHeight)
+    }
 
     Component.onCompleted: refresh()
     onActiveChanged: {
@@ -120,6 +145,54 @@ Item {
         fullscreenControlsVisible = true
         if (fullscreen) fullscreenControlsTimer.restart()
         else fullscreenControlsTimer.stop()
+    }
+    Popup {
+        id: highOutputWarning
+        objectName: "videoHighOutputWarning"
+        parent: Overlay.overlay
+        width: Math.min(440 * root.uiScale, parent.width - Theme.gap * 2)
+        height: Math.min(300 * root.uiScale, parent.height - Theme.gap * 2)
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape
+        background: Rectangle { color: Theme.surfaceContainerHigh; radius: Theme.shapeLarge; border.color: Theme.outlineVariant; border.width: 1 }
+        contentItem: ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: Theme.gap
+            spacing: Theme.gap / 2
+            CarText { text: I18n.t("高规格输出提醒"); heading: true; Layout.fillWidth: true }
+            Rectangle { Layout.fillWidth: true; height: 1; color: Theme.outlineVariant }
+            CarText {
+                text: I18n.t("1080p 会增加 Pi 3B 的视频处理、内存带宽和帧拷贝负载，可能掉帧或发热。建议优先使用 480p 或 720p。仍要切换到 1080p 吗？")
+                fontPixelSize: 16 * root.uiScale
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button {
+                    objectName: "videoHighOutputCancel"
+                    text: I18n.t("取消")
+                    implicitHeight: Math.max(48, Theme.hit)
+                    onClicked: {
+                        outputFormatCombo.currentIndex = root.outputFormatIndex(root.outputHeight)
+                        outputFormatComboFullscreen.currentIndex = root.outputFormatIndex(root.outputHeight)
+                        highOutputWarning.close()
+                    }
+                }
+                Button {
+                    objectName: "videoHighOutputConfirm"
+                    text: I18n.t("切换到1080p")
+                    highlighted: true
+                    implicitHeight: Math.max(48, Theme.hit)
+                    onClicked: { root.outputHeight = 1080; highOutputWarning.close() }
+                }
+            }
+        }
     }
     SequentialAnimation {
         id: pageTransition
@@ -222,6 +295,7 @@ Item {
                     anchors.fill: parent
                     muted: root.muted
                     volume: root.volume * root.announcementGain
+                    outputHeight: root.outputHeight
                     onStatusChanged: root.playing = playing
                     onErrorChanged: root.playbackError = errorString
                 }
@@ -259,6 +333,40 @@ Item {
                         height: implicitHeight
                         spacing: root.compact ? 2 : Theme.gap / 2
                         CarText { text: root.selectedFile; heading: true; Layout.fillWidth: true; maximumLineCount: 1; elide: Text.ElideMiddle }
+                        ComboBox {
+                            id: outputFormatComboFullscreen
+                            objectName: "videoOutputFormatSelectorFullscreen"
+                            Layout.preferredWidth: Math.min(root.outputFormatMenuWidth, root.width * 0.42)
+                            Layout.minimumWidth: Math.min(Theme.hit, root.width * 0.28)
+                            implicitHeight: Math.max(48, Theme.hit)
+                            font.pixelSize: Math.max(16, 16 * root.uiScale)
+                            model: root.outputFormats
+                            textRole: "label"
+                            currentIndex: root.outputFormatIndex(root.outputHeight)
+                            Accessible.name: I18n.t("视频输出规格")
+                            displayText: root.outputHeight + "p"
+                            delegate: ItemDelegate {
+                                required property var modelData
+                                width: ListView.view.width
+                                height: Math.max(Theme.hit, 56 * root.uiScale)
+                                leftPadding: Theme.gap
+                                rightPadding: Theme.gap
+                                contentItem: RowLayout {
+                                    spacing: Theme.gap / 2
+                                    ColumnLayout {
+                                        spacing: 1
+                                        CarText { text: modelData.label; fontPixelSize: 16 * root.uiScale; heading: true; Layout.fillWidth: true }
+                                        CarText { text: modelData.detail; fontPixelSize: 12 * root.uiScale; subdued: true; maximumLineCount: 1; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    }
+                                    MaterialIcon { visible: modelData.height === root.outputHeight; name: "check"; Layout.preferredWidth: 20; Layout.preferredHeight: 20 }
+                                }
+                            }
+                            onActivated: function(index) {
+                                root.chooseOutputHeight(root.outputFormats[index].height)
+                                Qt.callLater(function() { outputFormatComboFullscreen.currentIndex = root.outputFormatIndex(root.outputHeight) })
+                            }
+                            popup.width: Math.min(Math.max(outputFormatMenuWidth + Theme.gap * 2, 220), Math.max(220, root.width - Theme.gap * 2))
+                        }
                         RowLayout {
                             Layout.fillWidth: true; spacing: Theme.gap / 2
                             CarText { text: root.formatTime(mediaPlayer.position); subdued: true }
@@ -293,6 +401,40 @@ Item {
                             Layout.fillWidth: true; spacing: 2 * root.uiScale
                             CarText { text: root.selectedFile; heading: true; Layout.fillWidth: true; maximumLineCount: 1; elide: Text.ElideMiddle }
                             CarText { text: root.playing ? I18n.t("正在播放") : I18n.t("已暂停"); subdued: true; Layout.fillWidth: true }
+                        }
+                        ComboBox {
+                            id: outputFormatCombo
+                            objectName: "videoOutputFormatSelector"
+                            Layout.preferredWidth: Math.min(root.outputFormatMenuWidth, root.width * 0.42)
+                            Layout.minimumWidth: Math.min(Theme.hit, root.width * 0.28)
+                            implicitHeight: Math.max(48, Theme.hit)
+                            font.pixelSize: Math.max(16, 16 * root.uiScale)
+                            model: root.outputFormats
+                            textRole: "label"
+                            currentIndex: root.outputFormatIndex(root.outputHeight)
+                            Accessible.name: I18n.t("视频输出规格")
+                            displayText: root.outputHeight + "p"
+                            delegate: ItemDelegate {
+                                required property var modelData
+                                width: ListView.view.width
+                                height: Math.max(Theme.hit, 56 * root.uiScale)
+                                leftPadding: Theme.gap
+                                rightPadding: Theme.gap
+                                contentItem: RowLayout {
+                                    spacing: Theme.gap / 2
+                                    ColumnLayout {
+                                        spacing: 1
+                                        CarText { text: modelData.label; fontPixelSize: 16 * root.uiScale; heading: true; Layout.fillWidth: true }
+                                        CarText { text: modelData.detail; fontPixelSize: 12 * root.uiScale; subdued: true; maximumLineCount: 1; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    }
+                                    MaterialIcon { visible: modelData.height === root.outputHeight; name: "check"; Layout.preferredWidth: 20; Layout.preferredHeight: 20 }
+                                }
+                            }
+                            onActivated: function(index) {
+                                root.chooseOutputHeight(root.outputFormats[index].height)
+                                Qt.callLater(function() { outputFormatCombo.currentIndex = root.outputFormatIndex(root.outputHeight) })
+                            }
+                            popup.width: Math.min(Math.max(outputFormatMenuWidth + Theme.gap * 2, 220), Math.max(220, root.width - Theme.gap * 2))
                         }
                     }
                     RowLayout {

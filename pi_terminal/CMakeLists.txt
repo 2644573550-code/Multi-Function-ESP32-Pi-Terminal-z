@@ -167,6 +167,9 @@ set(UI_QML_FILES qml/Main.qml qml/Theme.qml qml/I18n.qml qml/GlassSurface.qml qm
 list(APPEND UI_QML_FILES qml/MusicModeButton.qml)
 list(APPEND UI_QML_FILES qml/BrowserJoystick.qml)
 set_source_files_properties(qml/BrowserScroll.js PROPERTIES QT_RESOURCE_ALIAS BrowserScroll.js)
+list(APPEND UI_QML_FILES qml/BrowserWheel.qml qml/DirectionWheel.qml)
+set_source_files_properties(qml/ContextScroll.js PROPERTIES QT_RESOURCE_ALIAS ContextScroll.js)
+set_source_files_properties(qml/WheelStrings.js PROPERTIES QT_RESOURCE_ALIAS WheelStrings.js)
 list(APPEND UI_QML_FILES qml/MusicText.qml)
 list(APPEND UI_QML_FILES qml/PictureViewer.qml qml/FileThumbnail.qml)
 list(APPEND UI_QML_FILES qml/QuickToggle.qml qml/EditorToolbar.qml)
@@ -186,7 +189,8 @@ set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/I18n.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(terminal_ui URI OrangePiTerminal NO_PLUGIN
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/OrangePiTerminal"
-    RESOURCE_PREFIX /qt/qml VERSION 1.0 QML_FILES ${UI_QML_FILES} qml/BrowserScroll.js)
+    RESOURCE_PREFIX /qt/qml VERSION 1.0 QML_FILES ${UI_QML_FILES}
+        qml/BrowserScroll.js qml/ContextScroll.js qml/WheelStrings.js)
 file(GLOB MATERIAL_ICONS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/qml/icons/material/dark/*.svg" "${CMAKE_CURRENT_SOURCE_DIR}/qml/icons/material/light/*.svg")
 set_source_files_properties(assets/fonts/GoogleSans.ttf PROPERTIES QT_RESOURCE_ALIAS GoogleSans.ttf)
 set_source_files_properties(assets/fonts/OFL.txt PROPERTIES QT_RESOURCE_ALIAS OFL.txt)

@@ -36,10 +36,16 @@ Use `VLC_ROOT` or explicit target SDK paths if no target pkg-config is available
 
 The memory-callback renderer is independent of HWND/X11/NSView. This keeps QML
 controls, clipping and fullscreen overlays composited correctly on each platform.
-It is **not a zero-copy hardware-decoding path**. Frames are limited to 1280×720
-and UI presentation to about 30 Hz; one aligned decode buffer and one latest
-snapshot prevent unbounded queued frames. Input files retain their original aspect
-ratio. A Pi hardware performance run is mandatory before claiming 720p suitability.
+It is **not a zero-copy hardware-decoding path**. The video page offers 480p
+(default, lower load), 720p and 1080p output caps, selectable in the playback
+controls or fullscreen controls. Choosing a cap restarts the
+current file and attempts to restore its position and pause/play state. 1080p
+requires an explicit Pi 3B performance warning confirmation. The backend still
+limits UI presentation to about 30 Hz and keeps one aligned decode buffer plus
+one latest snapshot. Input files retain their original aspect ratio. Output
+resolution is not an input-stream bitrate selector, and reducing it does not
+guarantee that an upstream decoder avoids all high-resolution work. A Pi hardware
+performance run is required before claiming any cap is suitable for a particular source.
 
 The SDK/backend can also be built/tested independently of the terminal's Linux
 hardware integrations: `cmake -S third_party/vlc -B build/vlc -DBUILD_TESTING=ON`.

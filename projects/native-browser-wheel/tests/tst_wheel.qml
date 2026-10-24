@@ -34,6 +34,21 @@ TestCase {
     }
     function cleanup() { mouseRelease(controller.wheel,92,92); controller.stop() }
     function test_defaultOff() { controller.switchedOn = false; verify(!controller.visible); verify(!controller.enabled) }
+    function test_enabledWheelIsVisibleAndInteractive() {
+        verify(controller.switchedOn)
+        verify(controller.enabled)
+        verify(controller.visible)
+        verify(controller.wheel.visible)
+        verify(controller.wheel.width > 0 && controller.wheel.height > 0)
+    }
+    function test_preparingTracksPageScriptInjection() {
+        view.respond = false
+        controller.documentLoaded()
+        verify(controller.pending)
+        verify(controller.preparing)
+        view.callback(); view.callback = null
+        tryVerify(function() { return controller.trackingInstalled && !controller.preparing })
+    }
     function test_deadZone() { mousePress(controller.wheel,92,92); wait(60); compare(view.calls,0) }
     function test_dragRelease() {
         mousePress(controller.wheel,92,92); mouseMove(controller.wheel,92,160,20)

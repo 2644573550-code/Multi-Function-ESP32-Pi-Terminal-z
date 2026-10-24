@@ -3,6 +3,7 @@
 #include <QElapsedTimer>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJSEngine>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickWindow>
@@ -27,6 +28,27 @@ class BrowserContextTests : public QObject {
         return QJsonDocument::fromJson(json).array().at(0).toVariant();
     }
 private slots:
+    void qmlGeneratedPageScriptsAreValidJavaScript() {
+        QFile script(QStringLiteral(BROWSER_SCROLL_JS)); QVERIFY(script.open(QIODevice::ReadOnly));
+        QJSEngine moduleEngine;
+        const auto module = moduleEngine.evaluate(QString::fromUtf8(script.readAll()) +
+            "\n[installationScript(), scrollScript(12,-7)]");
+        QVERIFY2(!module.isError(), qPrintable(module.toString()));
+        const auto scripts = module.toVariant().toList();
+        QCOMPARE(scripts.size(), 2);
+        for (const auto &scriptValue : scripts) {
+            const auto source = scriptValue.toString();
+            QVERIFY(!source.contains(QStringLiteral("[code]")));
+            QJsonArray encoded;
+            encoded.append(source);
+            const auto args = QJsonDocument(encoded).toJson(QJsonDocument::Compact);
+            const auto stringLiteral = QString::fromUtf8(args.mid(1, args.size() - 2));
+            QJSEngine pageEngine;
+            const auto syntax = pageEngine.evaluate(QStringLiteral("new Function(%1)").arg(stringLiteral));
+            QVERIFY2(!syntax.isError(), qPrintable(syntax.toString()));
+        }
+    }
+
     void initTestCase() {
         QQmlComponent component(&engine_);
         component.setData(R"(
