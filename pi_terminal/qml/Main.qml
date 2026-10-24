@@ -464,7 +464,12 @@ ApplicationWindow {
     }
     property bool exitPending:false
     readonly property bool permissionPending:trustDialog.visible
-    property var activeBrowser: browserRepeater.itemAt(browserTabs.currentIndex)
+    property int browserViewGeneration: 0
+    // Repeater.itemAt() is a method, so bind it to an explicit revision bumped
+    // whenever delegates are added/removed or the active tab changes.
+    property var activeBrowser: browserViewGeneration >= 0
+        ? browserRepeater.itemAt(browserTabs.currentIndex) : null
+    property bool browserWheelEnabled: false
     readonly property string defaultBrowserUrl: "https://baidu.com"
     Timer { interval: 1000; running: true; repeat: true; onTriggered: clockText = Qt.formatTime(new Date(), "hh:mm") }
     function builtin(page) {
@@ -1005,8 +1010,16 @@ ApplicationWindow {
         }
         if(section===6 && calculatorGrid.height>calculatorFlick.height+1)fit=false
         const browserView=section===2?browserRepeater.itemAt(browserTabs.currentIndex):null
+        const browserWheelButton=section===2?findControl(win.contentItem,"browserWheelToggle"):null
+        const browserWheelItem=section===2?findControl(win.contentItem,"browserWheel"):null
         return JSON.stringify({section:section,maximized:appMaximized,calculatorKeyCount:count,calculatorFits:fit,
-            browserHeight:browserView?browserView.height:0,browserWidth:browserView?browserView.width:0})
+            browserHeight:browserView?browserView.height:0,browserWidth:browserView?browserView.width:0,
+            activeBrowserReady:!!activeBrowser,browserViewGeneration:browserViewGeneration,phase:phase,
+            browserWheelToggleEnabled:browserWheelButton?browserWheelButton.enabled:false,
+            browserWheelRequested:browserWheelEnabled,
+            browserWheelVisible:browserWheelItem?browserWheelItem.visible:false,
+            browserWheelEnabled:browserWheelItem?browserWheelItem.enabled:false,
+            browserWheelSize:browserWheelItem?{width:browserWheelItem.width,height:browserWheelItem.height}:null})
     }
     function auditScale(value) {textScale=value}
     function auditDialog(kind) {
@@ -1327,6 +1340,7 @@ ApplicationWindow {
                     IconButton {visible:!narrow;iconName:"arrow_back";label:I18n.t("后退");enabled:activeBrowser && activeBrowser.canGoBack;onClicked:activeBrowser.goBack()}
                     IconButton {visible:!narrow;iconName:"arrow_forward";label:I18n.t("前进");enabled:activeBrowser && activeBrowser.canGoForward;onClicked:activeBrowser.goForward()}
                     IconButton {iconName:activeBrowser && activeBrowser.loading?"close":"refresh";label:activeBrowser && activeBrowser.loading?I18n.t("停止加载"):I18n.t("刷新");enabled:!!activeBrowser;onClicked:{if(activeBrowser.loading)activeBrowser.stop();else activeBrowser.reload()}}
+                    IconButton {objectName:"browserWheelToggle";iconName:"gamepad";label:I18n.t("网页方向轮盘");Accessible.name:I18n.t(win.browserWheelEnabled?"关闭网页方向轮盘":"打开网页方向轮盘");filled:win.browserWheelEnabled;enabled:!!win.activeBrowser;onClicked:win.browserWheelEnabled=!win.browserWheelEnabled}
                     CarField {id:location;objectName:"browserAddressField";Layout.fillWidth:true;Layout.minimumWidth:0;implicitWidth:0
                         text:activeBrowser?activeBrowser.url.toString():defaultBrowserUrl;placeholderText:"";onAccepted:navigateBrowser(text)}
                     IconButton {iconName:"arrow_forward";label:I18n.t("前往");onClicked:navigateBrowser(location.text)}
@@ -1463,10 +1477,22 @@ ApplicationWindow {
                     }
                     IconButton {iconName:"close";label:I18n.t("关闭当前标签页");enabled:tabs.count>1;onClicked:{let i=browserTabs.currentIndex;browserTabs.currentIndex=0;tabs.remove(i)}}
                 }
+                ProgressBar {
+                    objectName:"browserWheelInjectionProgress"
+                    Layout.fillWidth:true
+                    Layout.minimumHeight:4 * uiScale
+                    Layout.preferredHeight:4 * uiScale
+                    Layout.maximumHeight:4 * uiScale
+                    visible:browserWheel.preparing
+                    indeterminate:!!win.activeBrowser && (win.activeBrowser.loading || browserWheel.pending)
+                    value:browserWheel.trackingInstalled ? 1 : 0
+                    Accessible.name:I18n.t("正在准备网页滚动轮盘")
+                }
                 QtObject {
                     id:browserTabs
                     property int currentIndex:0
                     onCurrentIndexChanged: {
+                        win.browserViewGeneration++
                         if (currentIndex>=0 && currentIndex<tabs.count) {
                             location.text=tabs.get(currentIndex).address
                             browserStatus=""
@@ -1477,7 +1503,11 @@ ApplicationWindow {
                 StackLayout {
                     Layout.fillWidth:true; Layout.fillHeight:true;Layout.minimumHeight:0
                     currentIndex:browserTabs.currentIndex
-                    Repeater { id:browserRepeater; model:tabs
+                    Repeater {
+                        id:browserRepeater
+                        model:tabs
+                        onItemAdded:function(index,item) { win.browserViewGeneration++ }
+                        onItemRemoved:function(index,item) { win.browserViewGeneration++ }
                         WebEngineView {
                             id:browserWebViewItem
                             objectName:"browserWebView"
@@ -1550,8 +1580,9 @@ ApplicationWindow {
                                 }
                                 if(browserTestRunning && request.status===WebEngineView.LoadSucceededStatus && title==="Local terminal test")
                                     runJavaScript("21 * 2",function(value){browserTestPassed=value===42 && tabs.count===2;browserTestRunning=false})
-                                if(request.status===WebEngineView.LoadSucceededStatus)
+                                if(request.status===WebEngineView.LoadSucceededStatus) {
                                     runJavaScript("document.documentElement.style.touchAction='pan-x pan-y'; if(document.body) document.body.style.touchAction='pan-x pan-y';")
+                                }
                             }
                             onPdfPrintingFinished:function(filePath,success) {
                                 if(index===browserTabs.currentIndex)browserStatus=success?I18n.t("PDF 已保存：")+filePath:I18n.t("PDF 保存失败")
@@ -1559,6 +1590,21 @@ ApplicationWindow {
                         }
                     }
                 }
+            }
+            BrowserWheel {
+                id: browserWheel
+                objectName:"browserWheel"
+                parent: browserFlick
+                width: 184 * uiScale
+                height: width
+                readonly property point pageOrigin: targetView ? targetView.mapToItem(browserFlick,0,0) : Qt.point(0,0)
+                x: pageOrigin.x + (targetView ? targetView.width : 0) - width - 16 * uiScale
+                y: pageOrigin.y + (targetView ? targetView.height : 0) - height - 16 * uiScale
+                targetView: win.activeBrowser
+                switchedOn: win.browserWheelEnabled && win.section===2 && browserFlick.visible
+                language: systemTools.uiLanguage
+                translate: function(text) { return I18n.t(text) }
+                z: 100
             }
         }
         Flickable {

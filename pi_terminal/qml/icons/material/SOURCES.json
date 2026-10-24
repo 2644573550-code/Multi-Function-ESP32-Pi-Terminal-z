@@ -211,6 +211,10 @@
     "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/hardware/keyboard/materialiconsround/24px.svg",
     "sha256": "ac956c3f6e837546ce0f863fd230cb374771d4603ea2be17bb2c7de2fc15eb7e"
   },
+  "gamepad": {
+    "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/hardware/gamepad/materialiconsround/24px.svg",
+    "sha256": "1fc18a9ecfb649474d3c6977b6747a128770d969c427e2199c22aeff20b32f53"
+  },
   "delete": {
     "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/action/delete/materialiconsround/24px.svg",
     "sha256": "2a678d7381d9ea99b67168a68465226e25303b3daa605c39ed609df331d878b2"

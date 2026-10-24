@@ -13,6 +13,8 @@ QtObject {
     }
     readonly property var words: ({
         "网络电视":"Internet TV", "央视":"CCTV", "地方省市":"Local channels", "其他":"Others", "直播":"Live",
+        "打开网页方向轮盘":"Open browser direction wheel", "关闭网页方向轮盘":"Close browser direction wheel",
+        "正在准备网页滚动轮盘":"Preparing page scroll wheel",
         "搜索节目":"Search channels", "没有匹配的节目":"No matching channel", "暂无节目":"No channels",
         "清除搜索":"Clear search", "选择线路":"Choose stream", "切换到高码率线路？":"Switch to a higher bitrate?",
         "高码率占用更多带宽，树莓派可能因此卡顿。确定切换到 ":"Higher bitrate needs more bandwidth and may stutter on the Pi. Switch to ",
@@ -151,6 +153,14 @@ QtObject {
         "请先在网易云开放平台提供或配置应用凭据、获批接口和设备参数。登录、搜索、歌单与播放会通过官方 API 完成；不会读取浏览器 Cookie。":"Configure your app credentials, approved endpoints and device parameters from NetEase Open Platform. Sign-in, search, playlists and playback will use the official API; browser cookies are never accessed.",
         "API 配置待连接":"API configuration required", "选择一首歌曲开始播放":"Choose a song to play", "返回":"Back",
         "视频库":"Video library", "选择要播放的视频":"Choose a video to play", "返回视频库":"Back to video library", "退出全屏":"Exit fullscreen",
+        "视频输出规格":"Video output", "选择视频输出规格":"Choose video output resolution",
+        "省资源":"Lower load", "平衡":"Balanced", "高规格":"High resolution",
+        "切换规格会重新载入当前视频，并尝试恢复原进度。":"Changing resolution reloads the video and attempts to restore its playback position.",
+        "480p（省资源）":"480p (lower load)", "720p（平衡）":"720p (balanced)", "1080p（高规格）":"1080p (high resolution)",
+        "高规格输出提醒":"High-resolution warning",
+        "切换到1080p":"Switch to 1080p",
+        "1080p 会增加 Pi 3B 的视频处理、内存带宽和帧拷贝负载，可能掉帧或发热。建议优先使用 480p 或 720p。仍要切换到 1080p 吗？":"1080p increases video processing, memory-bandwidth and frame-copy load on the Pi 3B; dropped frames or heat are possible. 480p or 720p is recommended. Continue with 1080p?",
+        "切换规格会重新载入当前视频，并尝试恢复原进度。":"Changing resolution reloads the video and attempts to restore its playback position.",
         "正在打开视频":"Opening video", "正在返回视频库":"Returning to video library",
         "文件夹":"Folder", "正在载入视频":"Loading video", "正在播放":"Playing", "已暂停":"Paused", "停止":"Stop", "全屏播放":"Fullscreen playback",
         "此目录没有可播放视频":"No supported videos in this folder", "从左侧选择视频开始播放":"Choose a video on the left to start playback",

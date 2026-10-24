@@ -1,0 +1,16 @@
+<!doctype html><meta charset="utf-8"><title>本地滚动验收</title>
+<style>body{font:24px sans-serif;margin:24px}#inner{width:320px;height:180px;overflow:auto}#content{width:1200px;height:1200px;background:linear-gradient(#e5f0ff,#8cb4ef)}#tail{height:1800px}</style>
+<h1>原生方向轮盘测试页</h1><p>先触摸或聚焦下方区域，再使用 QML 轮盘。</p>
+<div id="inner" tabindex="0"><div id="content">嵌套滚动区</div></div>
+<textarea style="height:60px" id="text">第一行
+第二行
+第三行
+第四行
+第五行
+第六行</textarea><div id="tail">页面底部</div>
+<div id="shadow-host"></div>
+<script>
+const host=document.getElementById('shadow-host');
+const shadow=host.attachShadow({mode:'open'});
+shadow.innerHTML='<div id="shadow-scroll" tabindex="0" style="width:280px;height:120px;overflow:auto"><div id="shadow-content" style="height:600px">开放 Shadow DOM 滚动区域</div></div>';
+</script>
