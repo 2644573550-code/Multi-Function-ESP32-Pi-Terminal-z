@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
-import QtMultimedia
+import Terminal.Native 1.0
 
 Item {
     id: root
@@ -142,17 +142,6 @@ Item {
         ScriptAction { script: { transitionPanel.visible = false; transitionPanel.x = root.width } }
     }
 
-    MediaPlayer {
-        id: mediaPlayer
-        source: ""
-        videoOutput: videoSurface
-        audioOutput: AudioOutput { objectName:"videoAudioOutput"; muted: root.muted; volume: root.volume * root.announcementGain }
-        onPlaybackStateChanged: root.playing = playbackState === MediaPlayer.PlayingState
-        onErrorOccurred: function(error, errorString) {
-            if (error !== MediaPlayer.NoError) root.playbackError = errorString
-        }
-    }
-
     StackLayout {
         anchors.fill: parent
         currentIndex: root.pageIndex
@@ -227,11 +216,14 @@ Item {
             Rectangle {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 color: "#080a0e"
-                VideoOutput {
-                    id: videoSurface
-                    objectName: "qtMultimediaVideoOutput"
+                VlcVideoItem {
+                    id: mediaPlayer
+                    objectName: "vlcVideoOutput"
                     anchors.fill: parent
-                    fillMode: VideoOutput.PreserveAspectFit
+                    muted: root.muted
+                    volume: root.volume * root.announcementGain
+                    onStatusChanged: root.playing = playing
+                    onErrorChanged: root.playbackError = errorString
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -244,7 +236,7 @@ Item {
                 }
                 ColumnLayout {
                     anchors.centerIn: parent; spacing: Theme.gap
-                    visible: mediaPlayer.mediaStatus === MediaPlayer.LoadingMedia || mediaPlayer.mediaStatus === MediaPlayer.BufferingMedia
+                    visible: mediaPlayer.loading
                     BusyIndicator { running: visible; Layout.alignment: Qt.AlignHCenter }
                     CarText { text: I18n.t("正在载入视频"); subdued: true; Layout.alignment: Qt.AlignHCenter }
                 }

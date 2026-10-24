@@ -14,6 +14,8 @@ target_include_directories(pi_module_sdk INTERFACE $<BUILD_INTERFACE:${CMAKE_CUR
 target_compile_features(pi_module_sdk INTERFACE cxx_std_17)
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Network Bluetooth Qml Quick QuickControls2 SerialPort OpenGL WebEngineQuick WebEngineWidgets WebEngineCore QuickWidgets WebChannel Concurrent Svg PrintSupport Multimedia TextToSpeech StateMachine)
 find_package(Qt6 6.4 REQUIRED COMPONENTS ShaderTools)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/vlc
+                 ${CMAKE_CURRENT_BINARY_DIR}/third_party/vlc)
 set(VIPER_EMBEDDED ON CACHE BOOL "Build the Viper browser engine as embedded terminal components" FORCE)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/Viper-Browser
                  ${CMAKE_CURRENT_BINARY_DIR}/third_party/Viper-Browser)
@@ -111,7 +113,7 @@ qt_add_library(terminal_ui SHARED
     src/ui/GstVideoItem.cpp src/ui/GstVideoItem.h)
 target_compile_definitions(terminal_ui PRIVATE ARKPETS_CONVERTER_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/tools/arkpets")
 target_include_directories(terminal_ui PUBLIC src)
-target_link_libraries(terminal_ui PUBLIC Qt6::Quick Qt6::Qml PRIVATE Qt6::QuickControls2 Qt6::OpenGL)
+target_link_libraries(terminal_ui PUBLIC Qt6::Quick Qt6::Qml PRIVATE terminal_vlc Qt6::QuickControls2 Qt6::OpenGL)
 
 # ── 自研 GStreamer 播放内核 ──
 # 开发头文件随仓库提供（third_party/gst/<arch>，由 tools/fetch_gst_headers.sh 生成），
@@ -163,6 +165,8 @@ set_target_properties(orange_pi_terminal PROPERTIES
     BUILD_RPATH_USE_ORIGIN TRUE INSTALL_RPATH "$ORIGIN/${TERMINAL_LIBRARY_FROM_BIN}")
 set(UI_QML_FILES qml/Main.qml qml/Theme.qml qml/I18n.qml qml/GlassSurface.qml qml/CarText.qml qml/CarButton.qml qml/CarField.qml qml/MaterialIcon.qml qml/IconButton.qml qml/AppIcon.qml qml/PaintToolButton.qml qml/AppLauncher.qml qml/ApplicationDrawer.qml qml/StatusDock.qml qml/SettingsGroup.qml qml/FloatingKeyboard.qml qml/MusicPlayer.qml qml/VideoPlayer.qml)
 list(APPEND UI_QML_FILES qml/MusicModeButton.qml)
+list(APPEND UI_QML_FILES qml/BrowserJoystick.qml)
+set_source_files_properties(qml/BrowserScroll.js PROPERTIES QT_RESOURCE_ALIAS BrowserScroll.js)
 list(APPEND UI_QML_FILES qml/MusicText.qml)
 list(APPEND UI_QML_FILES qml/PictureViewer.qml qml/FileThumbnail.qml)
 list(APPEND UI_QML_FILES qml/QuickToggle.qml qml/EditorToolbar.qml)
@@ -182,7 +186,7 @@ set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(qml/I18n.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(terminal_ui URI OrangePiTerminal NO_PLUGIN
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/OrangePiTerminal"
-    RESOURCE_PREFIX /qt/qml VERSION 1.0 QML_FILES ${UI_QML_FILES})
+    RESOURCE_PREFIX /qt/qml VERSION 1.0 QML_FILES ${UI_QML_FILES} qml/BrowserScroll.js)
 file(GLOB MATERIAL_ICONS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/qml/icons/material/dark/*.svg" "${CMAKE_CURRENT_SOURCE_DIR}/qml/icons/material/light/*.svg")
 set_source_files_properties(assets/fonts/GoogleSans.ttf PROPERTIES QT_RESOURCE_ALIAS GoogleSans.ttf)
 set_source_files_properties(assets/fonts/OFL.txt PROPERTIES QT_RESOURCE_ALIAS OFL.txt)
@@ -258,6 +262,11 @@ if(BUILD_TESTING)
     add_executable(startup_splash_test tests/startup_splash_test.cpp)
     target_link_libraries(startup_splash_test PRIVATE terminal_ui Qt6::Test Qt6::QuickControls2 Qt6::Widgets)
     add_test(NAME startup_splash_lifecycle COMMAND startup_splash_test)
+    add_executable(video_player_ui_test tests/video_player_ui_test.cpp)
+    target_link_libraries(video_player_ui_test PRIVATE terminal_ui Qt6::Test Qt6::QuickControls2)
+    add_test(NAME media_video_player_interface COMMAND video_player_ui_test)
+    set_tests_properties(media_video_player_interface PROPERTIES LABELS "interface"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software" TIMEOUT 30)
     set_tests_properties(startup_splash_lifecycle PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
     target_link_libraries(plugin_scale_test PRIVATE terminal_core Qt6::Test Qt6::Qml Qt6::Quick Qt6::Widgets)
     target_compile_definitions(plugin_scale_test PRIVATE PLUGIN_QML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/modules/example/qml/ExamplePage.qml")
@@ -306,6 +315,9 @@ install(FILES config/environment.example DESTINATION share/orange-pi-terminal)
 install(FILES qml/icons/LICENSE qml/icons/NOTICE DESTINATION share/orange-pi-terminal/licenses/material-icons)
 install(FILES ../third_party/Viper-Browser/LICENSE ../third_party/Viper-Browser/README.md
     DESTINATION share/orange-pi-terminal/licenses/viper-browser COMPONENT TerminalRuntime)
+install(FILES ../third_party/vlc/README.md ../third_party/vlc/VlcVideoItem.h
+    ../third_party/vlc/VlcVideoItem.cpp ../third_party/vlc/CMakeLists.txt
+    DESTINATION share/orange-pi-terminal/source/vlc COMPONENT TerminalRuntime)
 install(DIRECTORY ../third_party/Viper-Browser/
     DESTINATION share/orange-pi-terminal/source/Viper-Browser
     COMPONENT TerminalRuntime PATTERN ".git" EXCLUDE)

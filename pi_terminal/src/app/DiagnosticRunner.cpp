@@ -263,7 +263,9 @@ void schedule(const QCommandLineParser &options, QObject *root, QQuickWindow *wi
                     auto audit = QJsonDocument::fromJson(snapshot.toString().toUtf8()).object();
                     QJsonObject outputs;
                     for (const auto &name : {"musicAudioOutput", "videoAudioOutput"}) {
-                        if (auto *output = root->findChild<QObject *>(QString::fromLatin1(name)))
+                        const auto objectName = QString::fromLatin1(name) == QStringLiteral("videoAudioOutput")
+                            ? QStringLiteral("vlcVideoOutput") : QString::fromLatin1(name);
+                        if (auto *output = root->findChild<QObject *>(objectName))
                             outputs.insert(QString::fromLatin1(name), output->property("volume").toDouble());
                     }
                     audit.insert("audioOutputs", outputs);

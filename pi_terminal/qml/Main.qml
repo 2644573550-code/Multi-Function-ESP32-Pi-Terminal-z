@@ -5,6 +5,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtWebEngine 2.0
 import Terminal.Native 1.0
+import "BrowserScroll.js" as BrowserScroll
 
 ApplicationWindow {
     id: win
@@ -1550,8 +1551,10 @@ ApplicationWindow {
                                 }
                                 if(browserTestRunning && request.status===WebEngineView.LoadSucceededStatus && title==="Local terminal test")
                                     runJavaScript("21 * 2",function(value){browserTestPassed=value===42 && tabs.count===2;browserTestRunning=false})
-                                if(request.status===WebEngineView.LoadSucceededStatus)
+                                if(request.status===WebEngineView.LoadSucceededStatus) {
                                     runJavaScript("document.documentElement.style.touchAction='pan-x pan-y'; if(document.body) document.body.style.touchAction='pan-x pan-y';")
+                                    runJavaScript(BrowserScroll.installationScript())
+                                }
                             }
                             onPdfPrintingFinished:function(filePath,success) {
                                 if(index===browserTabs.currentIndex)browserStatus=success?I18n.t("PDF 已保存：")+filePath:I18n.t("PDF 保存失败")
@@ -1559,6 +1562,14 @@ ApplicationWindow {
                         }
                     }
                 }
+            }
+            BrowserJoystick {
+                anchors.right: parent.right; anchors.bottom: parent.bottom
+                anchors.margins: 16 * uiScale
+                uiScale: win.uiScale
+                targetView: win.activeBrowser
+                enabled: browserFlick.visible && !!win.activeBrowser && !win.activeBrowser.loading
+                z: 5
             }
         }
         Flickable {
