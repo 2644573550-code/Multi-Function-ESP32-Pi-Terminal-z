@@ -278,6 +278,34 @@ void SystemTools::setEnergySaving(bool value) {
     if (energySaving() == value) return;
     settings_.setValue("energySaving", value); settings_.sync(); emit changed();
 }
+namespace {
+// Pages may only persist their own state. "trusted/" and the host preferences
+// share the same QSettings file, so an unscoped write from QML would be a way
+// around the plugin trust prompt.
+const QStringList &pageSettingPrefixes() {
+    static const QStringList prefixes{QStringLiteral("time/")};
+    return prefixes;
+}
+constexpr int kPageSettingMaxKey = 96;
+constexpr int kPageSettingMaxBytes = 16384;
+bool pageSettingKeyAllowed(const QString &key) {
+    if (key.isEmpty() || key.size() > kPageSettingMaxKey) return false;
+    for (const auto &prefix : pageSettingPrefixes())
+        if (key.startsWith(prefix) && key.size() > prefix.size()) return true;
+    return false;
+}
+}
+QString SystemTools::settingsRead(const QString &key, const QString &fallback) const {
+    if (!pageSettingKeyAllowed(key)) return fallback;
+    return settings_.value(key, fallback).toString();
+}
+bool SystemTools::settingsWrite(const QString &key, const QString &value) {
+    if (!pageSettingKeyAllowed(key)) { qWarning("page settings: rejected key %s", qPrintable(key.left(96))); return false; }
+    if (value.toUtf8().size() > kPageSettingMaxBytes) { qWarning("page settings: value too large for %s", qPrintable(key)); return false; }
+    settings_.setValue(key, value);
+    settings_.sync();
+    return true;
+}
 void SystemTools::setUiLanguage(const QString &language) {
     const auto normalized = language == QStringLiteral("en") ? QStringLiteral("en") : QStringLiteral("zh");
     if (uiLanguage() == normalized) return;

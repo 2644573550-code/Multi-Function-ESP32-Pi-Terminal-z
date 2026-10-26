@@ -11,6 +11,7 @@ Rectangle {
     property string clock:""
     property bool appOpen:false
     property string activeEntryId:""
+    property bool alarmActive:false
     readonly property var host:ApplicationWindow.window
     readonly property Item backdrop:host && host.blurBackdropItem !== undefined?host.blurBackdropItem:null
     function powerIconFor(value) {
@@ -29,6 +30,7 @@ Rectangle {
     signal statusRequested()
     signal notificationsRequested()
     signal keyboardRequested()
+    signal alarmsRequested()
     signal recentRequested(var entry)
     color:"transparent";implicitHeight:Theme.hit+Theme.gap*2
     ShaderEffectSource {
@@ -56,6 +58,7 @@ Rectangle {
             }
         }
         }
+        IconButton {objectName:"alarmButton";iconName:"alarm";label:I18n.t("闹钟已开启");visible:dock.alarmActive;onClicked:dock.alarmsRequested()}
         IconButton {objectName:"keyboardButton";iconName:"keyboard";label:I18n.t("打开屏幕键盘");filled:true;accentColor:"#ffffff";visible:dock.width>=480*Theme.scaleFactor;onClicked:dock.keyboardRequested()}
         IconButton {
             visible:dock.width>=540

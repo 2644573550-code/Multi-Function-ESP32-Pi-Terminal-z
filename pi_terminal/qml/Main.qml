@@ -482,7 +482,8 @@ ApplicationWindow {
                  8:{entryId:"notes",title:I18n.t("文本便笺"),iconName:"text_snippet",accentColor:"#36c8db",route:8,instance:"",ready:true},
                  9:{entryId:"music",title:I18n.t("音乐播放器"),iconName:"volume_up",accentColor:"#d889e8",route:9,instance:"",ready:true},
                  10:{entryId:"video",title:I18n.t("视频播放器"),iconName:"play_arrow",accentColor:"#65c9bd",route:10,instance:"",ready:true},
-                 11:{entryId:"tv",title:I18n.t("网络电视"),iconName:"tv",accentColor:"#ff7a59",route:11,instance:"",ready:true}})[page]
+                 11:{entryId:"tv",title:I18n.t("网络电视"),iconName:"tv",accentColor:"#ff7a59",route:11,instance:"",ready:true},
+                 12:{entryId:"time",title:I18n.t("时间"),iconName:"schedule",accentColor:"#8f7bff",route:12,instance:"",ready:true}})[page]
     }
     function rememberApp(entry) {
         for(let i=recentApps.count-1;i>=0;--i)if(recentApps.get(i).entryId===entry.entryId)recentApps.remove(i)
@@ -780,7 +781,7 @@ ApplicationWindow {
         const entries=[]
         for(let card of connectionManager.cards) entries.push({entryId:card.instance,title:card.title,
             description:stateText(card.state),category:I18n.t("模块"),accentColor:"#85deff",iconName:card.icon||"extension",route:5,instance:card.instance,ready:card.ready})
-        for(let route of [2,3,1,4,6,7,8,9,10,11]) {let app=builtin(route);app.description="";app.category=I18n.t("应用");entries.push(app)}
+        for(let route of [2,3,1,4,6,7,8,9,10,11,12]) {let app=builtin(route);app.description="";app.category=I18n.t("应用");entries.push(app)}
         for (let i=homeCards.count-1; i>=0; --i)
             if (!entries.some(function(e) { return e.entryId === homeCards.get(i).entryId })) homeCards.remove(i)
         for (let desired=0;desired<entries.length;++desired) {
@@ -799,6 +800,10 @@ ApplicationWindow {
     function approveTrustOnce() {
         if (!trustDialog.opened) return
         connectionManager.trust(trustItem.instance,false); trustDialog.close()
+    }
+    function openAlarms() {
+        launch(builtin(12), width/2, contentItem.height/2)
+        Qt.callLater(function() { if (timePage) timePage.setTab(3) })
     }
     function openModule(instance) {
         for (let row of connectionManager.cards) if (row.instance === instance && row.ready) {
@@ -1192,14 +1197,21 @@ ApplicationWindow {
         opacity:openProgress
     }
 
+    AlarmEngine {
+        id:alarmEngine
+        onNotifyRequested:function(title,message,important){win.notify(title,message,important,I18n.t("时间"),"alarm")}
+        onAnnounceRequested:function(text){win.announce(text)}
+    }
     footer:StatusDock {
         id:statusDock
         visible:!win.repairBackdropOnly && !win.videoFullscreen
         status:systemTools.deviceStatus;recentModel:openTasks;unread:unreadNotifications;clock:clockText;appOpen:phase!=="home";activeEntryId:appEntryId
+        alarmActive:alarmEngine.hasEnabledAlarms
         onAppDrawerRequested:appDrawer.open()
         onStatusRequested:showDevicePanel(false)
         onNotificationsRequested:showDevicePanel(true)
         onKeyboardRequested:screenKeyboard.show()
+        onAlarmsRequested:win.openAlarms()
         onRecentRequested:function(entry){switchTask(entry)}
     }
     Loader {
@@ -1956,6 +1968,10 @@ ApplicationWindow {
             onMediaPlayingChanged:if(mediaPlaying){devicePanel.preferVideo=true;musicPage.pauseMedia();tvPage.pauseMedia()}}
         TvPlayer {id:tvPage;objectName:"tvPlayerPage";active:win.section===11 && win.phase!=="home";uiScale:win.uiScale;hostWindow:win;virtualKeyboard:screenKeyboard;onKeyboardRequested:screenKeyboard.show()
             onMediaPlayingChanged:if(mediaPlaying){devicePanel.preferVideo=true;musicPage.pauseMedia();videoPage.pauseMedia()}}
+        TimeTools {id:timePage;objectName:"timeToolsPage";active:win.section===12 && win.phase!=="home";uiScale:win.uiScale;alarmEngine:alarmEngine
+            onNotifyRequested:function(title,message,important){win.notify(title,message,important,I18n.t("时间"),"schedule")}
+            onAnnounceRequested:function(text){win.announce(text)}
+            onKeyboardRequested:if(!screenKeyboard.visible)screenKeyboard.show()}
             }
         }
     }

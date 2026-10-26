@@ -246,5 +246,25 @@
   "keyboard_tv": {
     "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/hardware/keyboard/materialiconsround/24px.svg",
     "sha256": "ac956c3f6e837546ce0f863fd230cb374771d4603ea2be17bb2c7de2fc15eb7e"
+  },
+  "schedule": {
+    "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/action/schedule/materialiconsround/24px.svg",
+    "sha256": "2e80aa02c4bdd45b90fe052812bc17c75e26640c0c525400b50b7b68661afb90"
+  },
+  "alarm": {
+    "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/action/alarm/materialiconsround/24px.svg",
+    "sha256": "6b177063bb4cdfdebfccb9da8b6ed9df59d87b715c25136e6999cdc5dfc61b78"
+  },
+  "hourglass_empty": {
+    "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/action/hourglass_empty/materialiconsround/24px.svg",
+    "sha256": "d5a74e28fec4dfa984aed4f39b17ea6ef1580a8aa40523c5386fe87109d191b0"
+  },
+  "av_timer": {
+    "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/av/av_timer/materialiconsround/24px.svg",
+    "sha256": "fa96ad2ce34403c6d1d5de39d7f47a377e1512d036472491c6efaa9b7cbd02ca"
+  },
+  "public": {
+    "source": "https://raw.githubusercontent.com/google/material-design-icons/master/src/social/public/materialiconsround/24px.svg",
+    "sha256": "72c78a53fecb1e5c72d58cd63fa85fd6e2aa7c86a8bd98fed7847dfd5232e351"
   }
 }

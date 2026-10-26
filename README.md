@@ -94,6 +94,7 @@ python3 -m http.server 8000 --bind 127.0.0.1
 | 音乐 | 原生音乐服务、在线 API、本地播放、歌词与整曲缓存后的跳转 | [音乐实现](docs/native-music.md)。在线 API 按需拉起；可用性受上游服务及网络影响。 |
 | 本地视频与网络电视 | 本地视频使用 Qt Multimedia；电视页面使用 `GstVideoItem` / GStreamer，含频道与线路选择 | [电视内核说明](docs/tv-hls-player-notes.md)。VLC 迁移仍见路线图，不能把开发分支状态当作主线实现。 |
 | 文件与系统 | 文件操作、图片预览、文本编辑、受限 USB 存储访问、系统音量及播报时媒体降音 | [系统库与运行时](docs/native-runtime-modules.md)。USB 与音量控制需要相应系统服务。 |
+| 时间 | 时钟、世界时钟（20 城市可选，最多 8 个）、计时器、秒表与闹钟；闹钟、城市与最近设置写入本机设置 | [时间页说明](docs/time-tools.md)。世界时钟默认用内置标准时区，校时依赖第三方公开接口，失败显式报错、不改用猜测值；闹钟按分钟匹配，终端休眠跨过整分钟不会补响。 |
 | 渲染与个性化 | 双槽背景模糊缓存、普通/节能渲染模式 | [模糊设计](docs/blur-performance.md)。 |
 | 环境模块示例 | 温度、空气湿度、气压、照度、电量和日/周温度历史 | [智能盆栽](module-devkit/examples/smart-planter/README.md) · [验证范围](module-devkit/examples/smart-planter/VALIDATION.md)。**没有土壤传感器或浇水执行器**。 |
 
