@@ -1,11 +1,11 @@
 ---
 generated_by: dev-tasks
-spec_version: 1.1
+spec_version: 1.2
 generated_at: 2026-10-26
 ---
 # P0之后剩余任务
 
-P0硬性完成SQLCipher最小用户隔离和基础worker sandbox；此处列的是完整产品化、恢复能力和长期功能，不与P0最小门槛重复。
+P0要求完成SQLCipher最小用户隔离和基础worker sandbox，当前尚未实现/验收；此处列的是完整产品化、恢复能力和长期功能，不与P0最小门槛重复。两仓SDK最小来源/哈希及可构建性已归T-02，不能因完整发布工具列P2而跳过。
 
 ## P1：安全与可靠性深化
 

@@ -1,9 +1,11 @@
 ---
 generated_by: dev-tasks
-spec_version: 1.1
+spec_version: 1.2
 generated_at: 2026-10-26
 ---
 # 核心逻辑任务
+
+路径所属仓库、当前事实和目标实现的区别见[总计划](04-dev-tasks.md#0-项目基线与代码现状)；接口/权限以[F审核稿](04-dev-tasks-f-day1.md)为准。F文档审定不替代各任务的实现、技术签认或实机验收。
 
 ## T-03 桥板/模块身份与密钥边界
 
@@ -31,7 +33,7 @@ generated_at: 2026-10-26
 
 ### 测试方法
 
-使用至少两块模块和一块桥板：错误密钥、身份冒用、撤销后重连、跨槽移动后重新认证。
+使用至少两块模块和一块桥板：错误密钥、身份冒用、撤销后重连、跨槽移动重新认证控制身份/位置；已有有效安全业务不因位置变化重启，旧槽新设备不能继承任务能力。
 
 ### 验收标准
 
@@ -56,14 +58,15 @@ generated_at: 2026-10-26
 | review_profile | `audit` |
 | 依赖 | T-01、T-03 |
 | 追溯 | F-003 / AC-003 / UT-002、IT-004 |
-| 接口 | `UserService`、`AuthService`、`SessionManager` |
-| 文件范围 | 新增 `pi_terminal/src/security/UserService.{h,cpp}`、`PinPolicy.{h,cpp}`、`SessionManager.{h,cpp}`；接入 `pi_terminal/CMakeLists.txt` 和启动装配处（T-01冻结具体入口） |
+| 接口 | `UserService`、`AuthService`、`PinPolicy`、`SessionManager`；均待新增 |
+| 文件范围 | 新增 `pi_terminal/src/security/UserService.{h,cpp}`、`AuthService.{h,cpp}`、`PinPolicy.{h,cpp}`、`SessionManager.{h,cpp}`及最小任务能力上下文；接入 `pi_terminal/CMakeLists.txt` 和 `src/app/TerminalApplication.{h,cpp}` |
 
 ### 工作内容
 
 - 用户创建/停用，PIN 设置/验证/修改。
 - PIN 至少 6 位；错误限速和临时锁定。
 - 单一 `activeUserId`；退出和切换立即销毁旧会话能力。
+- 前台会话与绑定启动用户的任务能力分开；锁屏撤销前台历史读取，任务仍可受限追加原用户记录。测量完成/明确取消或持续任务明确停止后才能切用户/退出；重启须原用户解锁及设备重新认证后恢复。
 - 区分管理员与普通用户；管理员不得读取健康记录。
 - PIN 服务由可信 C++ service 提供，QML 不持有密钥。
 
@@ -77,6 +80,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 - 错误 PIN 不泄漏账号是否存在或敏感认证细节。
 - 达到尝试阈值后必须进入限速/锁定。
 - 切换用户后旧 session token/API 调用全部拒绝。
+- 锁屏后前台旧API拒绝，运行中任务只可向原用户追加新记录，不可读历史；切换前任务收尾，迟到事件不写新用户。
 - 管理员请求成员健康数据被拒绝并留下不含敏感正文的审计记录。
 
 ### Review 要点
@@ -144,6 +148,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 - 登录后key只在trusted service短期内存态；PIN修改在验证旧PIN后重新封装DB key，不重加密整库。
 - P0验证错误PIN/错误KDF输出无法解封；独立离线恢复凭证和完整恢复路径作为P1，不得伪称P0已可恢复。
 - 模块 worker/QML 不得获得 DB 文件、密钥或任意 SQL。
+- 当前盆栽`module-devkit/examples/smart-planter/{module.cpp,History.h}`使用按实例索引的明文JSON历史，须同T-11/13改为可信SQLCipher数据API并禁用P0旧写入。旧记录无用户归属，不自动导入首个用户、不自动删除；用户确认迁移/删除另留记录。
 - 实现最小用户数据 API 和跨用户拒绝。
 - 本 P0 不要求完整 USB 备份/恢复、恢复码和生命周期删除流程；这些在 P1。
 
@@ -156,7 +161,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 - 每用户 DB 加密；无密钥/错误 key 无法读取。
 - SQLCipher DB key为随机值且与PIN不同；PIN只用于KEK封装。
 - A context 无法查询、改写 B 的记录。
-- lock/退出后旧 session API 不能继续访问 DB。
+- lock后旧前台session API不能继续访问DB；仅原有受限任务能力可由可信服务追加原用户记录；任务停止/退出后所有旧能力拒绝。
 - 原始 UID、PIN、明文健康值不得出现在应用日志。
 - Pi 3B 上驱动加载、DB 打开和关键 PIN/查询延迟测量记录在 PR。
 
@@ -181,6 +186,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 ### 工作内容
 
 - P0 最小要求：模块代码不再在宿主进程内直接以 `QLibrary` 加载执行；至少独立低权限 worker + 有界版本 IPC。
+- 现有盆栽插件/历史及任意QML页面不能原样视作隔离完成；C ABI业务迁至worker/可信服务，宿主仅运行受控UI，T-13同步改造并补锁屏任务能力测试。
 - worker 使用非特权 UID；无数据库/任意文件读权限；仅访问专用运行目录和必要设备句柄。
 - Pi 热点/WAN forwarding 默认拒绝；worker 默认无公网 egress；ESP 产品默认配置不启用任意外网 STA。
 - 只做默认拒绝和策略验证；域名代理、复杂动态授权、完整 syscall/seccomp hardening 列 P1。

@@ -1,9 +1,9 @@
 ---
 generated_by: dev-tasks
 document: team-development-plan
-spec_version: 1.1
+spec_version: 1.2
 generated_at: 2026-10-26
-source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.0; Pi code baseline 8349ce8 (current main d6ee9ac is report-only); ESP service main 16aebdd
+source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_terminal code unchanged from 8349ce8); ESP service main 16aebdd
 ---
 
 # 四人团队开发任务总表
@@ -19,10 +19,16 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.0; Pi code baseline 8349ce8 (curr
 | P0 演示 | 真实 RC522→Pi/PIN→盆栽全部已实现传感器数据（业务LAN必须TLS；BLE若启用须加密认证）；啸天两路真实输入→事件→页面；分别通过后两模块同时运行 |
 | 身份 | `bridge_id`、各 `device_id` 独立；桥板统一项目签发；模块支持正式签发与 DIY 逐模块现场生成。P0两个原型模块使用不同的 DIY 测试身份 |
 | 密钥 | 私钥只保存在设备和 Pi；公开仓库只提交生成工具、格式、非秘密公钥/指纹或已失效样例，绝不提交真实私钥 |
-| 代码基线 | 主项目当前 `origin/main=d6ee9ac`，相对源代码审查基线 `8349ce8` 仅合入报告文件，代码树相同；ESP 服务 `main=16aebdd` |
+| 代码基线 | 代码审查时 Pi main 为 `d6ee9ac`（相对 `8349ce8` 仅增加报告）；F第1天 fetch 后 Pi `origin/main=20013b2`，新增报告/计划文档，`pi_terminal/` 代码树未变；ESP 服务远端 `main=16aebdd` |
 | 已知现状 | PBR1 是 CRC/序号明文帧；Pi 没有 RFID 接收/用户服务；Pi 插件用 `QLibrary` 同进程加载；桥板只有单实例状态，双槽电气未核实 |
 | 仓库/PR | Pi/Qt 改动向 `Axe665/Multi-Function-ESP32-Pi-Terminal` 提交独立 PR；桥板/模块固件向 `gggitj/ESP-Modular-Terminal-Service` 提交独立 PR；共享 issue、接口版本和交叉 PR 链接 |
 | 协作 | 每人独立分支；Mr.F 最终审核与范围裁决；不安排强制每日会议 |
+
+路径约定：本文及分卡的`pi_terminal/`位于Pi仓库，`esp/`位于独立ESP仓库；Pi当前主线未跟踪`esp/`。`module-devkit/examples/smart-planter/`两仓均有，啸天目录当前仅在ESP仓库且只有需求/计划文档。新增服务/worker/啸天固件均为目标路径，不是现有实现。目标Qt6.5.3来自用户指定，历史盆栽记录是Qt6.4.2/labwc-Wayland，本轮未核验在线设备版本。
+
+本轮[事实复核与F审定](04-dev-tasks-f-review.md)已订正报告和任务，F已授权代理确认文档边界；不代表D/Z/L签认、IT-001或P0验收通过。
+
+互动澄清后的设备生命周期决策：物理拔出仅释放slot_id，任务绑定device/session/task及原用户，授权仍有效则独立无线业务继续；桥板失联禁止依赖读卡/物理位置的新操作，但已登记用户可PIN解锁管理任务；恢复时重验控制身份和位置，不无故中断仍有效业务。位置冲突不得转移授权。详细安全边界见F审核稿第4.3节。
 
 ### P0 范围覆盖说明
 
@@ -51,12 +57,13 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.0; Pi code baseline 8349ce8 (curr
 - 桥板：采用项目统一签发的逐板 `bridge_id` 身份；P0 使用项目签发的**测试身份**，不等于生产证书已完成。
 - 模块：正式模块走项目/厂商逐设备签发；DIY 模块现场逐台生成唯一密钥并与 Pi 配对。当前 P0 盆栽和啸天分别配置不同的 DIY 测试身份；正式签发路线继续保留。
 - 不允许桥板与模块共享密钥；不允许多个 DIY 模块共用一个密钥；密钥不上传仓库。
+- 设备全局配对/撤销由管理员本地确认；各用户再按设备/能力授权访问本人数据，管理员不代成员授权健康数据。正式Secure Boot/Flash Encryption评估属P1，不是现有保障。
 
 ## 3. 控制面与业务数据面边界
 
 - **PBR/LinkIt 控制面**：桥板 attach/status/detach、RC522 `rfid_card`、桥板控制/诊断。PBR 当前无 AEAD；P0 增加 AEAD 后仍不在 PBR 传输业务传感器历史。盆栽BLE GATT未强制安全属性，LAN/TCP无TLS，P0需升级业务lane。
 - **模块业务数据面**：按模块合同使用固定 BLE 或 Pi hotspot LAN/TCP；盆栽全部传感器数据走此数据面。Pi `TransportPolicy` 将 BLE-only/LAN-only 作为互斥 profile。
-- **不变量**：两条数据面共享设备/用户授权检查；事件都带设备、槽位和会话上下文。PBR CRC 只 framing/error detection，不是 MAC。
+- **目标不变量**：控制/业务链路均执行身份/授权检查；控制事件绑定物理槽及绑定代次，业务绑定设备/业务session/task/原用户，slot仅为可空位置属性；RC522为桥板级事件，使用bridge/reader/boot/session上下文，不伪造slot/device。PBR CRC仅framing/error detection，不是MAC；当前token会话不等于该目标已实现。
 - **部署前置**：ESP 项目配置中 `CONFIG_APP_PI_DATA_ENABLE` 默认开启、LAN profile 默认选中、STA 密码默认空、session token 默认空；空 token 会使服务拒绝启动，空 Wi-Fi 密码允许 open authmode。P0 测试使用不入库的私有 `sdkconfig`/测试 token，拒绝开放网络配置，Pi hotspot 不做 WAN 转发。
 
 ## 4. 依赖图
@@ -67,7 +74,7 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.0; Pi code baseline 8349ce8 (curr
 T-01 F冻结需求、字段、权限、错误码和验收
  ├── T-02 D/Z确认Pi构建、Qt和串口基线
  ├── T-03 D/F/L冻结桥板/模块身份和密钥边界
- ├── T-04 Z实现用户、PIN和会话服务
+ ├── T-04 Z实现用户、PIN和会话服务（同时依赖T-03）
  ├── T-05 D实现PBR编解码和桥板事件状态机
  └── T-06 L采购啸天探头并核验双槽电气
 
@@ -77,7 +84,7 @@ T-03 + T-05
 T-04 + T-07
  └── T-08 D/Z接通真实RC522→Pi→UID派生→PIN
 
-T-04 + T-08
+T-04 + T-08 + T-10
  └── T-09 Z完成登录、锁屏、绑卡、挂失UI
 
 T-04
@@ -113,7 +120,7 @@ T-17 F最终P0实机验收与PR合并
 | T-06 | 啸天采购与双槽电气核验 | L | ⚪ audit | T-01 | IT-006 |
 | T-07 | 测试AEAD、重放保护、ACK和事件去重 | D | 🔴 audit | T-03、T-05 | UT-004、IT-007 |
 | T-08 | RC522到Pi安全事件闭环 | D、Z | 🟡 guarded | T-04、T-07 | IT-008、E2E-001 |
-| T-09 | Qt登录、绑卡、锁屏、挂失 | Z | 🟢 guarded | T-04、T-08 | E2E-002 |
+| T-09 | Qt登录、绑卡、锁屏、挂失 | Z | 🟢 guarded | T-04、T-08、T-10 | E2E-002 |
 | T-10 | 每用户SQLCipher最小实现 | Z | 🔴 audit | T-04 | UT-005、IT-012 |
 | T-11 | 基础worker隔离和默认拒网 | Z、D、L | 🔴 audit | T-03、T-04、T-10 | IT-013 |
 | T-12 | 模块业务数据TLS/BLE安全传输 | D、L、Z | 🔴 audit | T-01、T-03、T-04 | IT-014 |
@@ -130,6 +137,7 @@ T-17 F最终P0实机验收与PR合并
 - [接口和UI任务](04-dev-tasks-api-ui.md)
 - [测试和验收任务](04-dev-tasks-test.md)
 - [P0之后剩余任务](04-dev-tasks-post-p0.md)
+- [F第一天接口审核稿、权限及预检回执](04-dev-tasks-f-day1.md)（F文档审定通过，D/Z/L技术签认及实测待完成）
 
 ## 6. PR门禁
 
@@ -139,18 +147,21 @@ T-17 F最终P0实机验收与PR合并
 4. 真实私钥、PIN、原始 UID、Wi-Fi 密码和个人数据不得进入 Git/日志/PR。
 5. 主机模拟不能替代 Pi、桥板或 ESP 实机验收。
 6. P0 只有 T-17 完成才通过；分别运行不等于同时运行。
+7. 当前main已跟踪标称含私有provision配置的盆栽固件及产物；B-07未完成受控核查/必要凭据轮换及发布处置前，不批准相关产物发布。gitignore不能保护已经跟踪的文件，不得把“未见PEM”当成没有凭据。
 
 ## 7. P0完成条件
 
 - [ ] 真实 RC522 事件经桥板到达 Pi。
 - [ ] UID 只选择用户；登录必须输入 PIN。
 - [ ] 原始 UID 不落盘、不写日志。
+- [ ] 锁屏撤销前台读取但保持已授权任务归属原用户；切用户先完成/取消测量或明确停止持续任务，迟到事件不串档。
 - [ ] 桥板项目签发测试身份与每个模块身份相互独立。
 - [ ] DIY 模块密钥逐台唯一，仅保存在设备和 Pi。
 - [ ] PBR 测试版 AEAD、序号和重放保护通过。
 - [ ] P0固定LAN业务profile使用TLS；若启用BLE则强制加密/认证，否则BLE profile明确禁用；明文和降级均被拒绝。
 - [ ] RFID ACK、有限重传、TTL 和去重通过。
 - [ ] 每用户 SQLCipher 数据库互相不可读。
+- [ ] 盆栽旧明文JSON历史不再作为P0数据存储/读取路径；不擅自删除或把无归属旧记录分给新用户。
 - [ ] 模块 worker 独立进程、低权限；不能直接读 DB/任意文件。
 - [ ] P0 默认拒绝模块公网访问；拒网规则在 Pi 实机验证。
 - [ ] 盆栽全部已实现传感器数据显示正确。
@@ -162,9 +173,11 @@ T-17 F最终P0实机验收与PR合并
 
 ## 8. 14天执行闸门
 
+14天为目标而非降低验收的理由：第3天关键预检或第7天关键闭环失败时，F保留全部硬门槛并重新排期、记录负责人和新截止日。第14天允许部分成果“阶段演示”，但明确标P0未通过，不替代T-17签字。
+
 | 时间 | 必须交付 | 失败处置 |
 |---|---|---|
-| 第1天 | F冻结接口；D/Z各做Pi串口/Qt、SQLCipher driver和ESP TLS/BLE可行性预检；Z做worker UID/sandbox预检；L核验双槽图并下单啸天探头 | 任一安全基础不可行即由F当日记录blocker和修复路线，不用SQLite/同进程伪装通过 |
+| 第1天 | F审定范围/边界并收集技术签认；D做串口/身份/AEAD设计及SDK来源检查，Z做Qt/SQLCipher driver与worker UID/sandbox预检，D/L验证ESP TLS及禁用BLE；L核验双槽图并下单探头 | 任一安全基础不可行即由F当日记录blocker和修复路线；密码协议细节未审不得称完全冻结；不用SQLite/同进程伪装通过 |
 | 第2-3天 | D完成PBR reader/编码骨架；Z完成PIN/session和SQLCipher schema骨架；L探头到货、双槽电气实测、盆栽字段确认 | 第3天无探头或双槽不支持时升级为红色阻塞，F立即协调硬件改造和后续步骤 |
 | 第4-6天 | D测试AEAD/重放/ACK；Z完成每用户DB与worker最小隔离；L完成啸天两路固件和盆栽全量数据链 | 每日由PR/Issue异步更新；安全验收不得通过减少测试规避 |
 | 第7天 | 中期演示：RC522模拟/实卡PIN流程、SQLCipher跨用户拒绝、worker拒网、盆栽数据、啸天两路输入、双槽结论 | 未通过项指定责任人和截止时间；F判断是否仍有14天完成可能 |
@@ -180,7 +193,7 @@ T-17 F最终P0实机验收与PR合并
 - 双槽物理存在不代表独立电气通道；T-06结论是T-15前置门。
 - 桥板当前 PBR 没有 AEAD/事件 ACK；T-07 是真实 UID可被Pi信任前置条件。
 - ESP模块当前TCP无TLS、BLE GATT未强制安全属性；T-12必须在盆栽业务数据验收前完成。
-- ESP模块当前LAN/TCP无TLS，BLE GATT未强制安全属性；T-12必须在业务数据验收前完成。
+- 两仓SDK同步检查当前均不通过：Pi脚本缺ESP源映射，ESP脚本清单需刷新；T-02须先列明跨仓来源/commit/哈希并验证对应副本，不能把完整发布工具后移P2当作可忽略P0来源一致性。
 - 项目签发桥板测试身份与DIY模块本地身份是两种不同角色/生命周期，不能共享秘密。
 
 ## 9. P0之后的剩余工作
