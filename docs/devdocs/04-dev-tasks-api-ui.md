@@ -1,9 +1,11 @@
 ---
 generated_by: dev-tasks
-spec_version: 1.1
+spec_version: 1.2
 generated_at: 2026-10-26
 ---
 # 接口与UI任务
+
+路径中的`pi_terminal/`属于Pi仓库，`esp/`属于独立ESP仓库；共享SDK与啸天资料现状见[事实复核](04-dev-tasks-f-review.md)。新增安全服务/接口均是目标，不是现有能力。
 
 ## T-01 需求、接口和验收冻结
 
@@ -21,6 +23,8 @@ generated_at: 2026-10-26
 ### 工作内容
 
 冻结用户流程、权限矩阵、身份密钥边界、PBR帧/事件、错误码、slot状态、SQLCipher API、worker IPC、网络默认策略及验收顺序。
+
+交付入口：[F第一天审核稿与预检台账](04-dev-tasks-f-day1.md)。F已按用户授权审定范围/权限/安全边界；密码协议细节、实物字段和D/Z/L签认未收齐前，不将T-01标记完成。文档边界允许先开展各自可行性预检，不要求等预检完成才允许执行预检。
 
 ### 测试方法
 
@@ -54,6 +58,7 @@ D/Z/L 对字段和依赖逐项签字确认；检查任务编号唯一、依赖�
 - PBR 当前是 CRC framing，不是安全层；安全会话由 T-07 叠加。
 - RFID 与 LinkIt attach/detach 独立路由。
 - 双槽字段用 `bridge_id + slot_id + device_id + boot_id`，不沿用单一全局 attached bool。
+- 保留当前触点/业务分离：detach释放物理槽但不停止认证/授权仍有效的无线任务。桥板掉线禁止新的读卡/物理接入确认，已有任务继续；恢复重验控制身份/位置但不无故重建有效业务。T-05/11/16扩展`ConnectionManager.cpp`、`tests/session_test.cpp`及页面，覆盖槽位复用、迟到事件、冲突隔离和本机PIN解锁；不把当前仅更新状态视作这些安全检查已实现。RFID为桥板级事件，不强制slot/device。
 
 ### 测试方法
 
@@ -116,7 +121,7 @@ D/Z/L 对字段和依赖逐项签字确认；检查任务编号唯一、依赖�
 
 ### 验收标准
 
-刷卡不能直接登录；PIN 正确后登录；绑卡必须已登录且显式进入短时窗口；管理员只能撤销映射；锁屏不显示健康内容；Wayland实机触摸和键盘完成闭环。
+刷卡不能直接登录；PIN正确后登录；绑卡必须已登录且显式进入短时窗口；管理员可重验PIN撤销卡映射，但不能读取他人健康数据。锁屏隐藏敏感内容且停止前台读取，不停止已授权原用户任务；切用户前显示任务完成/取消或明确停止流程。Wayland实机触摸和键盘完成闭环。
 
 ### Review 要点
 
@@ -172,7 +177,7 @@ D提交协议/key separation设计，F审核算法/证书验证/fail-closed，L�
 | review_profile | `guarded` |
 | 依赖 | T-03、T-05、T-11、T-12 |
 | 追溯 | F-008 / AC-008 / IT-009、E2E-003 |
-| 文件范围 | ESP：`esp/S3_Pi_Module/main/main.c`、`main/Kconfig.projbuild`、`esp/shared/pi_sensor_device/`、`esp/shared/module_data_service/`；Pi：`ConnectionManager.cpp`、安全业务transport及受控模块状态UI |
+| 文件范围 | ESP仓：`esp/S3_Pi_Module/main/main.c`、`main/Kconfig.projbuild`、`esp/shared/pi_sensor_device/`、`esp/shared/module_data_service/`及SDK导出副本；Pi仓：`module-devkit/examples/smart-planter/{module.cpp,History.h,qml/}`、`ConnectionManager.cpp`、可信存储API、安全transport及受控状态UI |
 
 ### 测试方法
 
@@ -181,6 +186,8 @@ D提交协议/key separation设计，F审核算法/证书验证/fail-closed，L�
 ### 验收标准
 
 独立模块身份认证、真实 attach/status、所有已实现传感器值显示、时间/新鲜度/故障状态正确；退出用户后旧用户上下文不能继续读取；模块断开显示未知而非伪造正常。数据必须走经配置选择的BLE-only或LAN-only lane，不得把LinkIt/PBR控制帧冒充传感器业务数据。
+
+“全部”包括温度、湿度、气压、照度、battery_V/battery_pct及供电/保护状态；缺传感器或无可靠外部电源检测则显示不可用/unknown，charging当前为null，不伪造测量。P0固定LAN TLS、禁用BLE；现有Qt6.4.2/明文历史验证不代替Qt6.5.3/SQLCipher/worker新路径验收。
 
 ### Review 要点
 
@@ -196,7 +203,7 @@ D提交协议/key separation设计，F审核算法/证书验证/fail-closed，L�
 | review_profile | `guarded` |
 | 依赖 | T-06、T-07、T-11、T-12 |
 | 追溯 | F-009 / AC-009 / IT-010、E2E-004 |
-| 文件范围 | 新增啸天module-devkit示例/固件工程（路径和module_id由F/L确认）；Pi复用受控模块状态UI和TLS/BLE业务lane；未定GPIO不写死 |
+| 文件范围 | ESP仓既有`module-devkit/examples/xiaotian/`目前仅需求/计划，目标新增其`firmware/`；module_id由D/L查重确认，0x19只是候选；Pi仓由Z新增受控状态UI并复用安全业务lane，不把该目录当已有插件；未定GPIO不写死 |
 
 ### 测试方法
 
@@ -218,7 +225,7 @@ D提交协议/key separation设计，F审核算法/证书验证/fail-closed，L�
 | 层级/审核 | 🔴 `audit` |
 | TDD 模式 | E2E先行：两模块独立运行/断开测试→闭环实现→回归 |
 | review_profile | `audit` |
-| 依赖 | T-08、T-09、T-10、T-11、T-13、T-14 |
+| 依赖 | T-08、T-09、T-10、T-11、T-12、T-13、T-14 |
 | 追溯 | F-010 / AC-010 / E2E-005 |
 
 ### 测试方法
@@ -254,7 +261,7 @@ D提交协议/key separation设计，F审核算法/证书验证/fail-closed，L�
 
 ### Review 要点
 
-所有事件按`bridge_id+slot_id+device_id+boot_id+event_id`检查；不得以module_id/slot单独作为安全身份。
+控制事件按bridge/slot/绑定代次校验；业务按device/业务session/task/原用户能力校验，slot仅描述位置，离槽或桥失联可为null/unknown。补测离槽继续、旧槽换设备、桥失联PIN解锁/停任务、重插一致/冲突和业务安全失效；不能以module_id/slot单独作为安全身份。
 
 
 ## T-17 P0最终验收和PR合并
@@ -275,7 +282,7 @@ F按P0完成清单逐项观察Pi、桥板和两个ESP模块实机运行，核对
 
 ### 验收标准
 
-逐项核对 [P0完成条件](04-dev-tasks.md#6-p0完成条件)，所有安全、SQLCipher、worker隔离、啸天真实输入、双槽同时运行验收均通过；所有PR已由F审核。任一硬性项失败即P0未通过。
+逐项核对 [P0完成条件](04-dev-tasks.md#7-p0完成条件)，所有安全、SQLCipher、worker隔离、啸天真实输入、双槽同时运行验收均通过；所有PR已由F审核。任一硬性项失败即P0未通过。
 
 ### Review 要点
 

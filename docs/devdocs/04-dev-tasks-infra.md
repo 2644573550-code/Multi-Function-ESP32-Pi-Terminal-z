@@ -1,9 +1,11 @@
 ---
 generated_by: dev-tasks
-spec_version: 1.1
+spec_version: 1.2
 generated_at: 2026-10-26
 ---
 # 基础设施任务
+
+`esp/`及桥板`tests/`均位于独立ESP仓库，不在当前Pi checkout；Pi源/SDK路径以[事实复核](04-dev-tasks-f-review.md)为准。记录目标环境与实测环境，不能将历史Qt6.4.2记录当作本轮目标Qt6.5.3通过。
 
 ## T-02 Pi/Qt/USB串口基线
 
@@ -25,6 +27,8 @@ generated_at: 2026-10-26
 - 核验 USB-UART 115200 8N1。
 - 同时记录临时 `/dev/ttyUSB0` 和稳定 `/dev/serial/by-id/`。
 - 记录内核、编译器、Qt plugin path、串口权限组。
+- D同时负责P0最小跨仓SDK来源清单（来源仓/commit/路径/哈希，Z验证构建）：Pi提供C ABI/配包/模拟器，ESP提供正式固件/共享组件；当前两仓同步检查均失败，先解释并修复各自映射/清单，再把副本当权威。完整SDK发布工具仍在P2，不阻止第1天只读预检。
+- ESP桥板host test runner当前并发发送fixture依赖`windows.h`；Linux GCC不能直接完整运行。D须记录受支持工具链/平台，不能把局部RC522测试通过写作全套通过；需要Linux支持时在协议PR补可移植fixture。
 
 ### 测试方法
 
