@@ -567,8 +567,17 @@ Item {
                             text: root.clockDate + "  " + root.clockWeekday
                         }
                     }
-                    MouseArea {
-                        anchors.fill: clockColumn
+                    // 报时按钮：原来是整列可点，但热区声明在 Column 之后、压在样式按钮
+                    // 上面，点「数字 / 指针」只会触发报时、样式永远不切。改成表盘旁的
+                    // 48px 小喇叭按钮，热区不再和样式按钮抢点击。
+                    IconButton {
+                        objectName: "clockAnnounce"
+                        iconName: "volume_up"
+                        label: I18n.t("报时")
+                        filled: true
+                        accentColor: "#8f7bff"
+                        anchors.right: parent.right
+                        anchors.top: parent.top
                         onClicked: root.announceRequested(
                             I18n.t("中国时间") + " " + root.clockTime + " " +
                             TimeMath.formatOffset(root.localOffset))
@@ -703,7 +712,7 @@ Item {
                 // 触发 polish 循环（实机 log 可复现），网格布局行为确定。
                 GridLayout {
                     Layout.fillWidth: true
-                    columns: root.width < 620 * root.uiScale ? 3 : 6
+                    columns: 3      // 6 个预设 = 3 列 × 2 行；按卡片宽度算列数会切到卡外
                     columnSpacing: Theme.gap / 2
                     rowSpacing: Theme.gap / 2
                     Repeater {
@@ -718,29 +727,44 @@ Item {
                     }
                 }
 
+                // 时/分/秒各占一行（标签 + 数字框 + ± 同一行）。原来三组挤在一个
+                // RowLayout 里，340px 卡片下「秒」会被挤出卡片右边界。
                 RowLayout {
-                    // ColumnLayout 默认把子项拉满宽度；上限定成自身内容宽,
-                    // 再用对齐把整组控件居中，而不是让 +/- 被拉到卡片两端。
-                    Layout.alignment: Qt.AlignHCenter
-                    Layout.maximumWidth: implicitWidth
-                    objectName: "timerStepperRow"
-                    spacing: Theme.gap
-                    NumberStepper {
-                        caption: I18n.t("时")
+                    Layout.fillWidth: true
+                    spacing: Theme.gap / 2
+                    CarText { text: I18n.t("时"); maximumLineCount: 1 }
+                    Item { Layout.fillWidth: true }
+                    StepperBox {
+                        objectName: "timerHourStepper"
                         value: root.timerHours
                         maximum: 23
+                        caption: I18n.t("时")
                         onAdjusted: function(delta) { root.adjustTimer("hour", delta) }
                     }
-                    NumberStepper {
-                        caption: I18n.t("分")
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.gap / 2
+                    CarText { text: I18n.t("分"); maximumLineCount: 1 }
+                    Item { Layout.fillWidth: true }
+                    StepperBox {
+                        objectName: "timerMinuteStepper"
                         value: root.timerMinutes
                         maximum: 59
+                        caption: I18n.t("分")
                         onAdjusted: function(delta) { root.adjustTimer("minute", delta) }
                     }
-                    NumberStepper {
-                        caption: I18n.t("秒")
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.gap / 2
+                    CarText { text: I18n.t("秒"); maximumLineCount: 1 }
+                    Item { Layout.fillWidth: true }
+                    StepperBox {
+                        objectName: "timerSecondStepper"
                         value: root.timerSeconds
                         maximum: 59
+                        caption: I18n.t("秒")
                         onAdjusted: function(delta) { root.adjustTimer("second", delta) }
                     }
                 }
@@ -1000,23 +1024,35 @@ Item {
                                   ? I18n.t("保存会覆盖这一条，启用状态保持不变")
                                   : I18n.t("到点弹通知并语音播报；闹钟会保存到本机")
 
+                        // 时/分 各占一行（标签 + 数字框 + ± 同一行）：并排塞不下 340px 卡片。
                         RowLayout {
-                            Layout.alignment: Qt.AlignHCenter
-                            Layout.maximumWidth: implicitWidth
-                            spacing: Theme.gap
-                            NumberStepper {
+                            Layout.fillWidth: true
+                            spacing: Theme.gap / 2
+                            CarText { text: I18n.t("时"); maximumLineCount: 1 }
+                            Item { Layout.fillWidth: true }
+                            StepperBox {
                                 objectName: "alarmHourStepper"
-                                caption: I18n.t("时")
                                 value: root.alarmHour
                                 maximum: 23
-                                onAdjusted: function(delta) { root.alarmHour = (root.alarmHour + delta + 24) % 24 }
+                                caption: I18n.t("时")
+                                onAdjusted: function(delta) {
+                                    root.alarmHour = (root.alarmHour + delta + 24) % 24
+                                }
                             }
-                            NumberStepper {
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.gap / 2
+                            CarText { text: I18n.t("分"); maximumLineCount: 1 }
+                            Item { Layout.fillWidth: true }
+                            StepperBox {
                                 objectName: "alarmMinuteStepper"
-                                caption: I18n.t("分")
                                 value: root.alarmMinute
                                 maximum: 59
-                                onAdjusted: function(delta) { root.alarmMinute = (root.alarmMinute + delta + 60) % 60 }
+                                caption: I18n.t("分")
+                                onAdjusted: function(delta) {
+                                    root.alarmMinute = (root.alarmMinute + delta + 60) % 60
+                                }
                             }
                         }
                         RowLayout {
@@ -1053,18 +1089,18 @@ Item {
                             }
                         }
 
+                        CarText {
+                            objectName: "alarmRingtoneName"
+                            Layout.fillWidth: true
+                            maximumLineCount: 1
+                            elide: Text.ElideMiddle
+                            text: I18n.t("铃声") + " · " +
+                                (root.alarmEngine ? root.alarmEngine.ringtoneLabel(root.alarmRingtone)
+                                                  : I18n.t("未选择（仅语音播报）"))
+                        }
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: Theme.gap / 2
-                            CarText {
-                                objectName: "alarmRingtoneName"
-                                Layout.fillWidth: true
-                                maximumLineCount: 1
-                                elide: Text.ElideMiddle
-                                text: I18n.t("铃声") + " · " +
-                                    (root.alarmEngine ? root.alarmEngine.ringtoneLabel(root.alarmRingtone)
-                                                      : I18n.t("未选择（仅语音播报）"))
-                            }
                             CarButton {
                                 objectName: "alarmRingtoneDefault"
                                 text: I18n.t("默认")
@@ -1440,29 +1476,6 @@ Item {
                 label: I18n.t("增加") + " " + box.caption
                 onClicked: box.adjusted(1)
             }
-        }
-    }
-
-    component NumberStepper: ColumnLayout {
-        id: stepper
-        property string caption: ""
-        property int value: 0
-        property int maximum: 59
-        signal adjusted(int delta)
-        spacing: 4 * root.uiScale
-        CarText {
-            Layout.fillWidth: true
-            horizontalAlignment: Text.AlignHCenter
-            maximumLineCount: 1
-            subdued: true
-            text: stepper.caption
-        }
-        StepperBox {
-            Layout.alignment: Qt.AlignHCenter
-            value: stepper.value
-            maximum: stepper.maximum
-            caption: stepper.caption
-            onAdjusted: function(delta) { stepper.adjusted(delta) }
         }
     }
 

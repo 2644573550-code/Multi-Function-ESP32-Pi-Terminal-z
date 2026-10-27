@@ -283,6 +283,7 @@ QtObject {
         "本机时间":"Local time",
         "系统时钟":"System clock",
         "世界时钟":"World clock",
+        "报时":"Announce time",
         "编辑闹钟":"Edit alarm",
         "保存修改":"Save changes",
         "保存会覆盖这一条，启用状态保持不变":"Saving overwrites this alarm; its enabled state is kept",

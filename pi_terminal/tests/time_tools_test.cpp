@@ -11,6 +11,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUrlQuery>
+#include <functional>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -606,6 +607,120 @@ private slots:
         QCOMPARE(offset.toInt(), 0);
         QVERIFY(!sync->property("status").toString().isEmpty());
         QVERIFY(sync->property("status").toString().contains(QStringLiteral("线路二")));
+    }
+
+    // 时钟样式按钮必须真的响应点击（曾经被报时热区整片盖住，点了只会播报）。
+    void clockStyleButtonsAreClickable() {
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"width", 800}, {"height", 365}, {"uiScale", 0.75}, {"active", true}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *page = qobject_cast<QQuickItem *>(object.data());
+        QQuickWindow window;
+        window.resize(800, 365);
+        page->setParentItem(window.contentItem());
+        page->setWidth(800);
+        page->setHeight(365);
+        window.show();
+        QTest::qWait(200);
+
+        QCOMPARE(page->property("clockStyle").toString(), QStringLiteral("digital"));
+        auto *analog = findItemByObjectName(page, QStringLiteral("clockStyleAnalog"));
+        auto *digital = findItemByObjectName(page, QStringLiteral("clockStyleDigital"));
+        QVERIFY(analog && digital);
+        const QPointF analogCenter = analog->mapToScene(QPointF(analog->width() / 2, analog->height() / 2));
+        QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, analogCenter.toPoint());
+        QTest::qWait(120);
+        QCOMPARE(page->property("clockStyle").toString(), QStringLiteral("analog"));
+        QCOMPARE(host.settings.value(QStringLiteral("time/clock-style")), QStringLiteral("analog"));
+        const QPointF digitalCenter = digital->mapToScene(QPointF(digital->width() / 2, digital->height() / 2));
+        QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, digitalCenter.toPoint());
+        QTest::qWait(120);
+        QCOMPARE(page->property("clockStyle").toString(), QStringLiteral("digital"));
+    }
+
+    // 340px 宽的卡片是双栏的硬约束：卡片内任何可见控件都不得越过卡片右边界。
+    // 计时器预设原本按页面宽度算列数、三组步进器挤一行，真机上「秒」直接被挤出卡片。
+    void paneContentStaysInsideCard() {
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent syncComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QVERIFY2(syncComponent.isReady(), qPrintable(syncComponent.errorString()));
+        QScopedPointer<QObject> sync(syncComponent.create());
+        QVERIFY(sync);
+        QQmlComponent alarmComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/AlarmEngine.qml")));
+        QScopedPointer<QObject> alarm(alarmComponent.create());
+        QVERIFY(alarm);
+        QVariant ok;
+        QVariantMap alarmRecord;
+        alarmRecord.insert(QStringLiteral("hour"), 6);
+        alarmRecord.insert(QStringLiteral("minute"), 45);
+        alarmRecord.insert(QStringLiteral("name"), QStringLiteral("起床"));
+        alarmRecord.insert(QStringLiteral("ringSeconds"), 30);
+        alarmRecord.insert(QStringLiteral("snoozeMinutes"), 5);
+        QMetaObject::invokeMethod(alarm.data(), "addAlarm", Q_RETURN_ARG(QVariant, ok),
+                                  Q_ARG(QVariant, alarmRecord));
+        QVERIFY(ok.toBool());
+
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        // 真机视口：页面 800×365、uiScale 0.75 → 双栏、每栏 340
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"width", 800}, {"height", 365}, {"uiScale", 0.75}, {"active", true},
+             {"alarmEngine", QVariant::fromValue(alarm.data())},
+             {"timeSync", QVariant::fromValue(sync.data())}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *page = qobject_cast<QQuickItem *>(object.data());
+        QQuickWindow window;
+        window.resize(800, 365);
+        page->setParentItem(window.contentItem());
+        page->setWidth(800);
+        page->setHeight(365);
+        window.show();
+        QTest::qWait(200);
+
+        const QStringList cards{QStringLiteral("clockLocalPane"), QStringLiteral("clockWorldPane"),
+                                QStringLiteral("timerInputPane"), QStringLiteral("timerRunPane"),
+                                QStringLiteral("stopwatchRunPane"), QStringLiteral("stopwatchLapPane"),
+                                QStringLiteral("alarmEditPane"), QStringLiteral("alarmListPane")};
+        QStringList violations;
+        for (int tab = 0; tab < 4; ++tab) {
+            QMetaObject::invokeMethod(page, "setTab", Q_ARG(QVariant, tab));
+            QTest::qWait(200);
+            for (const QString &name : cards) {
+                auto *card = page->findChild<QQuickItem *>(name);
+                if (!card || !card->isVisible())
+                    continue;
+                std::function<void(QQuickItem *)> walk = [&](QQuickItem *item) {
+                    for (QQuickItem *child : item->childItems()) {
+                        if (child->isVisible() && child->width() > 0) {
+                            const QPointF topLeft = child->mapToItem(card, QPointF(0, 0));
+                            const qreal right = topLeft.x() + child->width();
+                            if (topLeft.x() < -1.0 || right > card->width() + 1.0) {
+                                violations << QStringLiteral("%1/%2 x=%3 right=%4 cardW=%5")
+                                                  .arg(name,
+                                                       child->objectName().isEmpty()
+                                                           ? QString::fromLatin1(child->metaObject()->className())
+                                                           : child->objectName())
+                                                  .arg(topLeft.x(), 0, 'f', 1)
+                                                  .arg(right, 0, 'f', 1)
+                                                  .arg(card->width(), 0, 'f', 1);
+                            }
+                        }
+                        walk(child);
+                    }
+                };
+                walk(card);
+            }
+        }
+        for (const QString &violation : violations)
+            qWarning("TIME_CARD_OVERFLOW %s", qPrintable(violation));
+        QVERIFY2(violations.isEmpty(), qPrintable(violations.mid(0, 8).join(QStringLiteral(" | "))));
     }
 
     // 闹钟点行回填编辑：回填、就地保存（保留启用位）、取消回新建态、冲突拒绝。
