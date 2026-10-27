@@ -47,10 +47,30 @@ add_library(terminal_security STATIC
     src/security/KeyWrap.cpp src/security/KeyWrap.h
     src/security/UserService.cpp src/security/UserService.h
     src/security/AuthService.cpp src/security/AuthService.h
-    src/security/SessionManager.cpp src/security/SessionManager.h)
+    src/security/SessionManager.cpp src/security/SessionManager.h
+    src/security/SqlCipherStore.cpp src/security/SqlCipherStore.h
+    src/security/UserDatabase.cpp src/security/UserDatabase.h)
 target_include_directories(terminal_security PUBLIC src)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
-target_link_libraries(terminal_security PUBLIC Qt6::Core Qt6::Network OpenSSL::Crypto)
+
+# SQLCipher 路线由 F 裁决（§0.1）：直接调 C API，不走 Qt SQL 插件。
+# 找不到库时必须 FATAL_ERROR —— 不得静默降级成普通 SQLite。
+find_library(SQLCIPHER_LIB NAMES sqlcipher
+    HINTS ${SQLCIPHER_ROOT}/lib ${SQLCIPHER_ROOT}/lib/x86_64-linux-gnu)
+# Debian/Ubuntu 把 sqlite3.h 放在 /usr/include/sqlcipher 下，需单独探测。
+find_path(SQLCIPHER_INCLUDE_DIR sqlite3.h
+    HINTS ${SQLCIPHER_ROOT}/include ${SQLCIPHER_ROOT}/include/sqlcipher
+    PATH_SUFFIXES sqlcipher)
+if(NOT SQLCIPHER_LIB OR NOT SQLCIPHER_INCLUDE_DIR)
+    message(FATAL_ERROR
+        "SQLCipher not found. Install libsqlcipher-dev or set SQLCIPHER_ROOT. "
+        "Refusing to fall back to plain SQLite (T-10 requires encryption).")
+endif()
+message(STATUS "SQLCipher: ${SQLCIPHER_LIB} (headers ${SQLCIPHER_INCLUDE_DIR})")
+
+target_compile_definitions(terminal_security PRIVATE SQLITE_HAS_CODEC)
+target_include_directories(terminal_security PRIVATE ${SQLCIPHER_INCLUDE_DIR})
+target_link_libraries(terminal_security PUBLIC Qt6::Core Qt6::Network OpenSSL::Crypto ${SQLCIPHER_LIB})
 target_compile_options(terminal_security PRIVATE -Wall -Wextra -Wpedantic)
 
 add_library(terminal_core STATIC
@@ -61,7 +81,9 @@ add_library(terminal_core STATIC
     src/core/ModuleCardModel.cpp src/core/ModuleCardModel.h
     src/core/PageProvider.cpp src/core/PageProvider.h
     src/core/SessionStateMachine.cpp src/core/SessionStateMachine.h
-    src/core/PackageReceiver.cpp src/core/PackageReceiver.h)
+    src/core/PackageReceiver.cpp src/core/PackageReceiver.h
+    src/core/WorkerIpc.cpp src/core/WorkerIpc.h
+    src/core/ModuleWorkerLauncher.cpp src/core/ModuleWorkerLauncher.h)
 target_include_directories(terminal_core PUBLIC src src/modules/api)
 target_link_libraries(terminal_core PUBLIC terminal_transports Qt6::Core Qt6::Network Qt6::StateMachine)
 target_compile_definitions(terminal_core PRIVATE PI_PACKAGE_TOOL="${CMAKE_INSTALL_PREFIX}/libexec/orange-pi-terminal/package_tool.py")
@@ -271,6 +293,15 @@ if(BUILD_TESTING)
     add_executable(auth_service_test tests/auth_service_test.cpp)
     target_link_libraries(auth_service_test PRIVATE terminal_security Qt6::Test)
     add_test(NAME user_pin_session COMMAND auth_service_test)
+    add_executable(user_database_test tests/user_database_test.cpp)
+    target_link_libraries(user_database_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME sqlcipher_user_isolation COMMAND user_database_test)
+    add_executable(worker_isolation_test tests/worker_isolation_test.cpp)
+    target_include_directories(worker_isolation_test PRIVATE src)
+    target_compile_definitions(worker_isolation_test PRIVATE
+        WORKER_UNIT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/packaging/orange-pi-worker@.service")
+    target_link_libraries(worker_isolation_test PRIVATE terminal_core Qt6::Test)
+    add_test(NAME worker_ipc_contract COMMAND worker_isolation_test)
     add_executable(session_test tests/session_test.cpp)
     add_dependencies(session_test example_module)
     target_link_libraries(session_test PRIVATE terminal_core Qt6::Test)
