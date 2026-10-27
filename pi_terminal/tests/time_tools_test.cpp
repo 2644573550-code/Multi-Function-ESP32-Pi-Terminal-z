@@ -1089,6 +1089,8 @@ private slots:
         QTest::addColumn<double>("uiScale");
         // 真机视口：宽度够就两栏（短屏靠卡片内部滚动）
         QTest::newRow("pi-real-800x365") << 800 << 365 << 0.75;
+        // 被窗口管理器压窄的桌面窗口：页面只有 560，左栏下限不能再吃满
+        QTest::newRow("narrow-page-560x365") << 560 << 365 << 0.65;
         // 窄屏兜底：单栏、整页滚动
         QTest::newRow("narrow-700x600-single") << 700 << 600 << 1.0;
         QTest::newRow("pi-1024x600") << 1024 << 600 << 1.0;

@@ -46,7 +46,9 @@ Item {
     // 一致，不会出现"缩小时反而更容易变单栏"。真机视口 ≈ 800 @ 0.75 需要 570，是双栏。
     // 不看高度：短屏同样是两栏，正文放不下就在卡片内部滚动。
     readonly property bool twoPane: width >= 760 * uiScale
-    readonly property real leftPaneWidth: Math.max(340, Math.min(460, width * 0.42))
+    // 左栏下限跟着可用宽度走：原先固定 340 的下限在 560px 页面里会把右栏挤到 200px，
+    // 右栏内容（管理城市、城市钟）直接被裁。宽屏仍是 clamp(340, 42%, 460)。
+    readonly property real leftPaneWidth: Math.max(240 * uiScale, Math.min(460, width * 0.42))
 
     // 城市选择、同步到的偏移与校时线路状态都归 TimeSync.qml（Main 实例化一次），
     // 设置页的「时间与报时」分区与这里看到的是同一份状态；本页面只做显示与操作。
