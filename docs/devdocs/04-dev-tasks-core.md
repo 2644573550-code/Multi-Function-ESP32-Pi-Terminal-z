@@ -1,8 +1,3 @@
----
-generated_by: dev-tasks
-spec_version: 1.2
-generated_at: 2026-10-26
----
 # 核心逻辑任务
 
 路径所属仓库、当前事实和目标实现的区别见[总计划](04-dev-tasks.md#0-项目基线与代码现状)；接口/权限以[F审核稿](04-dev-tasks-f-day1.md)为准。F文档审定不替代各任务的实现、技术签认或实机验收。
@@ -56,7 +51,7 @@ generated_at: 2026-10-26
 | 层级/审核 | 🔴 核心逻辑；`review_profile=audit` |
 | TDD 模式 | 测试先行：PIN/session失败用例→服务实现→限速/撤销重构 |
 | review_profile | `audit` |
-| 依赖 | T-01、T-03 |
+| 依赖 | T-01（2026-10-28 解除对 T-03 的依赖：PIN 认证与桥板身份无代码交集） |
 | 追溯 | F-003 / AC-003 / UT-002、IT-004 |
 | 接口 | `UserService`、`AuthService`、`PinPolicy`、`SessionManager`；均待新增 |
 | 文件范围 | 新增 `pi_terminal/src/security/UserService.{h,cpp}`、`AuthService.{h,cpp}`、`PinPolicy.{h,cpp}`、`SessionManager.{h,cpp}`及最小任务能力上下文；接入 `pi_terminal/CMakeLists.txt` 和 `src/app/TerminalApplication.{h,cpp}` |

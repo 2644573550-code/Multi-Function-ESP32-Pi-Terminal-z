@@ -1,8 +1,3 @@
----
-generated_by: dev-tasks
-spec_version: 1.2
-generated_at: 2026-10-26
----
 # 接口与UI任务
 
 路径中的`pi_terminal/`属于Pi仓库，`esp/`属于独立ESP仓库；共享SDK与啸天资料现状见[事实复核](04-dev-tasks-f-review.md)。新增安全服务/接口均是目标，不是现有能力。
@@ -106,7 +101,7 @@ D/Z/L 对字段和依赖逐项签字确认；检查任务编号唯一、依赖�
 | 层级/审核 | 🟢 `guarded` |
 | TDD 模式 | 实现→交互验证→补UI自动化/回归测试 |
 | review_profile | `guarded` |
-| 依赖 | T-04、T-08、T-10 |
+| 依赖 | T-09a（PIN/锁屏/切用户）：T-04、T-10；T-09b（绑卡/挂失）：T-07、T-08、T-09a。2026-10-28 拆分，同一张卡两段 |
 | 追溯 | F-003 / AC-003、F-006 / AC-006 / E2E-002 |
 | 环境 | Qt 6.5.3、Wayland、Pi 3B |
 | 文件范围 | 现有 `pi_terminal/qml/Main.qml`、`src/core/ModuleCardModel.*`、`src/core/PageProvider.*`；新增登录/锁屏/绑卡QML组件并在CMake资源表登记 |

@@ -1,8 +1,3 @@
----
-generated_by: dev-tasks
-spec_version: 1.2
-generated_at: 2026-10-26
----
 # 基础设施任务
 
 `esp/`及桥板`tests/`均位于独立ESP仓库，不在当前Pi checkout；Pi源/SDK路径以[事实复核](04-dev-tasks-f-review.md)为准。记录目标环境与实测环境，不能将历史Qt6.4.2记录当作本轮目标Qt6.5.3通过。

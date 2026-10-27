@@ -102,6 +102,22 @@ error: 'mbedtls_ecdh_context' has no member named 'd'
 3. **B-07 记为遗留、不阻塞**：只做只读扫描，未改 Git 历史。固件 `0x006984` 含明文 provision（instance/SSID/token/静态 IP），无私钥；token 与公开 archive README 一致。**token 是否仍在役未确认**。按当前优先级（先完成 Pi 终端软件、固件后续开发），本轮不阻塞合并，轮换属固件侧工作，等软件完成后一并处理。**这是一条未关闭的风险，不是已解决的问题。**
 4. **PR #28 流程问题**：无描述、未留 review 痕迹；内容已在 `00-decisions-for-f.md` §6.5 与 `F-REVIEW-2.md` §1 追认。
 
+## 7.4 Z 的七项冻结参数（详细见 `F-REVIEW-2.md` §5.3.2）
+
+Z 的 Pi 侧软件有七个原本悬空、会各自分叉的决定，本轮一次冻结：
+
+| 项 | 冻结 |
+|---|---|
+| T-10 存储 | 直接调 SQLCipher C API，**不用 `QSqlDatabase`**（Qt 6.5.3 无 SQLCipher 驱动、无私有头、本机无 autoconf，重编插件不可行） |
+| PIN 的 KDF | PBKDF2-HMAC-SHA256，**迭代 ≥600,000 硬编码**，salt 16B，`QPasswordDigestor`，零新依赖 |
+| 依赖死锁 | **T-04 不再依赖 T-03**；**T-09 拆 a/b**（PIN/锁屏/切用户 vs 绑卡/挂失）。D 和 Z 原本互相堵死，已解开 |
+| worker 隔离 | `DynamicUser=yes` + `PrivateNetwork=yes`，不建持久账号；判 UID ≠ 宿主即可 |
+| BLE | 保留。Qt 无 pair/encrypt API，唯一入口 `QBluetoothLocalDevice::requestPairing()`；未 Paired 拒发，不降级 |
+| `uidIndexKey` | **整机单钥** 0600（放每用户 DB 会鸡生蛋：刷卡选用户发生在登录前） |
+| 模块 QML | 改**独立 QQmlEngine**，否则模块页能直读 `connectionManager`，T-13 的隔离要求无法验收 |
+
+Z 现在能独立做完 5 件：`uidIndexKey`、T-04、T-10、T-11、T-09a。做完前三件即解除 D 的阻塞。
+
 ## 7.5 D 的任务卡点（详细见 `F-REVIEW-2.md` §5.3.1）
 
 D 被分配 10 个任务，按能否开工分四组：

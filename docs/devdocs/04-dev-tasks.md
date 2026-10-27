@@ -1,8 +1,5 @@
 ---
-generated_by: dev-tasks
 document: team-development-plan
-spec_version: 1.2
-generated_at: 2026-10-26
 source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_terminal code unchanged from 8349ce8); ESP service main 16aebdd
 ---
 
