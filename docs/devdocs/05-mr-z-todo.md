@@ -81,7 +81,20 @@ LD_LIBRARY_PATH=$PWD/root/usr/lib/x86_64-linux-gnu ./t
 
 实测结果：正确 key `rc=0`；错误 key `rc=26 (file is encrypted or is not a database)`；`PRAGMA cipher_version` = `3.4.1`；DB 文件头非 `SQLite format`。**这条路径你现在就能在本机跑通，不用等 Pi。**
 
-**依赖获取**：Pi 上 `sudo apt install libsqlcipher-dev`（Bookworm 有 3.4.1）。CMake 用 `find_library(SQLCIPHER_LIB sqlcipher)` + 回退到 `SQLCIPHER_ROOT`，**不硬编码路径**；找不到时 `message(FATAL_ERROR)`，不静默降级成 SQLite。
+**依赖获取**：Pi 上 `sudo apt install libsqlcipher-dev`。CMake 用 `find_library(SQLCIPHER_LIB sqlcipher)` + 回退到 `SQLCIPHER_ROOT`，**不硬编码路径**；找不到时 `message(FATAL_ERROR)`，不静默降级成 SQLite。
+
+**版本差异（2026-10-28 核实 Debian 包关系）**：
+
+| 发行版 | 版本 | 说明 |
+|---|---|---|
+| bookworm 主源 | **3.4.1** | 本机实测所用版本 |
+| bookworm-backports | 4.6.1 | 若启用 backports 会拿到 4.x |
+| trixie | 4.6.1 | — |
+
+**3.x 与 4.x 的默认 KDF 参数不同**（4.x 默认迭代更高、KDF 算法不同）。因此：
+- **DB 文件不跨大版本互换**。P0 在 Pi 上构建时锁定一个版本，DB 带上版本标记。
+- 不要依赖 PRAGMA 默认值；用 `sqlite3_key` 后显式设 `PRAGMA cipher_page_size` 等参数前先确认版本。
+- 若 Pi 上是 4.x 而本机验证是 3.4.1，**必须在 Pi 上重跑 §0.1 那组验证**（错误 key 返回 26、`cipher_version`），不得直接套用本机结果。
 
 ### 0.2 PIN 的 KDF：PBKDF2-HMAC-SHA256，迭代 ≥600,000
 
@@ -139,7 +152,11 @@ RestrictAddressFamilies=AF_UNIX
 | 读不到 DB/`$HOME` | `cat` 相应路径失败 |
 | 崩溃隔离 | kill worker 后宿主存活、资源回收 |
 
-安装期需要**一次** sudo 把 unit 装进 `/etc/systemd/system/`；运行期不再提权。这与 `setup-desktop.py` 的"绝不 sudo"原则不冲突——那个脚本装的是用户态 SDK，不是 system service。
+安装期需要**一次** sudo 把 unit 装进 `/etc/systemd/system/`；运行期不再提权。这与 `setup-desktop.py` 的「绝不 sudo」原则不冲突——那个脚本装的是用户态 SDK，不是 system service。
+
+**版本前提已核实（2026-10-28）**：Debian bookworm 的 systemd 是 **252**；`DynamicUser=` 与 `PrivateNetwork=` 均自 **232** 起可用，前提满足，无需 backports。
+
+**一个注意点**：`DynamicUser=yes` 下进程 UID 每次启动都变，所以**不要**用固定 UID 写文件属主或用 `uid=` 判定。worker 的专用运行目录用 `StateDirectory=`/`RuntimeDirectory=` 让 systemd 自动分配属主，不要手工 `chown`。
 
 `QProcess` 本身**不是**沙箱，只起进程不加这些声明一律判 FAIL。
 
@@ -439,7 +456,8 @@ bool uidIndexKey(QByteArray *out32);   // 成功 true；不可用 false
   - 旧记录无用户归属：**不自动导入首个用户、不自动删除**，另留迁移记录
 - [ ] ❌ **补全 UT-005**：A/B 各写标记，A 读 B、错误 key 打开、退出后重用旧 session
 - [ ] ❓ **测 DB / WAL / log / temp 无 PIN、raw UID、明文健康值**
-- [ ] 📋 **记录 Pi 3B 上驱动加载、DB 打开、关键 PIN/查询延迟**
+- [ ] 📋 **记录 Pi 3B 上 SQLCipher 链接（`cipher_version`）、DB 打开、关键 PIN/查询延迟**
+  - **不测 Qt 驱动加载**——路线已定为 C API（§0.1）；若 Pi 上是 4.x，须重跑 §0.1 验证
 
 **验收**：每用户 DB 加密；DB key 随机且异于 PIN；A 无法查改 B；锁屏后旧前台 API 拒访；日志无敏感值。
 

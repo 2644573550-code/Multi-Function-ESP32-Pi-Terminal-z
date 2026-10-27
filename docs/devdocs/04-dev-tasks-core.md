@@ -160,7 +160,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 - A context 无法查询、改写 B 的记录。
 - lock后旧前台session API不能继续访问DB；仅原有受限任务能力可由可信服务追加原用户记录；任务停止/退出后所有旧能力拒绝。
 - 原始 UID、PIN、明文健康值不得出现在应用日志。
-- Pi 3B 上驱动加载、DB 打开和关键 PIN/查询延迟测量记录在 PR。
+- Pi 3B 上 SQLCipher 链接（`cipher_version`）、DB 打开和关键 PIN/查询延迟测量记录在 PR。**不测 Qt 驱动加载**——路线已定为 C API（§0.1）。
 
 ### Review 要点
 
@@ -184,7 +184,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 
 - P0 最小要求：模块代码不再在宿主进程内直接以 `QLibrary` 加载执行；至少独立低权限 worker + 有界版本 IPC。
 - 现有盆栽插件/历史及任意QML页面不能原样视作隔离完成；C ABI业务迁至worker/可信服务，宿主仅运行受控UI，T-13同步改造并补锁屏任务能力测试。
-- worker 使用非特权 UID；无数据库/任意文件读权限；仅访问专用运行目录和必要设备句柄。
+- worker 使用非特权 UID（**`DynamicUser=yes`**，不建持久账号；判定为「worker UID ≠ 宿主 UID」，不要求固定值）；无数据库/任意文件读权限；仅访问专用运行目录和必要设备句柄。
 - Pi 热点/WAN forwarding 默认拒绝；worker 默认无公网 egress；ESP 产品默认配置不启用任意外网 STA。
 - 只做默认拒绝和策略验证；域名代理、复杂动态授权、完整 syscall/seccomp hardening 列 P1。
 
@@ -194,7 +194,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 
 ### 验收标准
 
-- worker PID 与宿主不同、运行 UID 非特权。
+- worker PID 与宿主不同，且运行 UID ≠ 宿主 UID（`systemctl show` 确认 `DynamicUser=yes`）。
 - worker 无法读取 SQLCipher 文件、密钥、Pi 主用户目录。
 - worker 默认无法访问公网；Pi 默认不转发热点流量到 WAN。
 - worker 崩溃不导致 Qt 主程序崩溃，且 session/资源可回收。
