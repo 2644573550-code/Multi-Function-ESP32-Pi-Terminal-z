@@ -141,7 +141,7 @@ T-17 F最终P0实机验收与PR合并
 - [接口和UI任务](04-dev-tasks-api-ui.md)
 - [测试和验收任务](04-dev-tasks-test.md)
 - [P0之后剩余任务](04-dev-tasks-post-p0.md)
-- [F第一天接口审核稿、权限及预检回执](04-dev-tasks-f-day1.md)（F文档审定通过，D/Z/L技术签认及实测待完成）
+- [F第一天接口审核稿、权限及预检回执](04-dev-tasks-f-day1.md)（F文档审定通过；密码协议规范已交付待 D 签认；D/Z/L技术签认及实测待完成）
 
 ## 6. PR门禁
 

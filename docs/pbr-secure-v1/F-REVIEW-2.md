@@ -263,7 +263,7 @@ f-day1 §4.2 要求"用握手建立并验证的对端单调时间偏移校验 TT
 | PBR 帧编解码 | `pi_terminal/src/protocol/pibridge_protocol.{h,cpp}` | 成熟，不改外层 |
 | 主机侧假桥板 | `pi_terminal/tools/mock_bridge.py` | 自测用；**路径不在 `tools/`** |
 | 信任确认 UI 与 `trustKey` | `pi_terminal/src/core/ConnectionManager.{h,cpp}:430-455` | **已有**一套 `QSettings("trusted/"+trustKey)` 的模块信任流程，但那是**模块包签名**，不是桥板身份。T-03 的 `TrustStore` 是另一套，不要混用，也不要改现有的 |
-| 串口传输 | `pi_terminal/src/transport/PogoControlTransport.cpp` | 已接好校验器 |
+| 串口传输 | `pi_terminal/src/transport/PogoControlTransport.cpp:87` | 已接好 `payloadAcceptable()`；T-07 接入 AEAD 时必须先解信封再走这一步 |
 
 #### F. 一句话版
 
