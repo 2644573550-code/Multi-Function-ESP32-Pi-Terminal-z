@@ -102,6 +102,32 @@ error: 'mbedtls_ecdh_context' has no member named 'd'
 3. **B-07 记为遗留、不阻塞**：只做只读扫描，未改 Git 历史。固件 `0x006984` 含明文 provision（instance/SSID/token/静态 IP），无私钥；token 与公开 archive README 一致。**token 是否仍在役未确认**。按当前优先级（先完成 Pi 终端软件、固件后续开发），本轮不阻塞合并，轮换属固件侧工作，等软件完成后一并处理。**这是一条未关闭的风险，不是已解决的问题。**
 4. **PR #28 流程问题**：无描述、未留 review 痕迹；内容已在 `00-decisions-for-f.md` §6.5 与 `F-REVIEW-2.md` §1 追认。
 
+## 7.5 D 的任务卡点（详细见 `F-REVIEW-2.md` §5.3.1）
+
+D 被分配 10 个任务，按能否开工分四组：
+
+| 组 | 任务 | 前置 |
+|---|---|---|
+| **现在就能做完** | T-02、T-03、T-05 | 无 |
+| **前置是自己** | T-07（依赖 T-03）、T-08 前半段（依赖 T-07） | 自己的前一个任务 |
+| **等 Z** | T-08 后半段（`uidIndexKey`）、T-12（T-04 会话） | Z |
+| **等 L** | T-13/T-14/T-15/T-16 的实机部分 | L；但 Pi 侧接口与字段现在就写 |
+
+**`deriveUidIndex` 的签名本轮冻结**（DR-14 兑现），D 可直接实现：
+
+```cpp
+QByteArray deriveUidIndex(const QByteArray &rawUid);   // 输入原始字节，输出 32B，失败返回空
+bool uidIndexKey(QByteArray *out32);                   // Z 实现
+```
+
+密钥缺失时 RFID 路径必须**失败关闭**，不退回明文 UID 比较。
+
+**三个容易踩的点**：
+
+1. `pi_terminal/tools/mock_bridge.py` 是主机侧假桥板，**不在** `tools/` 下（任务卡原路径已修正）
+2. `ConnectionManager.cpp:430-455` 已有一套 `QSettings("trusted/"+trustKey)` 信任流程，但那是**模块包签名**，与 T-03 的桥板身份 `TrustStore` 是两套，不要混用也不要改现有的
+3. T-13～T-16 的主责里 D 只做 Pi 侧接口/字段/路由，**不碰固件、不碰页面**
+
 ## 8. 审核建议顺序
 
 1. `F-REVIEW-2.md` §2（六处必改的原因）——异议最可能在这里。
@@ -149,6 +175,11 @@ feat(pbr): spec rev2 with mutual authentication, plus T-05 event validation
 
 目标硬件: 主机 AMD x86_64（Qt 6.5.3 / mbedtls 2.28 与 3.6.5）
 实机结果: NOT_RUN —— Pi 3B / ESP32-S3 / RC522 / ARM64 交叉编译均未执行
+
+D 的任务卡点: 详见 F-REVIEW-2.md §5.3.1。
+现在可开工 T-02/T-03/T-05；T-07 依赖 T-03；T-08 后半段等 Z 的 uidIndexKey；
+T-12 等 Z 的 T-04；T-13~T-16 只做 Pi 侧接口/字段/路由，不碰固件与页面。
+deriveUidIndex 签名本轮已冻结。
 
 固件侧当前缺口（不是本 PR 的合并条件）: 命令路径需能容纳 329 字节、
 需能承载二进制载荷、需实现桥板签名与 hello_ok.uptime_ms。软件侧先按完整规范

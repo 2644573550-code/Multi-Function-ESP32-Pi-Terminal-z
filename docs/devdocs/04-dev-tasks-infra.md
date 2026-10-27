@@ -19,7 +19,7 @@ generated_at: 2026-10-26
 | 依赖 | T-01 |
 | 追溯 | F-001 / AC-001 / IT-002 |
 | 文件范围 | Pi应用构建入口、串口传输层、构建/实机记录 |
-| 具体路径 | `pi_terminal/CMakeLists.txt`、`src/transport/PogoControlTransport.{h,cpp}`、`src/protocol/pibridge_protocol.cpp`、`tools/mock_bridge.py`；ESP桥板 `main/main.c`、`build.ps1`、`tests/` |
+| 具体路径 | `pi_terminal/CMakeLists.txt`、`src/transport/PogoControlTransport.{h,cpp}`、`src/protocol/pibridge_protocol.cpp`、`pi_terminal/tools/mock_bridge.py`；ESP桥板 `main/main.c`、`build.ps1`、`tests/` |
 
 ### 工作内容
 

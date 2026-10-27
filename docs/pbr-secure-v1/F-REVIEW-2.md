@@ -163,11 +163,25 @@ f-day1 §4.2 要求"用握手建立并验证的对端单调时间偏移校验 TT
 **T-08（RC522 到 Pi 事件闭环）**
 
 - `rfid_card` 经信封解密 → `validate()` → UID 索引派生 → 选用户。
-- `deriveUidIndex()` 签名由 F 冻结（DR-14），你只实现与调用，密钥归 Z：
+- `deriveUidIndex()` **签名由本节冻结（DR-14 兑现）**，你只实现与调用，密钥生命周期归 Z：
   ```cpp
-  QByteArray deriveUidIndex(const QByteArray &rawUid);   // 由 Z 提供密钥实现
+  // pbr/uid_index.h —— 本签名冻结，两侧不得各自加参数
+  QByteArray deriveUidIndex(const QByteArray &rawUid);
   ```
-  输入是**原始 UID 字节**，不是 hex 文本；输入长度 4/7/10；输出 32 字节。不得在 Pi 侧另加参数。
+  | 项 | 冻结值 |
+  |---|---|
+  | 输入 | **原始 UID 字节**，长度 4 / 7 / 10；不是 hex 文本，不做大小写折叠 |
+  | 输出 | 32 字节 |
+  | 算法 | `HMAC-SHA256(key, ASCII("p0-rfid-index-v1") + u8(uid_len) + rawUid)`（f-day1 §3 原文） |
+  | 密钥 | Z 持有与轮换；D 不接触、不缓存、不落盘 |
+  | 失败 | 长度非法返回**空** `QByteArray`，调用方按 `INVALID_MESSAGE` 处理；不得返回全零或截断值 |
+
+  **密钥接口由 Z 提供**，签名冻结如下（Z 实现，D 只调用）：
+  ```cpp
+  // secure/uid_index_key.h —— Z 实现
+  bool uidIndexKey(QByteArray *out32);   // 成功返回 true；密钥不可用时返回 false
+  ```
+  D 的职责：拿到 `deriveUidIndex` 的输入、调用它、把结果交给用户匹配。**密钥缺失时整条 RFID 路径必须失败关闭**（不匹配任何用户，不退回明文 UID 比较）。
 - 验收：raw UID 不出现在日志、DB、QSettings；UID hex 大小写都接受、长度与字符集必须校验（已有用例）。
 
 **T-12（模块业务数据安全传输）——不在本 PR 范围，列在此处只为划清边界**
@@ -200,6 +214,63 @@ f-day1 §4.2 要求"用握手建立并验证的对端单调时间偏移校验 TT
 | `schema` 缺失的 `attach`/`detach` | 保持 `Legacy` 接受，**T-07 合入时删除该分支及规范 §6.6** |
 | Pi 私钥放哪 | `~/.config/.../host_identity.pem`（或等价），0600，注释标测试级 |
 | 发现规范写错了怎么办 | 提 PR 改规范 + 向量 + 检查程序三件套，F 审。**不要只改代码不改规范** |
+
+### 5.3.1 D 的任务卡点一览（2026-10-28 核定）
+
+你被分配 10 个任务。下表按**能不能现在开工**分组。`阻塞` 一列写的是真实前置，不是提醒。
+
+#### A. 现在就能做完（无外部前置）
+
+| 任务 | 做什么 | 卡点 | 你能独立完成的部分 |
+|---|---|---|---|
+| **T-05** | PBR 编解码、事件状态机 | **无。** 本轮已交付 `PbrControl::validate()` + `payloadAcceptable()` | 补齐双槽路由与 `ConnectionManager` 槽位复用用例；用 `pi_terminal/tools/mock_bridge.py` 做主机自测（注意路径：**不在** `tools/` 下） |
+| **T-03** | 身份与密钥边界 | **无。** 规范 §2/§3 已定 | `TrustStore`、`HostIdentity` 全部可写。见下方"已存在可复用" |
+| **T-02** | Pi/Qt/USB 串口基线 | **无。** 只做 Pi 侧 | Pi 侧 SDK 来源清单 + 串口基线；ESP 侧清单等 L |
+
+#### B. 有前置，但前置是**你自己**
+
+| 任务 | 做什么 | 卡点 | 顺序 |
+|---|---|---|---|
+| **T-07** | AEAD、重放、ACK、去重 | 依赖 T-03 的 `TrustStore`/`HostIdentity` + T-05 | **先 T-03 再 T-07。** `PbrSession` 需要 TrustStore 提供完整公钥才能验桥板签名 |
+| **T-08** | RC522 → Pi 事件闭环 | 依赖 T-07（解密）+ **Z 的 `uidIndexKey`** | 先做前半段（解密 → `validate()` → 调 `deriveUidIndex`），密钥接口用 stub 测；Z 交付后切真实现 |
+
+#### C. 有外部前置，**现在做不了**
+
+| 任务 | 阻塞于 | 具体卡在哪 | 现在能做的 |
+|---|---|---|---|
+| **T-12** | Z 的 T-04（会话/权限） | Pi 侧 TLS 对端要挂到用户会话与授权上；T-04 未实现前只能写传输层 | 写 TLS 客户端 + 指纹白名单 + `撤销立即断连`，用假会话测 |
+| **T-13** | L 的固件、Z 的页面 | 你只做 Pi 侧接口与字段定义 | 定义事件字段与接入接口，不写固件、不写页面 |
+| **T-14** | L 的固件（啸天 `firmware/` 尚无实现） | 同上 | 同上：字段与接口 |
+| **T-15** | T-08/T-09/T-10/T-11/T-12/T-13/T-14 **全部** | 实机联调，需要 L 的硬件与固件、Z 的页面 | 只做 Pi 侧路由与状态机，实机验收由 F 判 |
+| **T-16** | T-15 | 同上 | 同上 |
+
+#### D. 需要别人先交的东西（清单）
+
+| 需要什么 | 谁给 | 影响哪些任务 | 没有它时的替代 |
+|---|---|---|---|
+| `uidIndexKey()` 实现 | **Z** | T-08 | 用固定测试密钥的 stub，接口不变 |
+| T-04 会话与用户模型 | **Z** | T-12、T-15 | 用假会话对象，不给 QML 暴露 |
+| 固件具备：命令容纳 329B / 承载二进制 / 桥板签名 / `hello_ok.uptime_ms` | **L**（等软件完成后） | T-07 联调、T-13/T-14/T-15/T-16 | 主机侧模拟对端自测；**不得**因此加明文 fallback |
+| 双槽电气核验（T-06） | **L** | T-14、T-16 | 无替代，等 |
+
+#### E. 已经存在、可以直接用的
+
+避免重复造：
+
+| 现有物 | 位置 | 说明 |
+|---|---|---|
+| 事件校验器 | `pi_terminal/src/protocol/control_event.{h,cpp}` | 本轮交付，直接扩展 |
+| PBR 帧编解码 | `pi_terminal/src/protocol/pibridge_protocol.{h,cpp}` | 成熟，不改外层 |
+| 主机侧假桥板 | `pi_terminal/tools/mock_bridge.py` | 自测用；**路径不在 `tools/`** |
+| 信任确认 UI 与 `trustKey` | `pi_terminal/src/core/ConnectionManager.{h,cpp}:430-455` | **已有**一套 `QSettings("trusted/"+trustKey)` 的模块信任流程，但那是**模块包签名**，不是桥板身份。T-03 的 `TrustStore` 是另一套，不要混用，也不要改现有的 |
+| 串口传输 | `pi_terminal/src/transport/PogoControlTransport.cpp` | 已接好校验器 |
+
+#### F. 一句话版
+
+**现在能开工：T-02、T-03、T-05。**
+**接着做：T-07（依赖 T-03）、T-08 前半段（依赖 T-07）。**
+**等 Z：T-08 后半段、T-12。**
+**等 L：T-13/T-14/T-15/T-16 的实机部分——这几项你现在只做 Pi 侧接口与字段，不要等固件，也不要替固件做假设。**
 
 ### 5.4 提 PR 的硬要求
 

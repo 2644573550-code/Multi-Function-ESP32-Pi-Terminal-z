@@ -50,7 +50,7 @@ D/Z/L 对字段和依赖逐项签字确认；检查任务编号唯一、依赖�
 | 依赖 | T-01 |
 | 追溯 | F-005 / AC-005 / UT-003、IT-005 |
 | 接口 | direction/kind/sequence/length/CRC framing、attach/status/detach、`rfid_card` |
-| 文件范围 | 现有Pi：`pi_terminal/src/protocol/pibridge_protocol.cpp`、`src/transport/PogoControlTransport.cpp`、`tools/mock_bridge.py`；**依赖远端（不改动）**：`esp/S3_PiBridge_LinkIt_Host/main/main.c`、`rfid_service.c`、`tests/` |
+| 文件范围 | 现有Pi：`pi_terminal/src/protocol/pibridge_protocol.cpp`、`src/transport/PogoControlTransport.cpp`、`pi_terminal/tools/mock_bridge.py`（主机侧假桥板，自测用）；**依赖远端（不改动）**：`esp/S3_PiBridge_LinkIt_Host/main/main.c`、`rfid_service.c`、`tests/` |
 
 ### 工作内容
 
@@ -171,7 +171,7 @@ D提交 Pi 侧协议/key separation 设计，F审核算法/证书验证/fail-clo
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（ESP）、Mr.D（PBR接入）、Mr.Z（用户归属/UI） |
+| 主责 | Mr.L（ESP 固件）、Mr.D（**Pi 侧接口与字段**）、Mr.Z（用户归属/UI） |
 | 层级/审核 | 🟡 `guarded` |
 | TDD 模式 | 集成测试先行：模块会话/数据归属→业务数据接入→端到端复测 |
 | review_profile | `guarded` |
@@ -197,7 +197,7 @@ D提交 Pi 侧协议/key separation 设计，F审核算法/证书验证/fail-clo
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（硬件/固件）、Mr.D（事件协议）、Mr.Z（页面/会话权限） |
+| 主责 | Mr.L（硬件/固件）、Mr.D（**Pi 侧事件字段与接入接口**）、Mr.Z（页面/会话权限） |
 | 层级/审核 | 🟡 `guarded` |
 | TDD 模式 | 集成测试先行：两路遮挡/恢复输入→事件实现→探头实机验证 |
 | review_profile | `guarded` |
@@ -221,7 +221,7 @@ D提交 Pi 侧协议/key separation 设计，F审核算法/证书验证/fail-clo
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（实机）、Mr.D（桥板/slot路由）、Mr.Z（用户/页面） |
+| 主责 | Mr.L（实机）、Mr.D（**Pi 侧路由与状态机**）、Mr.Z（用户/页面） |
 | 层级/审核 | 🔴 `audit` |
 | TDD 模式 | E2E先行：两模块独立运行/断开测试→闭环实现→回归 |
 | review_profile | `audit` |
@@ -244,7 +244,7 @@ D提交 Pi 侧协议/key separation 设计，F审核算法/证书验证/fail-clo
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（实机）、Mr.D（桥板/slot路由）、Mr.Z（用户/页面）、Mr.F（裁决） |
+| 主责 | Mr.L（实机）、Mr.D（**Pi 侧路由与状态机**）、Mr.Z（用户/页面）、Mr.F（裁决） |
 | 层级/审核 | 🔴 `audit` |
 | TDD 模式 | 系统测试先行：双槽并发/拔槽测试→双路路由实现→压力复测 |
 | review_profile | `audit` |
