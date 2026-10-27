@@ -9,11 +9,12 @@ import "TimeMath.js" as TimeMath
 // - 本文件只负责界面；闹钟与计时器的运行状态归 AlarmEngine.qml（在 Main 实例化），
 //   页面销毁后仍会计时与响铃。提示复用 Main.qml 已有的 notify()/announce()，
 //   不新建全局 UI 层；渲染、模糊、主题、键盘与输入法实现均未改动。
-// - 世界时钟默认用内置时区表（IANA 标准时区，不含夏令时规则）；只有用户点
-//   “网络校时”才发起公开 HTTP 时间接口请求，失败一律显式报错，不伪造时间。
-// - 闹钟、计时器预设、城市与校时设置通过 SystemTools 的 "time/" 前缀设置持久化；
+// - 世界时钟的城市选择与偏移归 TimeSync.qml（同样在 Main 实例化）。时钟页只显示
+//   列表与「管理城市」；校时入口与整点报时开关都在设置页的「时间与报时」分区，
+//   这样双栏右栏不必再挤进半屏校时控件。
+// - 闹钟、计时器预设、时钟样式通过 SystemTools 的 "time/" 前缀设置持久化；
 //   秒表读数与计次刻意不持久化（恢复一个“还在跑”的秒表只会误导）。
-// - primaryTimeHost / fallbackTimeHost 是给测试替换接口地址的接缝，正常运行为空。
+// - 内置时区表不含夏令时规则，界面用一行说明如实标注，不假装准确。
 Item {
     id: root
     objectName: "timeToolsPage"
@@ -38,48 +39,33 @@ Item {
     readonly property int tabAlarm: 3
     property int tab: 0
 
-    // 城市表：offset 是 IANA 标准时区（分钟），dst 表示该时区有夏令时。
-    // 未校时 + dst 时，界面明确说明“夏令时未知”，不假装准确。
-    // 可选城市目录：offset 是 IANA 标准时区（分钟），dst 表示该时区有夏令时。
-    readonly property var cityCatalog: [
-        { id: "Asia/Shanghai", label: "北京", offset: 480, dst: false },
-        { id: "Asia/Hong_Kong", label: "香港", offset: 480, dst: false },
-        { id: "Asia/Taipei", label: "台北", offset: 480, dst: false },
-        { id: "Asia/Tokyo", label: "东京", offset: 540, dst: false },
-        { id: "Asia/Seoul", label: "首尔", offset: 540, dst: false },
-        { id: "Asia/Singapore", label: "新加坡", offset: 480, dst: false },
-        { id: "Asia/Bangkok", label: "曼谷", offset: 420, dst: false },
-        { id: "Asia/Kolkata", label: "新德里", offset: 330, dst: false },
-        { id: "Asia/Dubai", label: "迪拜", offset: 240, dst: false },
-        { id: "Europe/Moscow", label: "莫斯科", offset: 180, dst: false },
-        { id: "Europe/London", label: "伦敦", offset: 0, dst: true },
-        { id: "Europe/Paris", label: "巴黎", offset: 60, dst: true },
-        { id: "Europe/Berlin", label: "柏林", offset: 60, dst: true },
-        { id: "Africa/Cairo", label: "开罗", offset: 120, dst: true },
-        { id: "America/New_York", label: "纽约", offset: -300, dst: true },
-        { id: "America/Chicago", label: "芝加哥", offset: -360, dst: true },
-        { id: "America/Los_Angeles", label: "洛杉矶", offset: -480, dst: true },
-        { id: "America/Sao_Paulo", label: "圣保罗", offset: -180, dst: false },
-        { id: "Australia/Sydney", label: "悉尼", offset: 600, dst: true },
-        { id: "Pacific/Auckland", label: "奥克兰", offset: 720, dst: true }
-    ]
-    readonly property int maxCities: 8
-    property var selectedZones: ["Asia/Shanghai", "Asia/Tokyo", "Asia/Singapore",
-                                 "Europe/London", "America/New_York", "America/Los_Angeles"]
+    // 平板式双栏：宽屏左右分布，窄屏退回单栏（左栏在上）。
+    // 断点随作者划定的缩放边界走：autoScale ∈ [0.65, 1.4] × textScale ∈ {1, 1.25, 1.5}
+    // 得到 uiScale ∈ [0.65, 2.1]。大字档若仍按 900 硬断，两栏各只剩三百多像素，
+    // 正文会全挤进内部滚动，所以断点取 900 * max(1, uiScale)，低缩放时保持 900 不变。
+    readonly property bool twoPane: width >= 900 * Math.max(1, uiScale)
+    readonly property real leftPaneWidth: Math.max(340, Math.min(460, width * 0.42))
+
+    // 城市选择、同步到的偏移与校时线路状态都归 TimeSync.qml（Main 实例化一次），
+    // 设置页的「时间与报时」分区与这里看到的是同一份状态；本页面只做显示与操作。
+    property var timeSync: null
+    readonly property var cities: timeSync ? timeSync.cities : []
+    readonly property var cityCatalog: timeSync ? timeSync.catalog : []
+    readonly property int maxCities: timeSync ? timeSync.maxCities : 8
     property bool editingCities: false
-    // 只记住同步成功的偏移；选择变化不会丢掉已经查到的时区。
-    property var syncedOffsets: ({})
-    readonly property var cities: {
-        const list = []
-        for (let i = 0; i < selectedZones.length; ++i) {
-            const entry = cityById(selectedZones[i])
-            if (entry) list.push(entry)
-        }
-        return list
-    }
+    // 城市数量到顶时就地提示一句，不弹全局层。
+    property string cityNotice: ""
     readonly property var zoneOffsets: cities.map(function(city) {
-        return syncedOffsets[city.id] !== undefined ? syncedOffsets[city.id] : city.offset
+        return timeSync ? timeSync.offsetOf(city.id) : city.offset
     })
+
+    function toggleCity(id) {
+        if (!timeSync) return
+        const wasSelected = timeSync.hasZone(id)
+        if (timeSync.toggleCity(id)) { cityNotice = ""; return }
+        if (!wasSelected && timeSync.zones.length >= maxCities)
+            cityNotice = I18n.t("最多 8 个城市，先取消一个再添加。")
+    }
     readonly property var weekdayNames: ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"]
 
     // ------------------------------------------------------------------ clock
@@ -107,55 +93,11 @@ Item {
 
     // ------------------------------------------------------------------ world
 
-    property bool worldSyncing: false
-    property int worldSyncedCount: 0
-    property bool worldSyncedOnce: false
-    property string worldProvider: ""
-    property string worldError: ""
-    property double worldSkewMs: 0
-    property string worldSyncedAt: ""
-
-    // 校时接口：默认按“公开接口优先”的顺序尝试；自定义模式严格只用自定义地址，
-    // 失败不静默改走公共接口（与项目的传输策略一致）。
-    property string primaryTimeHost: "https://worldtimeapi.org"
-    property string fallbackTimeHost: "https://timeapi.io"
-    property string apiMode: "auto"                  // "auto" | "custom"
-    property string customHost: ""
-    property var providerQueue: []
-    property var providerState: ({})                 // id -> 0 未测 / 1 可用 / -1 不可用
-    property int providerIndex: -1
-    property string apiAlertText: ""
-    property int syncIndex: -1
-    property int syncToken: 0
-    property double syncBaseUtcMs: 0
-    property var syncXhr: null
-
-    readonly property var providerIds: apiMode === "custom" && customHost.trim() !== ""
-        ? ["custom", "worldtimeapi", "timeapi"] : ["worldtimeapi", "timeapi"]
-
-    readonly property string worldStatus: {
-        if (apiAlertText !== "") return apiAlertText
-        if (worldSyncing) {
-            const current = providerIndex >= 0 && providerIndex < providerQueue.length
-                ? providerLabel(providerQueue[providerIndex].id) : ""
-            return I18n.t("同步中") + " " + worldSyncedCount + "/" + cities.length +
-                (current === "" ? "" : " · " + current)
-        }
-        if (worldError !== "") return worldError
-        if (worldSyncedOnce) {
-            let text = I18n.t("已校时") + " · " + worldProvider + " · " + I18n.t("偏差") + " " +
-                TimeMath.formatSkew(worldSkewMs) + " · " + worldSyncedAt
-            return text
-        }
-        if (apiMode === "custom")
-            return I18n.t("自定义模式：只使用你填写的服务器，失败不会自动改用公共接口。")
-        return I18n.t("未校时使用内置标准时区，伦敦/纽约/洛杉矶可能有夏令时偏差。")
-    }
-
     // ------------------------------------------------------------ 持久化设置
 
     property double timerSavedAt: 0
-    property bool loadingSettings: false
+    // 初值 true：构造期的初值赋值不能先覆盖磁盘上的 time/clock-style，见 TimeSync.qml。
+    property bool loadingSettings: true
     Timer {
         id: timerSaveTimer
         interval: 400
@@ -184,25 +126,7 @@ Item {
         timerSeconds = TimeMath.clamp(Number(preset[2]) || 0, 0, 59)
         if (alarmEngine) alarmEngine.resetTimer(timerTotalMs)
         clockStyle = readSetting("time/clock-style", "digital") === "analog" ? "analog" : "digital"
-        apiMode = readSetting("time/api-mode", "auto") === "custom" ? "custom" : "auto"
-        customHost = readSetting("time/api-host", "")
-        const zones = readSetting("time/cities", "")
-        if (zones !== "") {
-            try {
-                const list = JSON.parse(zones)
-                const kept = []
-                for (let i = 0; i < list.length && kept.length < maxCities; ++i)
-                    if (cityById(list[i])) kept.push(list[i])
-                if (kept.length > 0) selectedZones = kept
-            } catch (error) {
-                console.warn("time: ignoring unreadable city list")
-            }
-        }
         loadingSettings = false
-    }
-
-    function persistCities() {
-        writeSetting("time/cities", JSON.stringify(selectedZones))
     }
 
     function persistTimerPreset() {
@@ -215,13 +139,6 @@ Item {
     }
 
     onClockStyleChanged: if (!loadingSettings) writeSetting("time/clock-style", clockStyle)
-    onApiModeChanged: if (!loadingSettings) persistApiSettings()
-    onCustomHostChanged: if (!loadingSettings) persistApiSettings()
-
-    function persistApiSettings() {
-        writeSetting("time/api-mode", apiMode)
-        writeSetting("time/api-host", customHost.trim())
-    }
 
     // -------------------------------------------------------------- countdown
 
@@ -399,229 +316,6 @@ Item {
         ringtonePickerOpen = false
     }
 
-    // ------------------------------------------------------------- world sync
-
-    function resetWorld() {
-        resetZoneData()
-        worldSyncedOnce = false
-        worldProvider = ""
-        worldSyncedAt = ""
-        worldSkewMs = 0
-        worldError = ""
-        providerState = ({})
-        providerQueue = []
-        providerIndex = -1
-    }
-
-    function buildProviderQueue() {
-        if (apiMode === "custom") {
-            const host = customHost.trim()
-            if (!/^https?:\/\//i.test(host)) return []
-            return [{ id: "custom", host: host, kind: "worldtimeapi" }]
-        }
-        return [{ id: "worldtimeapi", host: primaryTimeHost, kind: "worldtimeapi" },
-                { id: "timeapi", host: fallbackTimeHost, kind: "timeapi" }]
-    }
-
-    // 界面只显示“线路一/线路二”，不暴露真实服务地址。
-    function providerLabel(id) {
-        if (id === "custom") return customHost === "" ? I18n.t("自定义服务器") : I18n.t("自定义服务器")
-        return id === "worldtimeapi" ? I18n.t("线路一") : I18n.t("线路二")
-    }
-
-    function providerStateOf(id) {
-        const state = providerState[id]
-        return state === undefined ? 0 : state
-    }
-
-    function setProviderState(id, value) {
-        const next = Object.assign({}, providerState)
-        next[id] = value
-        providerState = next
-    }
-
-    function cityById(id) {
-        for (let i = 0; i < cityCatalog.length; ++i)
-            if (cityCatalog[i].id === id) return cityCatalog[i]
-        return null
-    }
-
-    function toggleCity(id) {
-        const list = selectedZones.slice()
-        const at = list.indexOf(id)
-        if (at >= 0) {
-            if (list.length <= 1) return          // 至少保留一个城市
-            list.splice(at, 1)
-        } else {
-            if (list.length >= maxCities) {
-                openApiAlert(I18n.t("最多 8 个城市，先取消一个再添加。"))
-                return
-            }
-            list.push(id)
-        }
-        selectedZones = list
-        persistCities()
-    }
-
-    function resetZoneData() {
-        syncedOffsets = ({})
-        worldSyncedCount = 0
-    }
-
-    function openApiAlert(text) {
-        apiAlertText = text
-    }
-
-    function syncWorld() {
-        if (worldSyncing) return
-        const queue = buildProviderQueue()
-        if (queue.length === 0) {
-            openApiAlert(I18n.t("自定义服务器地址需以 http:// 或 https:// 开头，例如 https://time.example.com"))
-            return
-        }
-        providerQueue = queue
-        providerIndex = -1
-        resetZoneData()
-        providerState = ({})          // 红点只在本次同步内有效
-        worldSyncing = true
-        worldError = ""
-        worldSyncedCount = 0
-        worldSyncedOnce = false
-        worldProvider = ""
-        requestNextProvider()
-    }
-
-    function requestNextProvider() {
-        if (!worldSyncing) return
-        ++providerIndex
-        if (providerIndex >= providerQueue.length) { finishWorldSync(); return }
-        syncIndex = -1
-        syncBaseUtcMs = 0
-        requestSyncStep()
-    }
-
-    function requestSyncStep() {
-        if (!worldSyncing) return
-        const provider = providerQueue[providerIndex]
-        // timeapi.io 的返回只有城市墙上时间，没有偏移量，先取一次 UTC 基准。
-        if (provider.kind === "timeapi" && syncBaseUtcMs === 0) { sendSyncRequest(-1); return }
-        ++syncIndex
-        if (syncIndex >= cities.length) {
-            setProviderState(provider.id, 1)
-            finishWorldSync()
-            return
-        }
-        sendSyncRequest(syncIndex)
-    }
-
-    function sendSyncRequest(index) {
-        const provider = providerQueue[providerIndex]
-        const token = ++syncToken
-        const zone = index < 0 ? "UTC" : cities[index].id
-        const url = provider.kind === "timeapi"
-            ? TimeMath.buildTimeApiUrl(provider.host, zone)
-            : TimeMath.buildWorldTimeUrl(provider.host, zone)
-        const xhr = new XMLHttpRequest()
-        syncXhr = xhr
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState !== XMLHttpRequest.DONE) return
-            handleSyncResponse(index, xhr, token)
-        }
-        syncWatchdog.restart()
-        xhr.open("GET", url)
-        xhr.send()
-    }
-
-    function handleSyncResponse(index, xhr, token) {
-        if (token !== syncToken) return
-        syncWatchdog.stop()
-        if (xhr.status < 200 || xhr.status >= 300) {
-            syncRequestFailed(index, token, xhr.status === 0 ? I18n.t("网络不可用或服务不可达") : ("HTTP " + xhr.status))
-            return
-        }
-        const provider = providerQueue[providerIndex]
-        let parsed = null
-        try {
-            parsed = provider.kind === "timeapi" ? TimeMath.parseTimeApiZone(xhr.responseText)
-                                                 : TimeMath.parseWorldTimeApi(xhr.responseText)
-        } catch (error) {
-            syncRequestFailed(index, token, I18n.t("数据格式无效"))
-            return
-        }
-        if (!parsed || !parsed.ok) {
-            syncRequestFailed(index, token, (parsed && parsed.error) ? parsed.error : I18n.t("数据格式无效"))
-            return
-        }
-        const now = Date.now()
-        if (index < 0) {
-            syncBaseUtcMs = parsed.wallUtcMs
-            worldSkewMs = TimeMath.skewMs(syncBaseUtcMs, now)
-            requestSyncStep()
-            return
-        }
-        const offset = provider.kind === "timeapi"
-            ? TimeMath.offsetFromBaselines(parsed.wallUtcMs, syncBaseUtcMs)
-            : parsed.offsetMinutes
-        if (offset === null) {
-            syncRequestFailed(index, token, I18n.t("数据格式无效"))
-            return
-        }
-        applyZoneOffset(index, offset)
-        if (provider.kind === "worldtimeapi") worldSkewMs = TimeMath.skewMs(parsed.serverUtcMs, now)
-        requestSyncStep()
-    }
-
-    function applyZoneOffset(index, offset) {
-        if (index < 0 || index >= cities.length) return
-        const next = Object.assign({}, syncedOffsets)
-        next[cities[index].id] = offset
-        syncedOffsets = next
-        ++worldSyncedCount
-    }
-
-    function cancelSyncRequest() {
-        syncWatchdog.stop()
-        ++syncToken
-        if (syncXhr) { try { syncXhr.abort() } catch (error) {} }
-        syncXhr = null
-    }
-
-    function syncRequestFailed(index, token, reason) {
-        if (token !== syncToken) return
-        cancelSyncRequest()
-        const provider = providerQueue[providerIndex]
-        if (!provider) { worldSyncing = false; return }
-        setProviderState(provider.id, -1)
-        const more = providerIndex + 1 < providerQueue.length
-        const label = providerLabel(provider.id)
-        if (more) {
-            resetZoneData()
-            openApiAlert(label + " · " + reason + "\n" + I18n.t("已切换到下一个校时接口。"))
-            requestNextProvider()
-            return
-        }
-        worldSyncedCount = 0
-        worldError = I18n.t("网络校时失败：") + reason
-        worldSyncing = false
-        openApiAlert(label + " · " + reason + "\n" +
-            (apiMode === "custom" ? I18n.t("自定义模式不会自动改用公共接口，可切回自动后重试。")
-                                  : I18n.t("所有校时接口均不可用，仍显示内置时区。")))
-    }
-
-    function finishWorldSync() {
-        cancelSyncRequest()
-        worldSyncing = false
-        if (worldSyncedCount <= 0) {
-            worldSyncedOnce = false
-            worldError = I18n.t("网络校时失败：") + I18n.t("网络不可用或服务不可达")
-            return
-        }
-        worldSyncedOnce = true
-        worldProvider = providerIndex >= 0 && providerIndex < providerQueue.length
-            ? providerLabel(providerQueue[providerIndex].id) : ""
-        worldSyncedAt = TimeMath.formatHm(TimeMath.localParts(Date.now()))
-        worldError = ""
-    }
 
     // -------------------------------------------------------------- main tick
 
@@ -650,12 +344,6 @@ Item {
         repeat: true
         onTriggered: root.tick()
     }
-    Timer {
-        id: syncWatchdog
-        interval: 8000
-        repeat: false
-        onTriggered: root.syncRequestFailed(root.syncIndex, root.syncToken, I18n.t("请求超时"))
-    }
     Component.onCompleted: { root.loadSettings(); root.tick() }
 
     Flickable {
@@ -663,7 +351,7 @@ Item {
         objectName: "timePage"
         anchors.fill: parent
         contentWidth: width
-        contentHeight: column.implicitHeight
+        contentHeight: root.twoPane ? height : column.implicitHeight
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.VerticalFlick
         clip: true
@@ -671,6 +359,11 @@ Item {
         ColumnLayout {
             id: column
             width: flick.width
+            // 双栏：整列正好等于视口，页面不整体滚动，溢出交给卡片内部 Flickable。
+            // 单栏：按内容高度，页面整体滚动。
+            // 这里若取 max(视口, 内容高)，双栏列会比视口更高，而被 clip 的页面又不滚，
+            // 末行内容（世界时钟的管理城市按钮）就永远看不到——曾卡住的 bug。
+            height: root.twoPane ? flick.height : implicitHeight
             spacing: Theme.gap
 
             RowLayout {
@@ -700,21 +393,33 @@ Item {
                 id: tabLoader
                 objectName: "tabLoader"
                 Layout.fillWidth: true
+                Layout.fillHeight: root.twoPane
+                // 双栏必须允许 Loader 被压到可用行高，否则它的隐式高度（=整页内容高）
+                // 会被当成最小高度，挤不下就把卡片顶出视口。
+                Layout.minimumHeight: root.twoPane ? 0 : implicitHeight
                 sourceComponent: root.tab === root.tabClock ? clockPage
                                : root.tab === root.tabTimer ? timerPage
                                : root.tab === root.tabStopwatch ? stopwatchPage : alarmPage
             }
             Component {
                 id: clockPage
-                ColumnLayout {
+                GridLayout {
                     objectName: "timeClockTab"
                     width: tabLoader.width
-                    spacing: Theme.gap
-            SettingsGroup {
-                Layout.fillWidth: true
+                    height: root.twoPane ? tabLoader.height : implicitHeight
+                    columns: root.twoPane ? 2 : 1
+                    columnSpacing: Theme.gap
+                    rowSpacing: Theme.gap
+
+            TimePane {
+                objectName: "clockLocalPane"
+                Layout.fillWidth: !root.twoPane
+                Layout.preferredWidth: root.twoPane ? root.leftPaneWidth : -1
+                Layout.fillHeight: root.twoPane
+                scrollBody: root.twoPane
                 iconName: "schedule"
                 accentColor: "#8f7bff"
-                title: I18n.t("本机时间")
+                title: I18n.t("中国时间")
                 subtitle: I18n.t("系统时钟") + " · " + TimeMath.formatOffset(root.localOffset)
 
                 // 数字钟、表盘与日期放在同一个水平居中的列里；样式开关浮在右上角，
@@ -725,7 +430,23 @@ Item {
                     Column {
                         id: clockColumn
                         anchors.horizontalCenter: parent.horizontalCenter
-                        spacing: Theme.gap / 2
+                        spacing: Theme.gap / 3
+                        Row {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            spacing: Theme.gap / 2
+                            CarButton {
+                                objectName: "clockStyleDigital"
+                                text: I18n.t("数字")
+                                checked: root.clockStyle === "digital"
+                                onClicked: root.clockStyle = "digital"
+                            }
+                            CarButton {
+                                objectName: "clockStyleAnalog"
+                                text: I18n.t("指针")
+                                checked: root.clockStyle === "analog"
+                                onClicked: root.clockStyle = "analog"
+                            }
+                        }
                         Row {
                             id: digitalClockRow
                             visible: root.clockStyle === "digital"
@@ -762,7 +483,7 @@ Item {
                             objectName: "analogClock"
                             visible: root.clockStyle === "analog"
                             anchors.horizontalCenter: parent.horizontalCenter
-                            height: 148 * root.uiScale
+                            height: 112 * root.uiScale
                             hours: root.clockHour
                             minutes: root.clockMinute
                             seconds: root.clockSecond
@@ -773,33 +494,56 @@ Item {
                             text: root.clockDate + "  " + root.clockWeekday
                         }
                     }
-                    Row {
-                        anchors.top: parent.top
-                        anchors.right: parent.right
-                        spacing: Theme.gap / 2
-                        CarButton {
-                            objectName: "clockStyleDigital"
-                            text: I18n.t("数字")
-                            checked: root.clockStyle === "digital"
-                            onClicked: root.clockStyle = "digital"
-                        }
-                        CarButton {
-                            objectName: "clockStyleAnalog"
-                            text: I18n.t("指针")
-                            checked: root.clockStyle === "analog"
-                            onClicked: root.clockStyle = "analog"
-                        }
+                    MouseArea {
+                        anchors.fill: clockColumn
+                        onClicked: root.announceRequested(
+                            I18n.t("中国时间") + " " + root.clockTime + " " +
+                            TimeMath.formatOffset(root.localOffset))
                     }
                 }
             }
 
-            SettingsGroup {
+            TimePane {
+                objectName: "clockWorldPane"
                 Layout.fillWidth: true
+                Layout.fillHeight: root.twoPane
+                scrollBody: root.twoPane
                 iconName: "public"
                 accentColor: "#4fd4a4"
                 title: I18n.t("世界时钟")
-                subtitle: I18n.t("点击城市可播报当地时间和时区")
+                subtitle: I18n.t("各城市当前时间与 UTC 偏移")
 
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: root.timeSync !== null
+                    spacing: Theme.gap / 2
+                    CarText {
+                        Layout.fillWidth: true
+                        maximumLineCount: 1
+                        fontPixelSize: 13 * root.uiScale
+                        text: I18n.t("城市") + " " + root.cities.length + "/" + root.maxCities
+                    }
+                    CarButton {
+                        objectName: "timeCityEdit"
+                        text: root.editingCities ? I18n.t("完成") : I18n.t("管理城市")
+                        checked: root.editingCities
+                        onClicked: root.editingCities = !root.editingCities
+                    }
+                }
+                CarText {
+                    objectName: "worldClockHint"
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    subdued: true
+                    text: I18n.t("夏令时未知 · 校时见设置")
+                }
+                CarText {
+                    objectName: "worldClockUnavailable"
+                    Layout.fillWidth: true
+                    visible: root.timeSync === null
+                    wrapMode: Text.Wrap
+                    text: I18n.t("世界时钟不可用：校时模块未连接。")
+                }
                 Repeater {
                     model: root.cities.length
                     delegate: RowLayout {
@@ -828,34 +572,9 @@ Item {
                             fontPixelSize: 24 * root.uiScale
                             text: TimeMath.formatOffset(root.zoneOffsets[index])
                         }
-                        IconButton {
-                            iconName: "volume_up"
-                            glyphSize: 20 * root.uiScale
-                            label: I18n.t("播报") + " " + I18n.t(root.cities[index].label)
-                            onClicked: root.announceRequested(
-                                I18n.t(root.cities[index].label) + " " +
-                                TimeMath.formatHm(TimeMath.cityParts(Date.now(), root.zoneOffsets[index])) + " " +
-                                TimeMath.formatOffset(root.zoneOffsets[index]))
-                        }
                     }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.gap / 2
-                    CarText {
-                        Layout.fillWidth: true
-                        maximumLineCount: 1
-                        fontPixelSize: 13 * root.uiScale
-                        text: I18n.t("城市") + " " + root.cities.length + "/" + root.maxCities
-                    }
-                    CarButton {
-                        objectName: "timeCityEdit"
-                        text: root.editingCities ? I18n.t("完成") : I18n.t("管理城市")
-                        checked: root.editingCities
-                        onClicked: root.editingCities = !root.editingCities
-                    }
-                }
                 GridLayout {
                     objectName: "timeCityPicker"
                     Layout.fillWidth: true
@@ -869,107 +588,19 @@ Item {
                             required property var modelData
                             Layout.fillWidth: true
                             text: I18n.t(modelData.label)
-                            checked: root.selectedZones.indexOf(modelData.id) >= 0
+                            checked: root.timeSync ? root.timeSync.hasZone(modelData.id) : false
                             onClicked: root.toggleCity(modelData.id)
                             Accessible.name: I18n.t(modelData.label) + " " +
                                 (checked ? I18n.t("已添加") : I18n.t("未添加"))
                         }
                     }
                 }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.gap / 2
-                    CarButton {
-                        objectName: "timeSyncButton"
-                        text: root.worldSyncing ? I18n.t("同步中") + "…" : I18n.t("网络校时")
-                        enabled: !root.worldSyncing
-                        onClicked: root.syncWorld()
-                    }
-                    CarButton {
-                        visible: root.worldSyncedOnce
-                        text: I18n.t("恢复内置时区")
-                        onClicked: root.resetWorld()
-                    }
-                }
-                // 接口队列：名字后面跟一个状态点（绿=可用，红=不可用，灰=本次未测）。
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.gap
-                    Repeater {
-                        model: root.providerIds
-                        delegate: RowLayout {
-                            required property var modelData
-                            spacing: 6 * root.uiScale
-                            CarText {
-                                maximumLineCount: 1
-                                elide: Text.ElideMiddle
-                                fontPixelSize: 15 * root.uiScale
-                                text: root.providerLabel(modelData)
-                            }
-                            Rectangle {
-                                objectName: "timeProviderDot"
-                                width: 10 * root.uiScale
-                                height: width
-                                radius: width / 2
-                                color: {
-                                    const state = root.providerStateOf(modelData)
-                                    return state === 1 ? "#5ad59a" : state === -1 ? "#ff6584" : Theme.outlineVariant
-                                }
-                                Accessible.name: root.providerLabel(modelData) + " " +
-                                    (root.providerStateOf(modelData) === 1 ? I18n.t("可用")
-                                     : root.providerStateOf(modelData) === -1 ? I18n.t("不可用") : I18n.t("未测试"))
-                            }
-                        }
-                    }
-                    Item { Layout.fillWidth: true }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.gap / 2
-                    CarButton {
-                        objectName: "timeApiModeAuto"
-                        text: I18n.t("自动")
-                        checked: root.apiMode === "auto"
-                        onClicked: root.apiMode = "auto"
-                    }
-                    CarButton {
-                        objectName: "timeApiModeCustom"
-                        text: I18n.t("自定义服务器")
-                        checked: root.apiMode === "custom"
-                        onClicked: root.apiMode = "custom"
-                    }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: root.apiMode === "custom"
-                    spacing: Theme.gap / 2
-                    CarField {
-                        id: customHostField
-                        objectName: "timeApiHostField"
-                        Layout.fillWidth: true
-                        text: root.customHost
-                        placeholderText: "https://time.example.com"
-                        onTextChanged: root.customHost = text
-                    }
-                }
                 CarText {
-                    visible: root.apiMode === "custom"
+                    objectName: "timeCityNotice"
                     Layout.fillWidth: true
+                    visible: root.cityNotice !== ""
                     wrapMode: Text.Wrap
-                    fontPixelSize: 12 * root.uiScale
-                    text: I18n.t("自定义服务器需兼容 worldtimeapi.org 的返回格式（/api/timezone/<区域> → utc_offset、unixtime）。")
-                }
-                CarText {
-                    objectName: "timeSyncStatus"
-                    Layout.fillWidth: true
-                    wrapMode: Text.Wrap
-                    text: root.worldStatus
-                }
-                CarText {
-                    Layout.fillWidth: true
-                    wrapMode: Text.Wrap
-                    fontPixelSize: 12 * root.uiScale
-                    text: I18n.t("校时只在你点击时联网，失败会如实显示错误。")
+                    text: root.cityNotice
                 }
             }
             }
@@ -977,13 +608,19 @@ Item {
             // ---- 计时器
             Component {
                 id: timerPage
-                ColumnLayout {
+                GridLayout {
                     objectName: "timeTimerTab"
                     width: tabLoader.width
-                    spacing: Theme.gap
-            SettingsGroup {
-                Layout.fillWidth: true
-                objectName: "timeTimerTab"
+                    height: root.twoPane ? tabLoader.height : implicitHeight
+                    columns: root.twoPane ? 2 : 1
+                    columnSpacing: Theme.gap
+                    rowSpacing: Theme.gap
+            TimePane {
+                Layout.fillWidth: !root.twoPane
+                Layout.preferredWidth: root.twoPane ? root.leftPaneWidth : -1
+                Layout.fillHeight: root.twoPane
+                scrollBody: root.twoPane
+                objectName: "timerInputPane"
                 iconName: "hourglass_empty"
                 accentColor: "#ffbd54"
                 title: I18n.t("计时器")
@@ -1034,6 +671,19 @@ Item {
                         onAdjusted: function(delta) { root.adjustTimer("second", delta) }
                     }
                 }
+
+            }
+            TimePane {
+                Layout.fillWidth: true
+                Layout.fillHeight: root.twoPane
+                scrollBody: root.twoPane
+                objectName: "timerRunPane"
+                iconName: "av_timer"
+                accentColor: "#ff9d37"
+                title: I18n.t("倒计时")
+                subtitle: root.timerRunning ? I18n.t("倒计时进行中")
+                          : root.timerFinished ? I18n.t("计时结束")
+                          : I18n.t("准备就绪")
 
                 Rectangle {
                     objectName: "timerDisplayBox"
@@ -1087,13 +737,19 @@ Item {
             // ---- 秒表
             Component {
                 id: stopwatchPage
-                ColumnLayout {
+                GridLayout {
                     objectName: "timeStopwatchTab"
                     width: tabLoader.width
-                    spacing: Theme.gap
-            SettingsGroup {
-                Layout.fillWidth: true
-                objectName: "timeStopwatchTab"
+                    height: root.twoPane ? tabLoader.height : implicitHeight
+                    columns: root.twoPane ? 2 : 1
+                    columnSpacing: Theme.gap
+                    rowSpacing: Theme.gap
+            TimePane {
+                Layout.fillWidth: !root.twoPane
+                Layout.preferredWidth: root.twoPane ? root.leftPaneWidth : -1
+                Layout.fillHeight: root.twoPane
+                scrollBody: root.twoPane
+                objectName: "stopwatchRunPane"
                 iconName: "av_timer"
                 accentColor: "#36c8db"
                 title: I18n.t("秒表")
@@ -1145,6 +801,17 @@ Item {
                         onClicked: root.resetStopwatch()
                     }
                 }
+            }
+            TimePane {
+                Layout.fillWidth: true
+                Layout.fillHeight: root.twoPane
+                scrollBody: root.twoPane
+                objectName: "stopwatchLapPane"
+                iconName: "schedule"
+                accentColor: "#36c8db"
+                title: I18n.t("计次")
+                subtitle: root.stopwatchLaps.length + "/20"
+
                 CarText {
                     Layout.fillWidth: true
                     visible: root.stopwatchLaps.length === 0
@@ -1238,14 +905,21 @@ Item {
             // ---- 闹钟（数据与响铃由 AlarmEngine 持有）
             Component {
                 id: alarmPage
-                ColumnLayout {
+                GridLayout {
                     objectName: "timeAlarmTab"
                     width: tabLoader.width
-                    spacing: Theme.gap
+                    height: root.twoPane ? tabLoader.height : implicitHeight
+                    columns: root.twoPane ? 2 : 1
+                    columnSpacing: Theme.gap
+                    rowSpacing: Theme.gap
 
-                    SettingsGroup {
-                        Layout.fillWidth: true
+                    TimePane {
+                        Layout.fillWidth: !root.twoPane
+                        Layout.preferredWidth: root.twoPane ? root.leftPaneWidth : -1
+                        Layout.fillHeight: root.twoPane
+                        scrollBody: root.twoPane
                         visible: root.alarmEngine !== null
+                        objectName: "alarmEditPane"
                         iconName: "alarm"
                         accentColor: "#ff6584"
                         title: I18n.t("新建闹钟")
@@ -1381,9 +1055,12 @@ Item {
                         }
                     }
 
-                    SettingsGroup {
+                    TimePane {
                         Layout.fillWidth: true
+                        Layout.fillHeight: root.twoPane
+                        scrollBody: root.twoPane
                         visible: root.alarmEngine !== null
+                        objectName: "alarmListPane"
                         iconName: "schedule"
                         accentColor: "#ff9d37"
                         title: I18n.t("已设置闹钟")
@@ -1460,7 +1137,8 @@ Item {
                         }
                     }
 
-                    SettingsGroup {
+                    TimePane {
+                        objectName: "alarmUnavailablePane"
                         Layout.fillWidth: true
                         visible: root.alarmEngine === null
                         iconName: "alarm"
@@ -1477,148 +1155,129 @@ Item {
 
     // 铃声选择：页面内覆盖层，复用 SystemTools.files 的目录枚举；
     // 不复制、不修改宿主的文件管理器代码。
-    Rectangle {
+    // 由 Loader 延迟实例化：覆盖层即使 visible=false 也会参与布局（内部有 ListView +
+    // Layout.fillHeight），页面启动初期只有几十像素时会让 ColumnLayout 反复 polish，
+    // 而 ui_responsive_touch 的 UI_AUDIT 把这条警告算作错误。
+    Loader {
         id: ringtoneLayer
-        objectName: "ringtonePicker"
         anchors.fill: parent
         z: 60
-        visible: root.ringtonePickerOpen
-        color: "#99040b14"
-        MouseArea { anchors.fill: parent; onClicked: root.ringtonePickerOpen = false }
-        Rectangle {
-            anchors.centerIn: parent
-            width: Math.min(parent.width - Theme.gap * 4, 640 * root.uiScale)
-            height: Math.min(parent.height - Theme.gap * 4, 520 * root.uiScale)
-            radius: Theme.shapeLarge
-            color: Theme.surface
-            border.color: Theme.outline
-            border.width: 1
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: Theme.gap
-                spacing: Theme.gap / 2
-                RowLayout {
-                    Layout.fillWidth: true
-                    CarText { heading: true; Layout.fillWidth: true; maximumLineCount: 1; text: I18n.t("选择铃声") }
-                    IconButton { iconName: "close"; label: I18n.t("关闭"); onClicked: root.ringtonePickerOpen = false }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    CarButton {
-                        text: I18n.t("上一级")
-                        enabled: root.ringtoneFolder !== ""
-                        onClicked: {
-                            const cut = root.ringtoneFolder.lastIndexOf("/")
-                            root.ringtoneFolder = cut > 0 ? root.ringtoneFolder.slice(0, cut) : ""
-                            root.refreshRingtoneRows()
-                        }
-                    }
-                    CarText {
-                        Layout.fillWidth: true
-                        maximumLineCount: 1
-                        elide: Text.ElideMiddle
-                        fontPixelSize: 12 * root.uiScale
-                        text: "/" + root.ringtoneFolder
-                    }
-                }
-                CarText {
-                    Layout.fillWidth: true
-                    visible: root.ringtoneRows.length === 0
-                    subdued: true
-                    text: I18n.t("这个目录下没有可用的音频文件")
-                }
-                ListView {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    model: root.ringtoneRows
-                    delegate: Item {
-                        required property var modelData
-                        width: ListView.view.width
-                        height: Math.max(48 * root.uiScale, 48)
-                        RowLayout {
-                            anchors.fill: parent
-                            spacing: Theme.gap / 2
-                            MaterialIcon {
-                                name: modelData.directory ? "folder" : "volume_up"
-                                Layout.preferredWidth: 22 * root.uiScale
-                                Layout.preferredHeight: 22 * root.uiScale
-                            }
-                            CarText {
-                                Layout.fillWidth: true
-                                maximumLineCount: 1
-                                elide: Text.ElideMiddle
-                                text: modelData.name
-                            }
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: root.openRingtoneEntry(modelData)
-                        }
-                    }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.gap / 2
-                    CarText {
-                        Layout.fillWidth: true
-                        wrapMode: Text.Wrap
-                        fontPixelSize: 12 * root.uiScale
-                        text: I18n.t("支持 mp3 / wav / m4a / ogg；只列出这些格式，且受文件管理沙箱限制。")
-                    }
-                    CarButton {
-                        objectName: "ringtoneUseDefault"
-                        text: I18n.t("使用默认铃声")
-                        onClicked: {
-                            root.alarmRingtone = root.alarmEngine ? root.alarmEngine.defaultRingtone : ""
-                            root.ringtonePickerOpen = false
-                        }
-                    }
-                }
-            }
-        }
+        active: root.ringtonePickerOpen
+        sourceComponent: ringtoneLayerComponent
     }
-
-    // 校时失败提示：页面内覆盖层（不新建 Window/Popup 层级），点任意处关闭。
-    Rectangle {
-        id: apiAlertLayer
-        objectName: "timeApiAlert"
-        anchors.fill: parent
-        z: 50
-        visible: root.apiAlertText !== ""
-        color: "#99040b14"
-        MouseArea { anchors.fill: parent; onClicked: root.apiAlertText = "" }
+    Component {
+        id: ringtoneLayerComponent
         Rectangle {
-            anchors.centerIn: parent
-            width: Math.min(parent.width - Theme.gap * 4, 560 * root.uiScale)
-            height: alertColumn.implicitHeight + Theme.gap * 2
-            radius: Theme.shapeLarge
-            color: Theme.surface
-            border.color: Theme.outline
-            border.width: 1
-            ColumnLayout {
-                id: alertColumn
-                x: Theme.gap
-                y: Theme.gap
-                width: parent.width - Theme.gap * 2
-                spacing: Theme.gap / 2
-                CarText {
-                    Layout.fillWidth: true
-                    heading: true
-                    maximumLineCount: 1
-                    text: I18n.t("校时接口不可用")
-                }
-                CarText {
-                    objectName: "timeApiAlertText"
-                    Layout.fillWidth: true
-                    wrapMode: Text.Wrap
-                    text: root.apiAlertText
-                }
-                CarButton {
-                    objectName: "timeApiAlertClose"
-                    Layout.alignment: Qt.AlignRight
-                    text: I18n.t("知道了")
-                    onClicked: root.apiAlertText = ""
+            objectName: "ringtonePicker"
+            anchors.fill: parent
+            color: "#99040b14"
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.ringtonePickerOpen = false
+            }
+            Rectangle {
+                anchors.centerIn: parent
+                // 页面可能被压到只有几十像素，给尺寸下限，保证内框不会变成负数。
+                width: Math.max(240 * root.uiScale, Math.min(parent.width - Theme.gap * 4, 640 * root.uiScale))
+                height: Math.max(200 * root.uiScale, Math.min(parent.height - Theme.gap * 4, 520 * root.uiScale))
+                radius: Theme.shapeLarge
+                color: Theme.surface
+                border.color: Theme.outline
+                border.width: 1
+                ColumnLayout {
+                    // 显式尺寸 + clamp，代替 anchors.margins：负的内框尺寸同样会触发 polish。
+                    x: Theme.gap
+                    y: Theme.gap
+                    width: Math.max(1, parent.width - Theme.gap * 2)
+                    height: Math.max(1, parent.height - Theme.gap * 2)
+                    spacing: Theme.gap / 2
+                    RowLayout {
+                        Layout.fillWidth: true
+                        CarText {
+                            heading: true
+                            Layout.fillWidth: true
+                            maximumLineCount: 1
+                            text: I18n.t("选择铃声")
+                        }
+                        IconButton {
+                            iconName: "close"
+                            label: I18n.t("关闭")
+                            onClicked: root.ringtonePickerOpen = false
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        CarButton {
+                            text: I18n.t("上一级")
+                            enabled: root.ringtoneFolder !== ""
+                            onClicked: {
+                                const cut = root.ringtoneFolder.lastIndexOf("/")
+                                root.ringtoneFolder = cut > 0 ? root.ringtoneFolder.slice(0, cut) : ""
+                                root.refreshRingtoneRows()
+                            }
+                        }
+                        CarText {
+                            Layout.fillWidth: true
+                            maximumLineCount: 1
+                            elide: Text.ElideMiddle
+                            fontPixelSize: 12 * root.uiScale
+                            text: "/" + root.ringtoneFolder
+                        }
+                    }
+                    CarText {
+                        Layout.fillWidth: true
+                        visible: root.ringtoneRows.length === 0
+                        subdued: true
+                        text: I18n.t("这个目录下没有可用的音频文件")
+                    }
+                    ListView {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        model: root.ringtoneRows
+                        delegate: Item {
+                            required property var modelData
+                            width: ListView.view.width
+                            height: Math.max(48 * root.uiScale, 48)
+                            RowLayout {
+                                anchors.fill: parent
+                                spacing: Theme.gap / 2
+                                MaterialIcon {
+                                    name: modelData.directory ? "folder" : "volume_up"
+                                    Layout.preferredWidth: 22 * root.uiScale
+                                    Layout.preferredHeight: 22 * root.uiScale
+                                }
+                                CarText {
+                                    Layout.fillWidth: true
+                                    maximumLineCount: 1
+                                    elide: Text.ElideMiddle
+                                    text: modelData.name
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: root.openRingtoneEntry(modelData)
+                            }
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.gap / 2
+                        CarText {
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                            fontPixelSize: 12 * root.uiScale
+                            text: I18n.t("支持 mp3 / wav / m4a / ogg；只列出这些格式，且受文件管理沙箱限制。")
+                        }
+                        CarButton {
+                            objectName: "ringtoneUseDefault"
+                            text: I18n.t("使用默认铃声")
+                            onClicked: {
+                                root.alarmRingtone = root.alarmEngine ? root.alarmEngine.defaultRingtone : ""
+                                root.ringtonePickerOpen = false
+                            }
+                        }
+                    }
                 }
             }
         }

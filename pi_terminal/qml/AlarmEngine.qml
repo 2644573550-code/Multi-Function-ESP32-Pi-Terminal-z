@@ -42,6 +42,15 @@ Item {
     property int lastMinuteEpoch: -1
     property bool previewing: false
 
+    // 整点报时：与闹钟共用这条 1 Hz 心跳；只在 :00:00 报一次，响铃/再响等待期间跳过。
+    // 时段按小时给（含起止），from > to 视为跨午夜；持久化在 time/chime。
+    property bool chimeEnabled: false
+    property int chimeFromHour: 8
+    property int chimeToHour: 22
+    property int lastChimeHourEpoch: -1
+    // 初值 true：见 TimeSync.qml 的说明——构造期的初值赋值不能先覆盖磁盘设置。
+    property bool loadingChime: true
+
     ListModel { id: alarmModel }
 
     MediaPlayer {
@@ -103,7 +112,42 @@ Item {
         for (let i = 0; i < list.length && i < maxAlarms; ++i)
             alarmModel.append(normalize(list[i]))
         recount()
+        loadChime()
     }
+
+    function loadChime() {
+        loadingChime = true
+        let chime = null
+        try {
+            chime = JSON.parse(settingRead("time/chime", "null"))
+        } catch (error) {
+            console.warn("alarm engine: unreadable chime settings")
+        }
+        if (chime && typeof chime === "object") {
+            chimeEnabled = chime.enabled === true
+            chimeFromHour = TimeMath.clamp(Number(chime.from) || 0, 0, 23)
+            chimeToHour = TimeMath.clamp(Number(chime.to) || 0, 0, 23)
+        }
+        loadingChime = false
+    }
+
+    function persistChime() {
+        settingWrite("time/chime", JSON.stringify(
+            { enabled: chimeEnabled, from: chimeFromHour, to: chimeToHour }))
+    }
+
+    function setChime(enabled, from, to) {
+        loadingChime = true
+        chimeEnabled = enabled === true
+        chimeFromHour = TimeMath.clamp(Number(from) || 0, 0, 23)
+        chimeToHour = TimeMath.clamp(Number(to) || 0, 0, 23)
+        loadingChime = false
+        persistChime()
+    }
+
+    onChimeEnabledChanged: if (!loadingChime) persistChime()
+    onChimeFromHourChanged: if (!loadingChime) persistChime()
+    onChimeToHourChanged: if (!loadingChime) persistChime()
 
     function persist() {
         const list = []
@@ -169,6 +213,7 @@ Item {
             lastMinuteEpoch = minuteEpoch
             if (!ringing) checkDue(parts, now)
         }
+        checkChime(parts, now)
         if (ringing && now >= ringEndsAtMs) stopRing()
         if (timerRunning && now >= timerEndsAtMs) finishTimer()
         else if (timerRunning && timerRemainingMs !== timerEndsAtMs - now) timerRemainingMs = Math.max(0, timerEndsAtMs - now)
@@ -177,6 +222,25 @@ Item {
             snoozedAlarm = null
             startRing(alarm)
         }
+    }
+
+    // 只认 :00:00 这一秒；用小时序号做幂等键，1 Hz 心跳重复触发也只报一次。
+    function checkChime(parts, now) {
+        if (!chimeEnabled) return
+        if (parts.minute !== 0 || parts.second !== 0) return
+        const hourEpoch = Math.floor(now / 3600000)
+        if (hourEpoch === lastChimeHourEpoch) return
+        lastChimeHourEpoch = hourEpoch
+        if (!chimeHourAllowed(parts.hour)) return
+        if (ringing || snoozedAlarm) return          // 闹钟优先，不抢播报
+        announceRequested(I18n.t("整点报时") + " · " + parts.hour + I18n.t(" 点整"))
+    }
+
+    // 时段含起止小时；from > to 视为跨午夜，from === to 视为全天。
+    function chimeHourAllowed(hour) {
+        if (chimeFromHour === chimeToHour) return true
+        if (chimeFromHour < chimeToHour) return hour >= chimeFromHour && hour <= chimeToHour
+        return hour >= chimeFromHour || hour <= chimeToHour
     }
 
     function checkDue(parts, now) {

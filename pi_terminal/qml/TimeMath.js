@@ -118,6 +118,34 @@ function alarmTimeLabel(alarm) {
     return pad2(alarm.hour) + ":" + pad2(alarm.minute);
 }
 
+// ------------------------------------------------------------------ zones
+
+// 世界时钟城市目录。offset 是 IANA 标准偏移（分钟）；dst 标记该时区有夏令时，
+// 内置表不含 DST 规则，所以未校时的城市必须由 UI 说明“夏令时未知”。
+// 数据与界面分离：TimeSync.qml 用它校验城市 id 并按 id 查标准偏移。
+var cityCatalog = [
+    { id: "Asia/Shanghai", label: "北京", offset: 480, dst: false },
+    { id: "Asia/Hong_Kong", label: "香港", offset: 480, dst: false },
+    { id: "Asia/Taipei", label: "台北", offset: 480, dst: false },
+    { id: "Asia/Tokyo", label: "东京", offset: 540, dst: false },
+    { id: "Asia/Seoul", label: "首尔", offset: 540, dst: false },
+    { id: "Asia/Singapore", label: "新加坡", offset: 480, dst: false },
+    { id: "Asia/Bangkok", label: "曼谷", offset: 420, dst: false },
+    { id: "Asia/Kolkata", label: "新德里", offset: 330, dst: false },
+    { id: "Asia/Dubai", label: "迪拜", offset: 240, dst: false },
+    { id: "Europe/Moscow", label: "莫斯科", offset: 180, dst: false },
+    { id: "Europe/London", label: "伦敦", offset: 0, dst: true },
+    { id: "Europe/Paris", label: "巴黎", offset: 60, dst: true },
+    { id: "Europe/Berlin", label: "柏林", offset: 60, dst: true },
+    { id: "Africa/Cairo", label: "开罗", offset: 120, dst: true },
+    { id: "America/New_York", label: "纽约", offset: -300, dst: true },
+    { id: "America/Chicago", label: "芝加哥", offset: -360, dst: true },
+    { id: "America/Los_Angeles", label: "洛杉矶", offset: -480, dst: true },
+    { id: "America/Sao_Paulo", label: "圣保罗", offset: -180, dst: false },
+    { id: "Australia/Sydney", label: "悉尼", offset: 600, dst: true },
+    { id: "Pacific/Auckland", label: "奥克兰", offset: 720, dst: true }
+];
+
 // ------------------------------------------------------------------ world
 
 // "+08:00" / "-03:30" / "Z" -> minutes. Returns null for anything unexpected.

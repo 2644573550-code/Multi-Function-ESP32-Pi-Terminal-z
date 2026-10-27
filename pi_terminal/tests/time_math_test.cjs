@@ -139,4 +139,18 @@ assert.equal(context.zoneNeedsSync({dst: true}, false), true);
 assert.equal(context.zoneNeedsSync({dst: true}, true), false);
 assert.equal(context.zoneNeedsSync({dst: false}, false), false);
 
+// 城市目录：TimeSync/世界时钟都按 id 查偏移，重复 id 或越界偏移会让界面静默取错值。
+assert.equal(context.cityCatalog.length, 20);
+const ids = new Set();
+for (const zone of context.cityCatalog) {
+    assert.ok(/^[A-Za-z]+\/[A-Za-z_]+$/.test(zone.id), 'bad zone id: ' + zone.id);
+    assert.ok(!ids.has(zone.id), 'duplicate zone id: ' + zone.id);
+    ids.add(zone.id);
+    assert.ok(Number.isInteger(zone.offset) && zone.offset >= -720 && zone.offset <= 840,
+              'offset out of range for ' + zone.id);
+    assert.ok(zone.offset % 15 === 0, 'offset must be a quarter hour: ' + zone.id);
+    assert.ok(typeof zone.label === 'string' && zone.label.length > 0, 'missing label: ' + zone.id);
+    assert.equal(typeof zone.dst, 'boolean');
+}
+
 console.log('time_math_test: all assertions passed');

@@ -1202,6 +1202,8 @@ ApplicationWindow {
         onNotifyRequested:function(title,message,important){win.notify(title,message,important,I18n.t("时间"),"alarm")}
         onAnnounceRequested:function(text){win.announce(text)}
     }
+    // 校时状态活在页面之外：设置页分区与时间页看到的是同一份城市/线路状态。
+    TimeSync {id:timeSync;objectName:"timeSync"}
     footer:StatusDock {
         id:statusDock
         visible:!win.repairBackdropOnly && !win.videoFullscreen
@@ -1800,6 +1802,11 @@ ApplicationWindow {
                         CarButton {objectName:"englishChoose";text:"English";checked:systemTools.uiLanguage==="en";onClicked:systemTools.setUiLanguage("en")}
                     }
                 }
+                TimeSyncSettings {
+                    Layout.fillWidth:true
+                    visible:!settingsQuery || /时间|校时|报时|time|chime|alarm/i.test(settingsQuery)
+                    timeSync:timeSync;alarmEngine:alarmEngine
+                }
                 SettingsGroup {
                     Layout.fillWidth:true
                     visible:!settingsQuery || /网络|热点|wi.?fi|lan|internet/i.test(settingsQuery)
@@ -1968,7 +1975,7 @@ ApplicationWindow {
             onMediaPlayingChanged:if(mediaPlaying){devicePanel.preferVideo=true;musicPage.pauseMedia();tvPage.pauseMedia()}}
         TvPlayer {id:tvPage;objectName:"tvPlayerPage";active:win.section===11 && win.phase!=="home";uiScale:win.uiScale;hostWindow:win;virtualKeyboard:screenKeyboard;onKeyboardRequested:screenKeyboard.show()
             onMediaPlayingChanged:if(mediaPlaying){devicePanel.preferVideo=true;musicPage.pauseMedia();videoPage.pauseMedia()}}
-        TimeTools {id:timePage;objectName:"timeToolsPage";active:win.section===12 && win.phase!=="home";uiScale:win.uiScale;alarmEngine:alarmEngine
+        TimeTools {id:timePage;objectName:"timeToolsPage";active:win.section===12 && win.phase!=="home";uiScale:win.uiScale;alarmEngine:alarmEngine;timeSync:timeSync
             onNotifyRequested:function(title,message,important){win.notify(title,message,important,I18n.t("时间"),"schedule")}
             onAnnounceRequested:function(text){win.announce(text)}
             onKeyboardRequested:if(!screenKeyboard.visible)screenKeyboard.show()}

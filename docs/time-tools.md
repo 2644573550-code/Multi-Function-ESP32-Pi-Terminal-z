@@ -1,18 +1,38 @@
 # 时间（时钟 · 计时器 · 秒表 · 闹钟）
 
-内置应用页 `section 12`，入口在首页/应用抽屉的"时间"卡片。实现是两个新文件：
-`pi_terminal/qml/TimeTools.qml`（页面）与 `pi_terminal/qml/TimeMath.js`（纯函数），
-另加 `SystemTools` 上的一对设置读写接口。
+内置应用页 `section 12`，入口在首页/应用抽屉的"时间"卡片。实现分四块：
+`pi_terminal/qml/TimeTools.qml`（页面 UI）、`TimeMath.js`（纯函数 + 城市目录）、
+`AlarmEngine.qml`（闹钟/计时器/整点报时的运行状态）、`TimeSync.qml`（校时与城市选择），
+另加设置页里的 `TimeSyncSettings.qml` 分区与 `SystemTools` 上的一对设置读写接口。
 
 ## 范围
 
 | 模块 | 行为 |
 | :--- | :--- |
 | 时钟 | 本机时间（系统时钟）、日期、星期、`UTC±HH:MM`；可在**数字 / 指针（表盘）**两种样式间切换，选择持久化 |
-| 世界时钟 | 20 个城市目录，可勾选/取消，最多 8 个；未校时用内置标准时区表；点"网络校时"才请求公开时间接口；每行可语音播报 |
+| 世界时钟 | 20 个城市目录，可勾选/取消，最多 8 个；未校时用内置标准时区表；校时入口在设置页（见下）；卡片底部一行说明夏令时未知 |
 | 计时器 | 1/3/5/10/15/30 分钟预设或时/分/秒步进；**运行状态归 AlarmEngine**，页面关掉也到点弹通知并语音播报 |
 | 秒表 | 开始/暂停/继续、计次（最多保留 20 条）、复位；主数字精确到 0.1 s |
 | 闹钟 | 最多 8 个；每天/仅一次；可设名称、铃声、响铃时长与再响间隔；到点弹通知横幅 + 全局响铃弹窗（停止/再响） |
+| 整点报时 | 开关 + 起止小时（0–23，可跨午夜，含两端）；只在 :00:00 播报一次；闹钟响铃或再响等待期间跳过 |
+
+## 双栏布局与滚动
+
+`>= 900 * max(1, uiScale)` 时左右两栏（左栏 `clamp(340, 42%, 460)`），否则单栏且左栏在上。
+断点乘 `uiScale` 是为了跟随作者划定的缩放边界（`autoScale ∈ [0.65, 1.4]`，`textScale ∈ {1, 1.25, 1.5}`）：
+大字档若仍按 900 硬断，两栏各只剩三百多像素。
+
+两栏模式下**卡片撑满所在行，正文在卡片内部滚动**；页面本身不滚。这条约束由三处代码共同保证，
+改任何一处都要重跑 `twoPanePanesFillViewport`：
+
+1. 页面 `column.height = flick.height`（不是 `max(视口, 内容高)`）；
+2. `Loader` 在双栏时 `Layout.minimumHeight: 0`，否则它的隐式高度（=整页内容高）会被当成最小高度；
+3. `TimePane` 在 `scrollBody` 时 `Layout.minimumHeight: 0`，否则 `Layout.fillHeight` 会被下限顶回去。
+
+`TimePane` 的正文预算 `bodyTop = headerHeight + gap*1.5`、`bodyBottomInset = gap`，隐式高度与内部
+`Flickable` 用同一套账；两者不一致时单栏"按内容高"的卡片自己都会溢出半格。溢出超过
+`4 * scaleFactor` 才认定"可滚动"，并常驻一条自绘细指示条 + 底部渐隐——控件样式的 `ScrollBar`
+静止时会淡出，屏上等于没有提示（世界时钟末行半截最像 bug）。
 
 ## 闹钟引擎在页面之外
 
@@ -50,6 +70,12 @@
 | `time/api-mode` | `auto` 或 `custom` |
 | `time/api-host` | 自定义校时服务器地址 |
 | `time/cities` | 已选城市（IANA 时区 id 数组） |
+| `time/chime` | 整点报时：`{"enabled":bool,"from":0-23,"to":0-23}` |
+
+三个状态拥有者（`TimeTools` / `TimeSync` / `AlarmEngine`）的 `loading*` 标志**初值都是 `true`**：
+QML 在 `Component.onCompleted` 之前就会把属性初值写进属性，若那时允许持久化，默认值会先覆盖
+磁盘设置、`load()` 再读回默认值，表现为"重启后设置全丢"。`storedSettingsSurviveConstruction`
+把这条顺序钉住了。
 
 计时器运行状态、秒表读数、计次列表**不持久化**（重启即清空），这是刻意的：
 恢复一个"看起来还在跑"的计时器只会误导。
@@ -66,6 +92,15 @@
 `SystemTools::settingsRead/settingsWrite` 只接受 `time/` 前缀、键名 ≤96 字符、值 ≤16 KiB。
 `trusted/*`（插件信任记录）与宿主偏好同在一个 QSettings 文件里，页面脚本必须够不到它们，
 这条前缀白名单就是那条边界；`runtime_test` 的 `pageSettingsArePrefixScoped` 覆盖了拒绝路径。
+
+## 校时在设置页
+
+校时的状态与请求都在 `TimeSync.qml`（`Main.qml` 实例化一次）：城市选择、同步到的偏移、
+线路状态、上次结果。时钟页只显示列表与「管理城市」，不再重复一套校时控件；设置页的
+「时间与报时」分区（`TimeSyncSettings.qml`，位于「语言」与「网络与连接」之间）负责模式、
+自定义地址、校时按钮、恢复内置时区、线路状态点与失败提示。两边改的是同一份状态。
+
+失败提示从原来的页面内覆盖层改为分区内联文本 + 「知道了」，仍不新建 Window/Popup 层级。
 
 ## 世界时钟的网络行为
 
@@ -112,7 +147,14 @@ ctest --test-dir /tmp/terminal-dev -R 'time_tools_page|runtime_models_state_file
 `time_tools_test` 覆盖：时钟格式化、四个标签切换后**当前页对象、高度与滚动区**、城市增删与上限、
 跨页面重建后的城市选择、计时结束与闹钟信号、
 "每钟只响一次"、世界时钟成功同步（6 次请求 + 偏移写入 + provider 文案）、双接口全失败时的
-显式错误与提示层、自定义模式不回退公共接口、闹钟与计时器预设跨页面重建后仍存在。
+显式错误、自定义模式不回退公共接口、闹钟与计时器预设跨页面重建后仍存在。
+
+本轮新增：`twoPanePanesFillViewport`（两档视口 × 四页签：并排、等高、底边不越视口、正文可滚）、
+`twoPaneBreakpointFollowsScale`（1024/1400/900/800 与 0.65/1.5 缩放的断点矩阵）、
+`paneScrollAffordanceIsVisible`（App 真实视口 1097×502 下必须出现指示条与渐隐，滚到底渐隐消失，
+假溢出不得画滚动条）、`hourlyChime`（整点一次、时段含两端/跨午夜、响铃跳过、持久化）、
+`settingsSectionDrivesOwners`（模式/地址/状态/开关写的都是 TimeSync 与 AlarmEngine）、
+`storedSettingsSurviveConstruction`（构造顺序不覆盖磁盘设置）。
 `runtime_test.pageSettingsArePrefixScoped` 覆盖设置接口的前缀、长度与大小上限。
 
 **这不是实机验收。** 板端仍需按 `docs/pi-ui-regression.md` 的既有入口跑

@@ -116,10 +116,15 @@ private slots:
         TimeToolsHost host;
         QQmlEngine engine;
         engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent syncComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QVERIFY2(syncComponent.isReady(), qPrintable(syncComponent.errorString()));
+        QScopedPointer<QObject> syncObject(syncComponent.create());
+        QVERIFY(syncObject);
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
         QVERIFY2(component.isReady(), qPrintable(component.errorString()));
         QScopedPointer<QObject> object(component.createWithInitialProperties(
-            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0}, {"active", true}}));
+            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0}, {"active", true},
+             {"timeSync", QVariant::fromValue(syncObject.data())}}));
         QVERIFY2(object, qPrintable(component.errorString()));
         auto *page = qobject_cast<QQuickItem *>(object.data());
         QVERIFY(page);
@@ -219,39 +224,120 @@ private slots:
         QVERIFY(!alarmObject->property("previewing").toBool());
     }
 
-    void worldClockSync() {
+    void timeSyncAppliesStubOffsets() {
         StubTimeServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost, 0));
         TimeToolsHost host;
         QQmlEngine engine;
         engine.rootContext()->setContextProperty("systemTools", &host);
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
-        QScopedPointer<QObject> object(component.createWithInitialProperties(
-            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0}}));
-        QVERIFY2(object, qPrintable(component.errorString()));
-        auto *page = qobject_cast<QQuickItem *>(object.data());
-        QVERIFY(page);
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> sync(component.create());
+        QVERIFY(sync);
         const QString base = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
-        page->setProperty("primaryTimeHost", base);
-        page->setProperty("fallbackTimeHost", base);
+        sync->setProperty("primaryTimeHost", base);
+        sync->setProperty("fallbackTimeHost", base);
 
-        QMetaObject::invokeMethod(page, "syncWorld");
-        QTRY_VERIFY_WITH_TIMEOUT(page->property("worldSyncedOnce").toBool(), 8000);
+        QMetaObject::invokeMethod(sync.data(), "syncTime");
+        QTRY_VERIFY_WITH_TIMEOUT(sync->property("syncedOnce").toBool(), 8000);
         QCOMPARE(server.requests, 6); // one self-contained request per city
         // UI 只显示“线路一/线路二”，不暴露真实地址
-        QCOMPARE(page->property("worldProvider").toString(), QStringLiteral("线路一"));
-        QVERIFY(!page->property("worldStatus").toString().contains(QStringLiteral("http")));
-        const auto offsets = page->property("zoneOffsets").toList();
-        QCOMPARE(offsets.value(0).toInt(), 480);
-        QCOMPARE(offsets.value(3).toInt(), 60);    // London DST offset from the server
-        QCOMPARE(offsets.value(4).toInt(), -240);
-        QVERIFY(page->property("worldStatus").toString().contains(QStringLiteral("线路一")));
+        QCOMPARE(sync->property("provider").toString(), QStringLiteral("线路一"));
+        QVERIFY(!sync->property("status").toString().contains(QStringLiteral("http")));
+        QVariant losAngeles, london, newYork;
+        QMetaObject::invokeMethod(sync.data(), "offsetOf", Q_RETURN_ARG(QVariant, losAngeles),
+                                  Q_ARG(QVariant, QStringLiteral("America/Los_Angeles")));
+        QMetaObject::invokeMethod(sync.data(), "offsetOf", Q_RETURN_ARG(QVariant, london),
+                                  Q_ARG(QVariant, QStringLiteral("Europe/London")));
+        QMetaObject::invokeMethod(sync.data(), "offsetOf", Q_RETURN_ARG(QVariant, newYork),
+                                  Q_ARG(QVariant, QStringLiteral("America/New_York")));
+        // 桩值刻意与内置表不同：洛杉矶 -420（内置 -480）、伦敦夏令时 +60、纽约夏令时 -240
+        QCOMPARE(losAngeles.toInt(), -420);
+        QCOMPARE(london.toInt(), 60);
+        QCOMPARE(newYork.toInt(), -240);
+        QVERIFY(sync->property("status").toString().contains(QStringLiteral("线路一")));
 
         // Reset restores the built-in standard offsets and the honest hint.
-        QMetaObject::invokeMethod(page, "resetWorld");
-        QCOMPARE(page->property("worldSyncedOnce").toBool(), false);
-        QCOMPARE(page->property("zoneOffsets").toList().value(3).toInt(), 0);
-        QVERIFY(page->property("worldStatus").toString().contains(QStringLiteral("夏令时")));
+        QMetaObject::invokeMethod(sync.data(), "resetZones");
+        QCOMPARE(sync->property("syncedOnce").toBool(), false);
+        QMetaObject::invokeMethod(sync.data(), "offsetOf", Q_RETURN_ARG(QVariant, losAngeles),
+                                  Q_ARG(QVariant, QStringLiteral("America/Los_Angeles")));
+        QMetaObject::invokeMethod(sync.data(), "offsetOf", Q_RETURN_ARG(QVariant, london),
+                                  Q_ARG(QVariant, QStringLiteral("Europe/London")));
+        QCOMPARE(losAngeles.toInt(), -480);
+        QCOMPARE(london.toInt(), 0);
+        QVERIFY(sync->property("status").toString().contains(QStringLiteral("夏令时")));
+    }
+
+    // 整点报时：只认 :00:00、按小时时段、响铃期间跳过、同一小时只报一次。
+    void hourlyChime() {
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/AlarmEngine.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> alarm(component.create());
+        QVERIFY(alarm);
+        QSignalSpy announced(alarm.data(), SIGNAL(announceRequested(QString)));
+        QVERIFY(announced.isValid());
+
+        QMetaObject::invokeMethod(alarm.data(), "setChime",
+                                  Q_ARG(QVariant, true), Q_ARG(QVariant, 8), Q_ARG(QVariant, 22));
+        QVERIFY(alarm->property("chimeEnabled").toBool());
+        QVERIFY(host.settings.value(QStringLiteral("time/chime")).contains(QStringLiteral("\"from\":8")));
+
+        const qint64 base = QDateTime(QDate(2026, 10, 27), QTime(8, 0, 0)).toMSecsSinceEpoch();
+        auto at = [](int hour, int minute, int second) {
+            return QVariantMap{{"hour", hour}, {"minute", minute}, {"second", second}};
+        };
+        // 09:00 命中，同一小时重复调用不重复播报
+        QVERIFY(QMetaObject::invokeMethod(alarm.data(), "checkChime",
+                                          Q_ARG(QVariant, at(9, 0, 0)), Q_ARG(QVariant, double(base + 3600000))));
+        QCOMPARE(announced.count(), 1);
+        QVERIFY(announced.at(0).at(0).toString().contains(QStringLiteral("整点报时")));
+        QMetaObject::invokeMethod(alarm.data(), "checkChime",
+                                  Q_ARG(QVariant, at(9, 0, 0)), Q_ARG(QVariant, double(base + 3600000)));
+        QCOMPARE(announced.count(), 1);
+        // 非整点（09:00:30 / 09:30）不报
+        QMetaObject::invokeMethod(alarm.data(), "checkChime",
+                                  Q_ARG(QVariant, at(10, 0, 30)), Q_ARG(QVariant, double(base + 2 * 3600000)));
+        QMetaObject::invokeMethod(alarm.data(), "checkChime",
+                                  Q_ARG(QVariant, at(11, 30, 0)), Q_ARG(QVariant, double(base + 3.5 * 3600000)));
+        QCOMPARE(announced.count(), 1);
+        // 时段外（03:00）不报
+        QMetaObject::invokeMethod(alarm.data(), "checkChime",
+                                  Q_ARG(QVariant, at(3, 0, 0)), Q_ARG(QVariant, double(base + 19 * 3600000)));
+        QCOMPARE(announced.count(), 1);
+        // 响铃期间跳过（闹钟优先）
+        alarm->setProperty("ringing", true);
+        QMetaObject::invokeMethod(alarm.data(), "checkChime",
+                                  Q_ARG(QVariant, at(12, 0, 0)), Q_ARG(QVariant, double(base + 4 * 3600000)));
+        QCOMPARE(announced.count(), 1);
+        alarm->setProperty("ringing", false);
+        // 跨午夜时段：22:00–08:00 含两端，02:00 命中
+        QMetaObject::invokeMethod(alarm.data(), "setChime",
+                                  Q_ARG(QVariant, true), Q_ARG(QVariant, 22), Q_ARG(QVariant, 8));
+        QMetaObject::invokeMethod(alarm.data(), "checkChime",
+                                  Q_ARG(QVariant, at(2, 0, 0)), Q_ARG(QVariant, double(base + 18 * 3600000)));
+        QCOMPARE(announced.count(), 2);
+        // 起=止 视为全天；关掉后彻底不报
+        QMetaObject::invokeMethod(alarm.data(), "setChime",
+                                  Q_ARG(QVariant, true), Q_ARG(QVariant, 12), Q_ARG(QVariant, 12));
+        QMetaObject::invokeMethod(alarm.data(), "checkChime",
+                                  Q_ARG(QVariant, at(4, 0, 0)), Q_ARG(QVariant, double(base + 20 * 3600000)));
+        QCOMPARE(announced.count(), 3);
+        QMetaObject::invokeMethod(alarm.data(), "setChime",
+                                  Q_ARG(QVariant, false), Q_ARG(QVariant, 8), Q_ARG(QVariant, 22));
+        QMetaObject::invokeMethod(alarm.data(), "checkChime",
+                                  Q_ARG(QVariant, at(5, 0, 0)), Q_ARG(QVariant, double(base + 21 * 3600000)));
+        QCOMPARE(announced.count(), 3);
+
+        // 新实例从同一份设置恢复
+        QScopedPointer<QObject> again(component.create());
+        QVERIFY(again);
+        QCOMPARE(again->property("chimeEnabled").toBool(), false);
+        QCOMPARE(again->property("chimeFromHour").toInt(), 8);
+        QCOMPARE(again->property("chimeToHour").toInt(), 22);
     }
 
     void tabsShowTheirOwnPage() {
@@ -398,9 +484,14 @@ private slots:
         TimeToolsHost host;
         QQmlEngine engine;
         engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent syncComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QVERIFY2(syncComponent.isReady(), qPrintable(syncComponent.errorString()));
+        QScopedPointer<QObject> sync(syncComponent.create());
+        QVERIFY(sync);
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
         QScopedPointer<QObject> object(component.createWithInitialProperties(
-            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0}}));
+            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0},
+             {"timeSync", QVariant::fromValue(sync.data())}}));
         QVERIFY2(object, qPrintable(component.errorString()));
         auto *page = qobject_cast<QQuickItem *>(object.data());
         auto cityCount = [&page] { return page->property("cities").toList().size(); };
@@ -410,21 +501,20 @@ private slots:
         QVERIFY(host.settings.value(QStringLiteral("time/cities")).contains(QStringLiteral("Europe/Paris")));
         QMetaObject::invokeMethod(page, "toggleCity", Q_ARG(QVariant, QStringLiteral("Europe/Paris")));
         QCOMPARE(cityCount(), 6);
-        // 上限 8：继续加会被拒绝并给出提示，而不是静默丢弃
-        const QStringList extra{QStringLiteral("Asia/Seoul"), QStringLiteral("Asia/Dubai"),
-                                QStringLiteral("Europe/Berlin")};
-        for (const auto &id : extra)
-            QMetaObject::invokeMethod(page, "toggleCity", Q_ARG(QVariant, id));
+        // 上限 8：继续加会被拒绝，并在页面就地提示而不是静默丢弃
+        QMetaObject::invokeMethod(page, "toggleCity", Q_ARG(QVariant, QStringLiteral("Asia/Seoul")));
+        QCOMPARE(cityCount(), 7);
+        QVERIFY(page->property("cityNotice").toString().isEmpty());
+        QMetaObject::invokeMethod(page, "toggleCity", Q_ARG(QVariant, QStringLiteral("Asia/Dubai")));
         QCOMPARE(cityCount(), 8);
-        QMetaObject::invokeMethod(page, "toggleCity", Q_ARG(QVariant, QStringLiteral("Australia/Sydney")));
+        QVERIFY(page->property("cityNotice").toString().isEmpty());
+        QMetaObject::invokeMethod(page, "toggleCity", Q_ARG(QVariant, QStringLiteral("Europe/Berlin")));
         QCOMPARE(cityCount(), 8);
-        QVERIFY(!page->property("apiAlertText").toString().isEmpty());
-        // 选择也会跨页面重建保留
-        QQmlComponent again(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
-        QScopedPointer<QObject> second(again.createWithInitialProperties(
-            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0}}));
-        QVERIFY(second);
-        QCOMPARE(second->property("cities").toList().size(), 8);
+        QVERIFY(!page->property("cityNotice").toString().isEmpty());
+        // 选择由 TimeSync 持久化：新的 TimeSync 实例（页面之外）也能读回同一份选择
+        QScopedPointer<QObject> again(syncComponent.create());
+        QVERIFY(again);
+        QCOMPARE(again->property("zones").toList().size(), 8);
     }
 
     void customServerIsStrict() {
@@ -436,21 +526,20 @@ private slots:
         TimeToolsHost host;
         QQmlEngine engine;
         engine.rootContext()->setContextProperty("systemTools", &host);
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
-        QScopedPointer<QObject> object(component.createWithInitialProperties(
-            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0}}));
-        QVERIFY(object);
-        auto *page = qobject_cast<QQuickItem *>(object.data());
-        page->setProperty("fallbackTimeHost", QStringLiteral("http://127.0.0.1:%1").arg(fallback.serverPort()));
-        page->setProperty("customHost", QStringLiteral("http://127.0.0.1:%1").arg(custom.serverPort()));
-        page->setProperty("apiMode", QStringLiteral("custom"));
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> sync(component.create());
+        QVERIFY(sync);
+        sync->setProperty("fallbackTimeHost", QStringLiteral("http://127.0.0.1:%1").arg(fallback.serverPort()));
+        sync->setProperty("customHost", QStringLiteral("http://127.0.0.1:%1").arg(custom.serverPort()));
+        sync->setProperty("apiMode", QStringLiteral("custom"));
         QCOMPARE(host.settings.value(QStringLiteral("time/api-mode")), QStringLiteral("custom"));
-        QMetaObject::invokeMethod(page, "syncWorld");
-        QTRY_VERIFY_WITH_TIMEOUT(!page->property("worldSyncing").toBool(), 8000);
-        QCOMPARE(page->property("worldSyncedOnce").toBool(), false);
+        QMetaObject::invokeMethod(sync.data(), "syncTime");
+        QTRY_VERIFY_WITH_TIMEOUT(!sync->property("syncing").toBool(), 8000);
+        QCOMPARE(sync->property("syncedOnce").toBool(), false);
         QVERIFY(custom.requests >= 1);
         QCOMPARE(fallback.requests, 0);   // custom mode never silently uses the public APIs
-        const QJSValue providerState = page->property("providerState").value<QJSValue>();
+        const QJSValue providerState = sync->property("providerState").value<QJSValue>();
         QCOMPARE(providerState.property(QStringLiteral("custom")).toInt(), -1);
     }
 
@@ -460,21 +549,19 @@ private slots:
         TimeToolsHost host;
         QQmlEngine engine;
         engine.rootContext()->setContextProperty("systemTools", &host);
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
-        QScopedPointer<QObject> object(component.createWithInitialProperties(
-            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0}}));
-        QVERIFY(object);
-        auto *page = qobject_cast<QQuickItem *>(object.data());
-        page->setProperty("customHost", QStringLiteral("127.0.0.1:%1").arg(custom.serverPort()));
-        page->setProperty("apiMode", QStringLiteral("custom"));
-        QMetaObject::invokeMethod(page, "syncWorld");
-        QTRY_VERIFY(!page->property("worldSyncing").toBool());
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QScopedPointer<QObject> sync(component.create());
+        QVERIFY(sync);
+        sync->setProperty("customHost", QStringLiteral("127.0.0.1:%1").arg(custom.serverPort()));
+        sync->setProperty("apiMode", QStringLiteral("custom"));
+        QMetaObject::invokeMethod(sync.data(), "syncTime");
+        QTRY_VERIFY(!sync->property("syncing").toBool());
         QCOMPARE(custom.requests, 0);                       // no request for an invalid URL
-        QVERIFY(!page->property("apiAlertText").toString().isEmpty());
-        QCOMPARE(page->property("worldSyncedOnce").toBool(), false);
+        QVERIFY(!sync->property("alertText").toString().isEmpty());
+        QCOMPARE(sync->property("syncedOnce").toBool(), false);
     }
 
-    void worldClockFailureIsExplicit() {
+    void syncFailureIsExplicit() {
         StubTimeServer primary;
         StubTimeServer fallback;
         primary.failAll = true;
@@ -484,32 +571,384 @@ private slots:
         TimeToolsHost host;
         QQmlEngine engine;
         engine.rootContext()->setContextProperty("systemTools", &host);
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
-        QScopedPointer<QObject> object(component.createWithInitialProperties(
-            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0}}));
-        QVERIFY(object);
-        auto *page = qobject_cast<QQuickItem *>(object.data());
-        page->setProperty("primaryTimeHost", QStringLiteral("http://127.0.0.1:%1").arg(primary.serverPort()));
-        page->setProperty("fallbackTimeHost", QStringLiteral("http://127.0.0.1:%1").arg(fallback.serverPort()));
-        QMetaObject::invokeMethod(page, "syncWorld");
-        QTRY_VERIFY_WITH_TIMEOUT(!page->property("worldSyncing").toBool(), 8000);
-        QCOMPARE(page->property("worldSyncedOnce").toBool(), false);
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QScopedPointer<QObject> sync(component.create());
+        QVERIFY(sync);
+        sync->setProperty("primaryTimeHost", QStringLiteral("http://127.0.0.1:%1").arg(primary.serverPort()));
+        sync->setProperty("fallbackTimeHost", QStringLiteral("http://127.0.0.1:%1").arg(fallback.serverPort()));
+        QMetaObject::invokeMethod(sync.data(), "syncTime");
+        QTRY_VERIFY_WITH_TIMEOUT(!sync->property("syncing").toBool(), 8000);
+        QCOMPARE(sync->property("syncedOnce").toBool(), false);
         // Both providers were tried before the error was reported.
         QVERIFY(primary.requests >= 1);
         QVERIFY(fallback.requests >= 1);
-        QVERIFY(page->property("worldError").toString().contains(QStringLiteral("失败")));
-        QVERIFY(!page->property("apiAlertText").toString().isEmpty());
-        // The failure overlay is page-local and must actually take space.
-        auto *alert = page->findChild<QQuickItem *>(QStringLiteral("timeApiAlert"));
-        QVERIFY(alert);
-        QVERIFY(alert->isVisible());
-        QVERIFY(alert->width() > 100 && alert->height() > 100);
-        auto *alertText = page->findChild<QQuickItem *>(QStringLiteral("timeApiAlertText"));
-        QVERIFY(alertText);
-        QVERIFY(!alertText->property("text").toString().isEmpty());
-        auto *closeButton = page->findChild<QQuickItem *>(QStringLiteral("timeApiAlertClose"));
-        QVERIFY(closeButton);
-        QCOMPARE(page->property("zoneOffsets").toList().value(0).toInt(), 480); // untouched
+        QVERIFY(sync->property("error").toString().contains(QStringLiteral("失败")));
+        QVERIFY(!sync->property("alertText").toString().isEmpty());
+        // 未校时时仍按内置标准偏移显示（北京 +8，伦敦标准 0）
+        QCOMPARE(sync->property("syncedOffsets").toMap().size(), 0);
+        QVariant offset;
+        QVERIFY(QMetaObject::invokeMethod(sync.data(), "offsetOf", Q_RETURN_ARG(QVariant, offset),
+                                          Q_ARG(QVariant, QStringLiteral("Europe/London"))));
+        QCOMPARE(offset.toInt(), 0);
+        QVERIFY(!sync->property("status").toString().isEmpty());
+        QVERIFY(sync->property("status").toString().contains(QStringLiteral("线路二")));
+    }
+
+    // 双栏断点跟随作者划定的缩放边界：width >= 900 * max(1, uiScale)。
+    void twoPaneBreakpointFollowsScale_data() {
+        QTest::addColumn<int>("width");
+        QTest::addColumn<double>("uiScale");
+        QTest::addColumn<bool>("twoPane");
+        QTest::newRow("1024@1.0") << 1024 << 1.0 << true;
+        QTest::newRow("1024@1.5-big-text") << 1024 << 1.5 << false;
+        QTest::newRow("1400@1.5-big-text") << 1400 << 1.5 << true;
+        QTest::newRow("900@0.65") << 900 << 0.65 << true;   // 低缩放仍是 900
+        QTest::newRow("800@1.0") << 800 << 1.0 << false;
+    }
+
+    void twoPaneBreakpointFollowsScale() {
+        QFETCH(int, width);
+        QFETCH(double, uiScale);
+        QFETCH(bool, twoPane);
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"width", width}, {"height", 600}, {"uiScale", uiScale}, {"active", true}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *page = qobject_cast<QQuickItem *>(object.data());
+        QCOMPARE(page->property("twoPane").toBool(), twoPane);
+        QQuickWindow window;
+        window.resize(width, 600);
+        page->setParentItem(window.contentItem());
+        page->setWidth(width);
+        page->setHeight(600);
+        window.show();
+        QTest::qWait(160);
+        auto *left = page->findChild<QQuickItem *>(QStringLiteral("clockLocalPane"));
+        auto *right = page->findChild<QQuickItem *>(QStringLiteral("clockWorldPane"));
+        QVERIFY(left && right);
+        if (twoPane) {
+            // 并排：右卡在左卡右侧
+            QVERIFY(right->mapToItem(page, QPointF(0, 0)).x() >
+                    left->mapToItem(page, QPointF(0, 0)).x() + left->width() - 1);
+            QCOMPARE(page->findChild<QQuickItem *>(QStringLiteral("timePage"))
+                         ->property("contentHeight").toDouble(),
+                     qobject_cast<QQuickItem *>(page->findChild<QQuickItem *>(QStringLiteral("timePage")))->height());
+        } else {
+            // 堆叠：右卡在左卡下方，页面整体可滚
+            QVERIFY(right->mapToItem(page, QPointF(0, 0)).y() >
+                    left->mapToItem(page, QPointF(0, 0)).y() + left->height() - 1);
+            auto *flick = page->findChild<QQuickItem *>(QStringLiteral("timePage"));
+            QVERIFY(flick);
+            QVERIFY2(flick->property("contentHeight").toDouble() > flick->height() + 1,
+                     "narrow layout must scroll as one page");
+        }
+    }
+
+    // 双栏正文可滚时必须看得见：常驻细指示条 + 未滚到底时的底部渐隐。
+    // 溢出基准取 App 真实视口（1400×900 窗口里的 1097×502 页面），因为 1024×600
+    // 的整页高度反而更宽裕。
+    void paneScrollAffordanceIsVisible() {
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent syncComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QVERIFY2(syncComponent.isReady(), qPrintable(syncComponent.errorString()));
+        QScopedPointer<QObject> syncObject(syncComponent.create());
+        QVERIFY(syncObject);
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"width", 1097}, {"height", 502}, {"uiScale", 1.09375}, {"active", true},
+             {"timeSync", QVariant::fromValue(syncObject.data())}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *page = qobject_cast<QQuickItem *>(object.data());
+        QQuickWindow window;
+        window.resize(1097, 502);
+        page->setParentItem(window.contentItem());
+        page->setWidth(1097);
+        page->setHeight(502);
+        window.show();
+        QTest::qWait(200);
+
+        auto *body = page->findChild<QQuickItem *>(QStringLiteral("clockWorldPaneBody"));
+        auto *rail = page->findChild<QQuickItem *>(QStringLiteral("clockWorldPaneScrollRail"));
+        auto *fade = page->findChild<QQuickItem *>(QStringLiteral("clockWorldPaneScrollFade"));
+        QVERIFY(body && rail && fade);
+        const qreal content = body->property("contentHeight").toDouble();
+        const qreal overflow = content - body->height();
+        QVERIFY2(overflow > 4 * 1.09375,
+                 qPrintable(QStringLiteral("world clock body must overflow at the app viewport: body=%1 content=%2")
+                                .arg(body->height()).arg(content)));
+        QVERIFY2(rail->height() > 0 && rail->width() > 0, "scroll rail must take space");
+        QVERIFY(rail->isVisible());
+        QVERIFY2(fade->isVisible(), "bottom fade must show while content remains below");
+        QVERIFY2(rail->mapToItem(page, QPointF(0, 0)).x() + rail->width() <= page->width(),
+                 "rail must stay inside the page");
+        // 滚到底：渐隐消失，指示条仍常驻
+        body->setProperty("contentY", overflow);
+        QTest::qWait(140);
+        QVERIFY(!fade->isVisible());
+        QVERIFY(rail->isVisible());
+
+        // 左栏时钟卡：假溢出（几像素取整）不得画出滚动条，真溢出才允许。
+        auto *localBody = page->findChild<QQuickItem *>(QStringLiteral("clockLocalPaneBody"));
+        auto *localRail = page->findChild<QQuickItem *>(QStringLiteral("clockLocalPaneScrollRail"));
+        QVERIFY(localBody && localRail);
+        const qreal localOverflow = localBody->property("contentHeight").toDouble() - localBody->height();
+        QVERIFY2(localRail->isVisible() == (localOverflow > 4 * 1.09375),
+                 qPrintable(QStringLiteral("clock card rail must match real overflow: body=%1 content=%2 rail=%3")
+                                .arg(localBody->height())
+                                .arg(localBody->property("contentHeight").toDouble())
+                                .arg(localRail->isVisible())));
+
+        // 1024×600（Pi 目标屏）：两栏都不该出现“假溢出”提示，能放下就绝不画滚动条
+        page->setWidth(1024);
+        page->setHeight(600);
+        page->setProperty("uiScale", 1.0);
+        window.resize(1024, 600);
+        QTest::qWait(200);
+        for (const QString &name : {QStringLiteral("clockLocalPane"), QStringLiteral("clockWorldPane")}) {
+            auto *paneBody = page->findChild<QQuickItem *>(name + QStringLiteral("Body"));
+            auto *paneRail = page->findChild<QQuickItem *>(name + QStringLiteral("ScrollRail"));
+            QVERIFY(paneBody && paneRail);
+            const qreal paneOverflow = paneBody->property("contentHeight").toDouble() - paneBody->height();
+            QVERIFY2(paneRail->isVisible() == (paneOverflow > 4.0),
+                     qPrintable(name + QStringLiteral(": body=%1 content=%2 rail=%3")
+                                          .arg(paneBody->height())
+                                          .arg(paneBody->property("contentHeight").toDouble())
+                                          .arg(paneRail->isVisible())));
+        }
+    }
+
+    // 设置页分区：控件的读写都落到 TimeSync / AlarmEngine 上，而不是页面自己的副本。
+    void settingsSectionDrivesOwners() {
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent syncComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QVERIFY2(syncComponent.isReady(), qPrintable(syncComponent.errorString()));
+        QScopedPointer<QObject> sync(syncComponent.create());
+        QVERIFY(sync);
+        QQmlComponent alarmComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/AlarmEngine.qml")));
+        QScopedPointer<QObject> alarm(alarmComponent.create());
+        QVERIFY(alarm);
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSyncSettings.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"timeSync", QVariant::fromValue(sync.data())},
+             {"alarmEngine", QVariant::fromValue(alarm.data())}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *section = qobject_cast<QQuickItem *>(object.data());
+        QVERIFY(section);
+        QQuickWindow window;
+        window.resize(720, 900);
+        section->setParentItem(window.contentItem());
+        section->setWidth(700);
+        window.show();
+        QTest::qWait(160);
+
+        // 模式按钮写回 TimeSync（并持久化）
+        auto *custom = section->findChild<QQuickItem *>(QStringLiteral("timeSyncModeCustom"));
+        QVERIFY(custom);
+        QMetaObject::invokeMethod(custom, "clicked");
+        QCOMPARE(sync->property("apiMode").toString(), QStringLiteral("custom"));
+        QCOMPARE(host.settings.value(QStringLiteral("time/api-mode")), QStringLiteral("custom"));
+        // 自定义地址输入框只在自定义模式下出现
+        auto *field = section->findChild<QQuickItem *>(QStringLiteral("timeSyncHostField"));
+        QVERIFY(field);
+        QVERIFY(field->isVisible());
+        // 校时状态就是 TimeSync 的状态
+        auto *status = section->findChild<QQuickItem *>(QStringLiteral("timeSyncStatus"));
+        QVERIFY(status);
+        QCOMPARE(status->property("text").toString(), sync->property("status").toString());
+        // 整点报时开关写回 AlarmEngine
+        auto *chime = section->findChild<QQuickItem *>(QStringLiteral("chimeSwitch"));
+        QVERIFY(chime);
+        QVERIFY(!alarm->property("chimeEnabled").toBool());
+        QMetaObject::invokeMethod(chime, "clicked");
+        QVERIFY(alarm->property("chimeEnabled").toBool());
+        QTest::qWait(80);
+        QVERIFY(host.settings.value(QStringLiteral("time/chime")).contains(QStringLiteral("enabled")));
+        // 时段步进器改的是 AlarmEngine 的小时
+        auto *fromStepper = section->findChild<QQuickItem *>(QStringLiteral("chimeFromStepper"));
+        QVERIFY(fromStepper);
+        const int before = alarm->property("chimeFromHour").toInt();
+        QMetaObject::invokeMethod(fromStepper, "adjusted", Q_ARG(int, 1));
+        QCOMPARE(alarm->property("chimeFromHour").toInt(), (before + 1) % 24);
+
+        // 新文案必须同时有英文词条（I18n.words 按键替换，缺词条会漏中文）
+        TimeToolsHost english;
+        english.language = QStringLiteral("en");
+        QQmlEngine englishEngine;
+        englishEngine.rootContext()->setContextProperty("systemTools", &english);
+        QQmlComponent englishSyncComponent(&englishEngine,
+            QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QScopedPointer<QObject> englishSync(englishSyncComponent.create());
+        QVERIFY(englishSync);
+        QQmlComponent englishComponent(&englishEngine,
+            QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSyncSettings.qml")));
+        QScopedPointer<QObject> englishObject(englishComponent.createWithInitialProperties(
+            {{"timeSync", QVariant::fromValue(englishSync.data())},
+             {"alarmEngine", QVariant::fromValue(alarm.data())}}));
+        QVERIFY2(englishObject, qPrintable(englishComponent.errorString()));
+        auto *englishSwitch = englishObject->findChild<QQuickItem *>(QStringLiteral("chimeSwitch"));
+        QVERIFY(englishSwitch);
+        QCOMPARE(englishSwitch->property("text").toString(), QStringLiteral("Hourly chime"));
+        auto *englishStatus = englishObject->findChild<QQuickItem *>(QStringLiteral("timeSyncStatus"));
+        QVERIFY(englishStatus);
+        QVERIFY2(!englishStatus->property("text").toString().contains(QChar(0x6708)) &&
+                 !englishStatus->property("text").toString().contains(QChar(0x5876)),
+                 qPrintable(englishStatus->property("text").toString()));
+    }
+
+    // 双栏布局：两栏必须正好占满视口、等高、底边不外溢，正文改在卡片内部滚动。
+    // 早期版本把列高写成 max(视口, 内容高) 且不给 Loader 下限，卡片被顶出视口后
+    // 又被页面 clip，右栏末行（“管理城市”）永远看不到。
+    // 构造顺序回归：属性初值在 Component.onCompleted 之前就写进属性，若那时允许持久化，
+    // 默认值会先覆盖磁盘设置，load() 再读回默认值 —— 表现为“重启后设置全丢”。
+    void storedSettingsSurviveConstruction() {
+        TimeToolsHost host;
+        host.settings.insert(QStringLiteral("time/clock-style"), QStringLiteral("analog"));
+        host.settings.insert(QStringLiteral("time/cities"),
+                             QStringLiteral("[\"Asia/Tokyo\",\"Europe/London\"]"));
+        host.settings.insert(QStringLiteral("time/api-mode"), QStringLiteral("custom"));
+        host.settings.insert(QStringLiteral("time/api-host"), QStringLiteral("https://time.example.com"));
+        host.settings.insert(QStringLiteral("time/chime"),
+                             QStringLiteral("{\"enabled\":true,\"from\":9,\"to\":21}"));
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+
+        QQmlComponent syncComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QVERIFY2(syncComponent.isReady(), qPrintable(syncComponent.errorString()));
+        QScopedPointer<QObject> sync(syncComponent.create());
+        QVERIFY(sync);
+        QCOMPARE(sync->property("zones").toList().size(), 2);
+        QCOMPARE(sync->property("zones").toList().value(0).toString(), QStringLiteral("Asia/Tokyo"));
+        QCOMPARE(sync->property("apiMode").toString(), QStringLiteral("custom"));
+        QCOMPARE(sync->property("customHost").toString(), QStringLiteral("https://time.example.com"));
+        QCOMPARE(host.settings.value(QStringLiteral("time/cities")),
+                 QStringLiteral("[\"Asia/Tokyo\",\"Europe/London\"]"));
+
+        QQmlComponent alarmComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/AlarmEngine.qml")));
+        QVERIFY2(alarmComponent.isReady(), qPrintable(alarmComponent.errorString()));
+        QScopedPointer<QObject> alarm(alarmComponent.create());
+        QVERIFY(alarm);
+        QCOMPARE(alarm->property("chimeEnabled").toBool(), true);
+        QCOMPARE(alarm->property("chimeFromHour").toInt(), 9);
+        QCOMPARE(alarm->property("chimeToHour").toInt(), 21);
+        QVERIFY(host.settings.value(QStringLiteral("time/chime")).contains(QStringLiteral("\"from\":9")));
+
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0},
+             {"timeSync", QVariant::fromValue(sync.data())},
+             {"alarmEngine", QVariant::fromValue(alarm.data())}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *page = qobject_cast<QQuickItem *>(object.data());
+        QCOMPARE(page->property("clockStyle").toString(), QStringLiteral("analog"));
+        QCOMPARE(host.settings.value(QStringLiteral("time/clock-style")), QStringLiteral("analog"));
+    }
+
+    void twoPanePanesFillViewport_data() {
+        QTest::addColumn<int>("width");
+        QTest::addColumn<int>("height");
+        QTest::newRow("pi-1024x600") << 1024 << 600;
+        QTest::newRow("desktop-1400x900") << 1400 << 900;
+    }
+
+    void twoPanePanesFillViewport() {
+        QFETCH(int, width);
+        QFETCH(int, height);
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent syncComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QVERIFY2(syncComponent.isReady(), qPrintable(syncComponent.errorString()));
+        QScopedPointer<QObject> syncObject(syncComponent.create());
+        QVERIFY(syncObject);
+        QQmlComponent alarmComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/AlarmEngine.qml")));
+        QVERIFY2(alarmComponent.isReady(), qPrintable(alarmComponent.errorString()));
+        QScopedPointer<QObject> alarmObject(alarmComponent.create());
+        QVERIFY(alarmObject);
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"width", width}, {"height", height}, {"uiScale", 1.0}, {"active", true},
+             {"alarmEngine", QVariant::fromValue(alarmObject.data())},
+             {"timeSync", QVariant::fromValue(syncObject.data())}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *page = qobject_cast<QQuickItem *>(object.data());
+        QVERIFY(page);
+        // 栅格分配需要真实的 polish 循环，offscreen 也要 show()。
+        QQuickWindow window;
+        window.resize(width, height);
+        page->setParentItem(window.contentItem());
+        page->setWidth(width);
+        page->setHeight(height);
+        window.show();
+        QTest::qWait(150);
+
+        auto *flick = page->findChild<QQuickItem *>(QStringLiteral("timePage"));
+        QVERIFY(flick);
+
+        struct Row { int tab; const char *name; const char *left; const char *right; };
+        const Row rows[] = {{0, "clock", "clockLocalPane", "clockWorldPane"},
+                            {1, "timer", "timerInputPane", "timerRunPane"},
+                            {2, "stopwatch", "stopwatchRunPane", "stopwatchLapPane"},
+                            {3, "alarm", "alarmEditPane", "alarmListPane"}};
+        for (const Row &row : rows) {
+            QMetaObject::invokeMethod(page, "setTab", Q_ARG(QVariant, row.tab));
+            QTest::qWait(160);
+            auto *left = page->findChild<QQuickItem *>(QLatin1String(row.left));
+            auto *right = page->findChild<QQuickItem *>(QLatin1String(row.right));
+            QVERIFY2(left && right, row.name);
+            auto *leftBody = page->findChild<QQuickItem *>(QLatin1String(row.left) + QStringLiteral("Body"));
+            auto *rightBody = page->findChild<QQuickItem *>(QLatin1String(row.right) + QStringLiteral("Body"));
+            QVERIFY2(leftBody && rightBody, row.name);
+
+            qInfo() << row.name << "page" << page->width() << page->height()
+                    << "flick" << flick->height()
+                    << "panes" << left->height() << right->height()
+                    << "bodies" << leftBody->height() << rightBody->height()
+                    << "content" << leftBody->property("contentHeight").toDouble()
+                    << rightBody->property("contentHeight").toDouble();
+
+            // 1) 双栏时页面自身不滚动：视口就是全部可见高度。
+            QVERIFY2(qAbs(flick->property("contentHeight").toDouble() - flick->height()) <= 1,
+                     qPrintable(row.name + QStringLiteral(": page scrolls in two-pane")));
+            // 2) 两张卡并排，且左卡在左。
+            const QPointF leftTop = left->mapToItem(page, QPointF(0, 0));
+            const QPointF rightTop = right->mapToItem(page, QPointF(0, 0));
+            QVERIFY2(rightTop.x() > leftTop.x() + left->width() - 1, row.name);
+            // 3) 两卡等高，且底边不越出视口（曾被 clip 的就是这一条）。
+            QVERIFY2(qAbs(left->height() - right->height()) <= 1, row.name);
+            for (QQuickItem *card : {left, right}) {
+                QVERIFY2(card->height() > 220, row.name);
+                const qreal bottom = card->mapToItem(page, QPointF(0, card->height())).y();
+                QVERIFY2(bottom <= page->height() + 1, qPrintable(row.name + QStringLiteral(": card spills out")));
+                QVERIFY2(card->height() > flick->height() * 0.6,
+                         qPrintable(row.name + QStringLiteral(": card did not fill the row")));
+            }
+            // 4) 正文铺满卡片剩余高度，溢出时在卡片内部滚动而不是被切掉。
+            for (QQuickItem *body : {leftBody, rightBody}) {
+                QVERIFY(body->height() > 80);
+                const QPointF bodyBottom = body->mapToItem(page, QPointF(0, body->height()));
+                auto *card = qobject_cast<QQuickItem *>(body->parentItem());
+                QVERIFY(card);
+                const qreal cardBottom = card->mapToItem(page, QPointF(0, card->height())).y();
+                QVERIFY2(bodyBottom.y() <= cardBottom + 1, row.name);
+                const qreal content = body->property("contentHeight").toDouble();
+                if (content > body->height() + 2) {
+                    // 内容比可视区高：必须能滚到底（contentHeight 覆盖整段内容）。
+                    QVERIFY2(content >= body->height(), row.name);
+                    QVERIFY(body->property("contentY").toDouble() >= 0);
+                }
+            }
+        }
     }
 };
 
