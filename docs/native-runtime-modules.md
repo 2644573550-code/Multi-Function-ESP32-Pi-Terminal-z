@@ -41,6 +41,16 @@ cmake --install /tmp/opencode/terminal-release --prefix /path/to/prefix
 库安装到 `${CMAKE_INSTALL_LIBDIR}/orange-pi-terminal/`（某些系统为多架构 lib 目录），
 相邻库使用 `$ORIGIN` 查找彼此。QML、字体、图标和词库已嵌入相应动态库，不依赖源码目录。
 原有音乐 API 的 `libexec` 安装规则继续保留。Qt、Node.js、ffmpeg 和 udisks2 等系统依赖不变。
+
+P0 安全链路（`pbr-secure-v1`）在 Pi 侧需要 mbedtls 开发头文件，用于 ECDSA P-256、X25519、HKDF-SHA256 与 ChaCha20-Poly1305。这些**不是现有依赖**，构建时按需供应：
+
+```sh
+apt download libmbedtls-dev          # 免 sudo，解包到仓库外路径
+dpkg-deb -x libmbedtls-dev_*.deb /path/to/mbedtls-sdk
+cmake ... -DMBEDTLS_ROOT=/path/to/mbedtls-sdk/usr
+```
+
+不要把 mbedtls 头文件 vendored 进 `third_party/`：Pi 目标的 ARM64 sysroot 需要同一版本，vendored 会产生两套漂移。系统若已装 `libmbedtls-dev` 可直接用，无需解包。
 搬移安装目录时必须搬移整个前缀，不能只搬移 `bin/`。
 
 `tools/runtime_bundle.py` 仅提供构建树依赖闭包复制与组合哈希，不执行服务切换、删除目录或自动归档。

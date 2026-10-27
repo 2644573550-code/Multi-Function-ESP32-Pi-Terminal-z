@@ -21,7 +21,7 @@
 |---|---|---|
 | **D** | 本规范、向量、一致性工具、Pi 侧全部实现 | 签认后拥有本文；字节布局变更由 D 提、F 审 |
 | **Z** | 用户 / PIN / 会话 / SQLCipher / worker 隔离 | 消费本文的身份与事件字段，不实现协议 |
-| **L** | ESP 固件 | **等软件侧完成后再对接**。本文只写"桥板必须满足的行为"，不写固件实现方案，也不引用固件内部符号 |
+| **L** | ESP 固件 | **等软件侧完成后再对接**。本文只写"桥板必须满足的行为"，不派发固件任务，也不规定固件怎么实现 |
 
 **软件不为固件现状让步。** D 按本文件完整实现。固件侧尚未具备相应能力时，握手**就是会失败**——这是预期状态，不是软件的缺陷。失败必须可见、可诊断。
 
@@ -43,16 +43,18 @@
 
 **为什么不是 Ed25519**：ESP-IDF 5.5.4 的 mbedtls 3.6.5 经典 API 不含 Ed25519（只有 PSA 层）；Qt 也不提供。ECDSA P-256 两端都有现成实现。
 
-**必须显式打开的编译开关**（均 `default n`，且**存在依赖关系**）：
+**mbedtls 必须启用的能力**（算法前提，两端都适用）：ChaCha20、Poly1305、ChaCha20-Poly1305 AEAD、HKDF-SHA256、ECDH、ECDSA P-256、Curve25519、SHA-256。
+
+其中 AEAD 与 HKDF 在 mbedtls 默认配置里**是关的**，必须显式打开：
 
 ```text
-CONFIG_MBEDTLS_CHACHA20_C=y        # 前置，否则下一行被静默丢弃
-CONFIG_MBEDTLS_POLY1305_C=y        # 前置
-CONFIG_MBEDTLS_CHACHAPOLY_C=y      # 依赖上面两个
-CONFIG_MBEDTLS_HKDF_C=y
+MBEDTLS_CHACHA20_C          # 前置
+MBEDTLS_POLY1305_C          # 前置
+MBEDTLS_CHACHAPOLY_C        # 依赖上面两个
+MBEDTLS_HKDF_C
 ```
 
-**实测教训**：只写 `CONFIG_MBEDTLS_CHACHAPOLY_C=y` 时，Espressif 的 Kconfig 会**静默丢弃**该项（不报错，`sdkconfig` 里根本不出现），固件照样编译成功，运行时 AEAD 不可用。必须四个一起写。
+> **给远端的一条实测提醒（不是本仓库的任务）**：在 ESP-IDF 的 Kconfig 里只写 `CHACHAPOLY` 一项会被**静默丢弃**——不报错、`sdkconfig` 里不出现、固件照样编译成功，运行时 AEAD 不可用；必须四项一起写。这条记在这里是为了让将来对接的人不必重踩，不构成对本仓库的交付要求。
 
 X25519 走 `MBEDTLS_ECP_DP_CURVE25519_ENABLED` 与 `MBEDTLS_ECDH_C`；ECDSA P-256 走 `MBEDTLS_ECDSA_C` + `MBEDTLS_ECP_DP_SECP256R1_ENABLED`（均默认 y）。
 
@@ -112,7 +114,9 @@ record = { bridge_id, public_key(65B), fingerprint(8B), enrolled_at, revoked_at 
 | `hello_finish` | Pi → 桥板 | 0 | **2** (ControlCommand) | 明文 JSON |
 | `hello_ok` | 桥板 → Pi | 1 | **1** (ControlEvent) | **AEAD 信封**（`k_handshake`） |
 
-桥板 `pbr_poll_control` 硬性丢弃 `rx[4] != 0 || rx[5] != 2`，即它**只接收 Pi 发来的 ControlCommand**；桥板自己只用 `pbr_send_frame(1, ...)` 发 ControlEvent。Pi 侧 `PogoControlTransport::readAvailable` 同样只处理 `direction==1` 的帧。因此握手不能"全部用 kind=1"。
+方向不对称是**协议要求**，不是某一版实现的巧合：桥板的命令入口只接受 `direction=0` 且 `kind=2` 的帧，而桥板自身只以 `direction=1` 发事件；Pi 侧同样只处理 `direction=1` 的帧。
+
+因此握手**不能"全部用 kind=1"**：Pi 发的三条必须是 ControlCommand（`kind=2`），桥板回的两条必须是 ControlEvent（`kind=1`）。任何一侧按"握手也是事件"实现，都会在第一步被对端的帧头检查丢弃，且不会有错误帧。
 
 三条明文握手消息的 payload 是 JSON，`schema="pbr-handshake-v1"`：
 
@@ -315,9 +319,11 @@ AAD = env_ver(1) || key_id(1) || kind(1) || dir(1)
 
 ### 6.1 未认证期
 
-产品构建（`CONFIG_PBR_ISOLATION_BASELINE=n`）在认证完成前只接受 `hello_req`。其他一律回 Error 帧 `authentication required`。
+产品构建在认证完成前只接受 `hello_req`。其他一律回 Error 帧 `authentication required`。
 
-`ping`/`status` 仅 `CONFIG_PBR_ISOLATION_BASELINE=y` 的隔离基线构建可用，**编译期**排除，不是运行时开关。
+`ping`/`status` 这类**未认证诊断**只允许存在于隔离测试构建中，且必须是**编译期**排除，不是运行时开关——运行时开关意味着产品镜像里留着那条明文通道，只等一个配置位。
+
+> 该约束对两端都成立。Pi 侧对应的是"未认证期不接受诊断响应"，桥板侧是怎么编译掉它的，不在本文范围。
 
 ### 6.2 拒绝顺序
 

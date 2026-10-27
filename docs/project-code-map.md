@@ -45,7 +45,7 @@ flowchart LR
 
 ## 所有代码文件
 
-共 **1732 个**代码/构建脚本文件（不含依赖目录 `node_modules`）。下列清单按仓库目录列出，`third_party/` 按子目录汇总：
+共 **1736 个**代码/构建脚本文件（不含依赖目录 `node_modules`）。下列清单按仓库目录列出，`third_party/` 按子目录汇总：
 
 ### `build_scripts/`（7 个）
 
@@ -59,11 +59,13 @@ build_scripts/run_terminal.sh
 build_scripts/test_terminal.sh
 ```
 
-### `docs/`（4 个）
+### `docs/`（6 个）
 
 ```text
 docs/build_technical_word.py
 docs/devdocs/team-work-dependency-diagram.html
+docs/pbr-secure-v1/gen_vectors.py
+docs/pbr-secure-v1/mbedtls_check.c
 docs/showcase/connection.html
 docs/showcase/index.html
 ```
@@ -542,7 +544,7 @@ module-devkit/tools/mock_module.py
 module-devkit/tools/package_tool.py
 ```
 
-### `pi_terminal/`（159 个）
+### `pi_terminal/`（161 个）
 
 ```text
 pi_terminal/CMakeLists.txt
@@ -631,6 +633,8 @@ pi_terminal/src/core/TransportPolicy.h
 pi_terminal/src/main.cpp
 pi_terminal/src/modules/api/IModulePlugin.h
 pi_terminal/src/modules/api/pi_module_api.h
+pi_terminal/src/protocol/control_event.cpp
+pi_terminal/src/protocol/control_event.h
 pi_terminal/src/protocol/data_checksum.h
 pi_terminal/src/protocol/pibridge_protocol.cpp
 pi_terminal/src/protocol/pibridge_protocol.h
