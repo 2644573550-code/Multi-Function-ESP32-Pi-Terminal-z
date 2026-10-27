@@ -778,8 +778,30 @@ private slots:
                 auto *card = page->findChild<QQuickItem *>(name);
                 if (!card || !card->isVisible())
                     continue;
+                // 只管我们自己排的内容：Material 样式的涟漪/浮层内部会有负偏移的
+                // ShaderEffectSource，不属于布局越界。
+                const QStringList styleInternals{QStringLiteral("ShaderEffect"),
+                                                 QStringLiteral("Ripple"),
+                                                 QStringLiteral("ToolTip"),
+                                                 QStringLiteral("Popup")};
+                // Material 的 Switch / Tumbler 内部有自己的涟漪与滚动层（会带负偏移），
+                // 那些不是我们排的版面，整棵子树跳过。
+                auto insideStyleControl = [](QQuickItem *item) {
+                    for (QQuickItem *p = item; p; p = p->parentItem()) {
+                        const QString cls = QString::fromLatin1(p->metaObject()->className());
+                        if (cls.contains(QStringLiteral("Switch")) || cls.contains(QStringLiteral("Tumbler")))
+                            return true;
+                    }
+                    return false;
+                };
                 std::function<void(QQuickItem *)> walk = [&](QQuickItem *item) {
                     for (QQuickItem *child : item->childItems()) {
+                        const QString className = QString::fromLatin1(child->metaObject()->className());
+                        bool skip = insideStyleControl(child);
+                        for (const QString &needle : styleInternals)
+                            if (className.contains(needle)) skip = true;
+                        if (skip)
+                            continue;
                         if (child->isVisible() && child->width() > 0) {
                             const QPointF topLeft = child->mapToItem(card, QPointF(0, 0));
                             const qreal right = topLeft.x() + child->width();
