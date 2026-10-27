@@ -522,9 +522,11 @@ Item {
                 AnalogClock {
                     objectName: "analogClock"
                     Layout.alignment: Qt.AlignHCenter
-                    // 短屏（真机视口只有 ~365px 高）给小表盘。
-                    height: root.height < 420 ? Math.max(56 * root.uiScale, root.height * 0.16)
-                                              : 112 * root.uiScale
+                    // 布局子项必须用 Layout.preferredHeight：直接写 height 会被布局覆盖成 0，
+                    // 而 AnalogClock 是 width = height 的方盘，结果就是「表盘缩成一个点」。
+                    Layout.preferredHeight: root.height < 420
+                                            ? Math.max(56 * root.uiScale, root.height * 0.16)
+                                            : 112 * root.uiScale
                     hours: root.clockHour
                     minutes: root.clockMinute
                     seconds: root.clockSecond
@@ -640,7 +642,7 @@ Item {
                             spacing: 2 * root.uiScale
                             AnalogClock {
                                 Layout.alignment: Qt.AlignHCenter
-                                height: Math.min(80 * root.uiScale, 76)
+                                Layout.preferredHeight: Math.min(80 * root.uiScale, 76)
                                 hours: cityTile.parts.hour
                                 minutes: cityTile.parts.minute
                                 seconds: cityTile.parts.second
