@@ -53,7 +53,7 @@ cmake ... -DMBEDTLS_ROOT=/path/to/mbedtls-sdk/usr
 不要把 mbedtls 头文件 vendored 进 `third_party/`：Pi 目标的 ARM64 sysroot 需要同一版本，vendored 会产生两套漂移。系统若已装 `libmbedtls-dev` 可直接用，无需解包。
 搬移安装目录时必须搬移整个前缀，不能只搬移 `bin/`。
 
-`tools/runtime_bundle.py` 仅提供构建树依赖闭包复制与组合哈希，不执行服务切换、删除目录或自动归档。
+`pi_terminal/tools/runtime_bundle.py` 仅提供构建树依赖闭包复制与组合哈希，不执行服务切换、删除目录或自动归档。
 `copy_runtime()` 保留库链接且拒绝覆盖异版目标；`runtime_digest()` 同时覆盖主程序与实际库文件，不能仅比较主程序哈希。
 安装树仍应复制整个前缀并保留实际 GNU libdir。用户要求不保留旧版资料，工具的存在不代表默认创建版本备份；测试副本由临时目录管理。
 
