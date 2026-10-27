@@ -47,6 +47,10 @@ Item {
     property double snoozeAtMs: 0
     property int lastMinuteEpoch: -1
     property bool previewing: false
+    // 铃声片段：默认铃声本身就是 15 秒节选；自选文件可以指定从第几毫秒开始取 15 秒。
+    readonly property int ringClipMs: 15000
+    property int ringClipStartMs: 0
+    property bool ringClipLooping: false
 
     // 整点报时：与闹钟共用这条 1 Hz 心跳；只在 :00:00 报一次，响铃/再响等待期间跳过。
     // 时段按小时给（含起止），from > to 视为跨午夜；持久化在 time/chime。
@@ -62,7 +66,16 @@ Item {
     MediaPlayer {
         id: ringPlayer
         audioOutput: AudioOutput { id: ringOutput; volume: 1.0 }
-        loops: MediaPlayer.Infinite
+        // 片段循环由 clipTimer 驱动，才能只循环选定的那 15 秒。
+        loops: 1
+        onMediaStatusChanged: {
+            if (mediaStatus === MediaPlayer.EndOfMedia && engine.ringClipLooping) {
+                engine.restartClip()
+                return
+            }
+            if (mediaStatus === MediaPlayer.LoadedMedia && engine.ringClipStartMs > 0)
+                position = engine.ringClipStartMs
+        }
         onPlaybackStateChanged: if (engine.previewing && playbackState === MediaPlayer.StoppedState) engine.previewing = false
         onErrorOccurred: function(error, message) {
             if (error === MediaPlayer.NoError) return
@@ -75,6 +88,16 @@ Item {
         running: true
         repeat: true
         onTriggered: engine.tick()
+    }
+
+    Timer {
+        id: clipTimer
+        interval: engine.ringClipMs
+        repeat: false
+        onTriggered: {
+            if (engine.ringClipLooping) engine.restartClip()
+            else if (engine.previewing) engine.stopPreview()
+        }
     }
 
     Component.onCompleted: engine.load()
@@ -102,6 +125,7 @@ Item {
             name: String(record.name || "").slice(0, 32),
             ringtone: String(record.ringtone || defaultRingtone),
             ringSeconds: TimeMath.clamp(Number(record.ringSeconds) || 30, 5, 120),
+            ringtoneStartMs: TimeMath.clamp(Math.round(Number(record.ringtoneStartMs) || 0), 0, 600000),
             snoozeMinutes: TimeMath.clamp(Number(record.snoozeMinutes) || 5, 1, 30)
         }
     }
@@ -163,7 +187,8 @@ Item {
                 hour: item.hour, minute: item.minute,
                 repeatDaily: item.repeatDaily, alarmEnabled: item.alarmEnabled,
                 name: item.name, ringtone: item.ringtone,
-                ringSeconds: item.ringSeconds, snoozeMinutes: item.snoozeMinutes
+                ringSeconds: item.ringSeconds, snoozeMinutes: item.snoozeMinutes,
+                ringtoneStartMs: item.ringtoneStartMs || 0
             })
         }
         settingWrite("time/alarms", JSON.stringify(list))
@@ -290,26 +315,43 @@ Item {
         ringingTime = TimeMath.alarmTimeLabel(alarm)
         ringingSnoozeMinutes = alarm.snoozeMinutes
         ringEndsAtMs = Date.now() + alarm.ringSeconds * 1000
-        playRingtone(alarm.ringtone)
+        ringClipLooping = true
+        playRingtone(alarm.ringtone, alarm.ringtoneStartMs || 0)
         notifyRequested(I18n.t("闹钟"), ringingName + " · " + ringingTime, true)
         announceRequested(I18n.t("闹钟时间到了"))
         if (Overlay.overlay) ringDialog.open()
     }
 
-    function playRingtone(path) {
+    function playRingtone(path, startMs) {
         if (!path) return
+        ringClipStartMs = Math.max(0, Math.round(Number(startMs) || 0))
         // 内置铃声走 qrc，文件铃声走宿主的文件沙箱解析。
         if (path.indexOf("qrc:/") === 0) {
             ringPlayer.source = path
-            ringPlayer.play()
-            return
+        } else {
+            if (typeof systemTools === "undefined" || !systemTools ||
+                typeof systemTools.fileUrl !== "function") return
+            const url = systemTools.fileUrl(path)
+            if (!url || url.toString() === "") return
+            ringPlayer.source = url
         }
-        if (typeof systemTools === "undefined" || !systemTools ||
-            typeof systemTools.fileUrl !== "function") return
-        const url = systemTools.fileUrl(path)
-        if (!url || url.toString() === "") return
-        ringPlayer.source = url
+        if (ringClipStartMs > 0) ringPlayer.position = ringClipStartMs
         ringPlayer.play()
+        clipTimer.restart()
+    }
+
+    // 15 秒片段播完：响铃中回到起点继续放，直到 ringEndsAtMs。
+    function restartClip() {
+        if (!ringClipLooping) return
+        if (Date.now() >= ringEndsAtMs) { stopRing(); return }
+        ringPlayer.position = ringClipStartMs
+        ringPlayer.play()
+        clipTimer.restart()
+    }
+
+    function clipStartLabel(record) {
+        const seconds = Math.round((Number(record && record.ringtoneStartMs) || 0) / 1000)
+        return TimeMath.pad2(Math.floor(seconds / 60)) + ":" + TimeMath.pad2(seconds % 60)
     }
 
     function ringtoneLabel(path) {
@@ -357,32 +399,39 @@ Item {
     }
 
     // 试听：铃声行里的播放按钮，默认铃声与自选文件都走同一条路径。
-    function togglePreview(path) {
+    function togglePreview(path, startMs) {
         if (previewing) { stopPreview(); return }
         if (!path) return
         stopRing()
-        ringPlayer.loops = MediaPlayer.Once
-        playRingtone(path)
+        ringPlayer.loops = 1
+        ringClipLooping = false
+        playRingtone(path, startMs)
         previewing = true
     }
 
     function stopPreview() {
         if (!previewing) return
         previewing = false
+        ringClipLooping = false
+        clipTimer.stop()
         stopAudio()
-        ringPlayer.loops = MediaPlayer.Infinite
+        ringPlayer.loops = 1
     }
 
     function stopRing() {
         if (!ringing) return
         ringing = false
         ringAlarm = null
+        ringClipLooping = false
+        clipTimer.stop()
         stopAudio()
         if (ringDialog.opened) ringDialog.close()
     }
 
     function snoozeRing() {
         if (!ringing || !ringAlarm) return
+        ringClipLooping = false
+        clipTimer.stop()
         snoozedAlarm = ringAlarm
         snoozeAtMs = Date.now() + ringingSnoozeMinutes * 60000
         ringing = false

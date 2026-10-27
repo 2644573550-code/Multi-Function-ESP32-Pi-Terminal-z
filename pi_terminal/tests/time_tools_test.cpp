@@ -607,6 +607,92 @@ private slots:
         QVERIFY(sync->property("status").toString().contains(QStringLiteral("线路二")));
     }
 
+    // 铃声片段：自选文件可以指定 15 秒片段起点，落盘、响铃与试听都用这个偏移。
+    void ringtoneClipOffset() {
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent alarmComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/AlarmEngine.qml")));
+        QVERIFY2(alarmComponent.isReady(), qPrintable(alarmComponent.errorString()));
+        QScopedPointer<QObject> alarm(alarmComponent.create());
+        QVERIFY(alarm);
+
+        QVariantMap record;
+        record.insert(QStringLiteral("hour"), 6);
+        record.insert(QStringLiteral("minute"), 30);
+        record.insert(QStringLiteral("name"), QStringLiteral("晨跑"));
+        record.insert(QStringLiteral("ringtone"), QStringLiteral("Music/alarm.mp3"));
+        record.insert(QStringLiteral("ringtoneStartMs"), 30000);
+        record.insert(QStringLiteral("ringSeconds"), 20);
+        record.insert(QStringLiteral("snoozeMinutes"), 5);
+        QVariant ok;
+        QMetaObject::invokeMethod(alarm.data(), "addAlarm", Q_RETURN_ARG(QVariant, ok),
+                                  Q_ARG(QVariant, record));
+        QVERIFY(ok.toBool());
+        QVERIFY(host.settings.value(QStringLiteral("time/alarms"))
+                    .contains(QStringLiteral("\"ringtoneStartMs\":30000")));
+
+        // 响铃用记录的片段起点（ListModel.get 返回的是 QObject 包装，直接传原始记录）
+        QSignalSpy announced(alarm.data(), SIGNAL(announceRequested(QString)));
+        QMetaObject::invokeMethod(alarm.data(), "startRing", Q_ARG(QVariant, record));
+        QVERIFY(alarm->property("ringing").toBool());
+        QCOMPARE(alarm->property("ringClipStartMs").toInt(), 30000);
+        QVERIFY(alarm->property("ringClipLooping").toBool());
+        QMetaObject::invokeMethod(alarm.data(), "stopRing");
+        QVERIFY(!alarm->property("ringClipLooping").toBool());
+
+        // 试听也认起点，且不循环
+        QMetaObject::invokeMethod(alarm.data(), "togglePreview",
+                                  Q_ARG(QVariant, QStringLiteral("Music/alarm.mp3")),
+                                  Q_ARG(QVariant, 45000));
+        QVERIFY(alarm->property("previewing").toBool());
+        QCOMPARE(alarm->property("ringClipStartMs").toInt(), 45000);
+        QMetaObject::invokeMethod(alarm.data(), "stopPreview");
+        QVERIFY(!alarm->property("previewing").toBool());
+
+        // 页面：片段起点行只在选自定义铃声时出现，步进 5 秒、上限 5 分钟
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"width", 800}, {"height", 600}, {"uiScale", 0.75},
+             {"alarmEngine", QVariant::fromValue(alarm.data())}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *page = qobject_cast<QQuickItem *>(object.data());
+        QQuickWindow window;
+        window.resize(800, 600);
+        page->setParentItem(window.contentItem());
+        page->setWidth(800);
+        page->setHeight(600);
+        window.show();
+        QMetaObject::invokeMethod(page, "setTab", Q_ARG(QVariant, 3));
+        QTest::qWait(200);
+
+        QCOMPARE(page->property("alarmRingtoneStartMs").toInt(), 0);
+        page->setProperty("alarmRingtone", QStringLiteral("Music/alarm.mp3"));
+        QTest::qWait(80);
+        auto *forward = findItemByObjectName(page, QStringLiteral("alarmClipForward"));
+        auto *back = findItemByObjectName(page, QStringLiteral("alarmClipBack"));
+        auto *label = findItemByObjectName(page, QStringLiteral("alarmClipStartLabel"));
+        QVERIFY(forward && back && label);
+        QVERIFY(forward->isVisible());
+        QCOMPARE(label->property("text").toString(), QStringLiteral("00:00"));
+        QMetaObject::invokeMethod(forward, "clicked");
+        QTest::qWait(80);
+        QCOMPARE(page->property("alarmRingtoneStartMs").toInt(), 5000);
+        QCOMPARE(label->property("text").toString(), QStringLiteral("00:05"));
+        QMetaObject::invokeMethod(back, "clicked");
+        QMetaObject::invokeMethod(back, "clicked");
+        QTest::qWait(80);
+        QCOMPARE(page->property("alarmRingtoneStartMs").toInt(), 0);   // 不越下界
+        for (int i = 0; i < 70; ++i) QMetaObject::invokeMethod(forward, "clicked");
+        QCOMPARE(page->property("alarmRingtoneStartMs").toInt(), 300000);  // 5 分钟上限
+
+        // 内置铃声没有可调片段
+        page->setProperty("alarmRingtone", QStringLiteral("qrc:/ringtones/default-ringtone.mp3"));
+        QTest::qWait(80);
+        QVERIFY(!forward->isVisible());
+    }
+
     // 计时器轮盘不能自己改值：Tumbler 首次布局/居中会动 currentIndex，
     // 之前会把默认 5 分钟写成别的值（真机 settings 已被污染过一次）。
     void timerWheelsDoNotChangeValuesOnTheirOwn() {

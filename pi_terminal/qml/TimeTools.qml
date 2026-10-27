@@ -204,6 +204,8 @@ Item {
     property string alarmName: ""
     property bool alarmNameTouched: false
     property string alarmRingtone: ""
+    // 自选铃声的 15 秒片段起点（毫秒，5 秒步进）；内置铃声是现成的 15 秒节选，起点恒为 0。
+    property int alarmRingtoneStartMs: 0
     property int alarmRingSeconds: 30
     property int alarmSnoozeMinutes: 5
     property bool ringtonePickerOpen: false
@@ -283,8 +285,8 @@ Item {
 
     function addLap() {
         if (!stopwatchRunning && stopwatchElapsedMs <= 0) return
-        const next = stopwatchLaps.concat([stopwatchElapsedMs])
-        stopwatchLaps = next.length > 20 ? next.slice(next.length - 20) : next
+        // 计次不再设上限：列表在卡片内滚动，留多少条由用户决定。
+        stopwatchLaps = stopwatchLaps.concat([stopwatchElapsedMs])
     }
 
     function lapSplit(index) {
@@ -304,6 +306,7 @@ Item {
         alarmName = record.name
         alarmNameTouched = true
         alarmRingtone = record.ringtone
+        alarmRingtoneStartMs = record.ringtoneStartMs || 0
         alarmRingSeconds = record.ringSeconds
         alarmSnoozeMinutes = record.snoozeMinutes
         editingAlarmIndex = index
@@ -318,6 +321,7 @@ Item {
         alarmNameTouched = false
         alarmRingSeconds = 30
         alarmSnoozeMinutes = 5
+        alarmRingtoneStartMs = 0
         if (alarmEngine) {
             alarmEngine.stopPreview()
             alarmRingtone = alarmEngine.defaultRingtone
@@ -336,6 +340,7 @@ Item {
             repeatDaily: alarmRepeatDaily,
             name: alarmName.trim(),
             ringtone: alarmRingtone,
+            ringtoneStartMs: alarmRingtoneStartMs,
             ringSeconds: alarmRingSeconds,
             snoozeMinutes: alarmSnoozeMinutes
         }
@@ -355,6 +360,7 @@ Item {
             repeatDaily: alarmRepeatDaily,
             name: alarmName.trim(),
             ringtone: alarmRingtone,
+            ringtoneStartMs: alarmRingtoneStartMs,
             ringSeconds: alarmRingSeconds,
             snoozeMinutes: alarmSnoozeMinutes
         })
@@ -585,7 +591,7 @@ Item {
                 iconName: "public"
                 accentColor: "#4fd4a4"
                 title: I18n.t("世界时钟")
-                subtitle: I18n.t("各城市当前时间与 UTC 偏移")
+                subtitle: I18n.t("各城市当前时间")
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -655,8 +661,7 @@ Item {
                                 maximumLineCount: 1
                                 subdued: true
                                 fontPixelSize: Theme.fontCaption
-                                text: TimeMath.formatHm(cityTile.parts) + " · " +
-                                      TimeMath.formatOffset(root.zoneOffsets[cityTile.index])
+                                text: TimeMath.formatHm(cityTile.parts)
                             }
                         }
                     }
@@ -885,7 +890,7 @@ Item {
                 iconName: "av_timer"
                 accentColor: "#36c8db"
                 title: I18n.t("秒表")
-                subtitle: I18n.t("计次最多保留 20 条")
+                subtitle: ""
 
                 Rectangle {
                     objectName: "stopwatchDisplayBox"
@@ -942,7 +947,7 @@ Item {
                 iconName: "schedule"
                 accentColor: "#36c8db"
                 title: I18n.t("计次")
-                subtitle: root.stopwatchLaps.length + "/20"
+                subtitle: ""
 
                 CarText {
                     Layout.fillWidth: true
@@ -1170,7 +1175,9 @@ Item {
                                 objectName: "alarmRingtonePreview"
                                 iconName: root.alarmEngine && root.alarmEngine.previewing ? "stop" : "play_arrow"
                                 label: root.alarmEngine && root.alarmEngine.previewing ? I18n.t("停止试听") : I18n.t("试听铃声")
-                                onClicked: if (root.alarmEngine) root.alarmEngine.togglePreview(root.alarmRingtone)
+                                onClicked: if (root.alarmEngine)
+                                               root.alarmEngine.togglePreview(root.alarmRingtone,
+                                                                              root.alarmRingtoneStartMs)
                             }
                             CarButton {
                                 objectName: "alarmRingtoneButton"
@@ -1178,6 +1185,44 @@ Item {
                                 onClicked: root.openRingtonePicker()
                             }
                         }
+                        // 自选铃声的 15 秒片段：起点以 5 秒步进，范围 0–5 分钟。
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.gap / 2
+                            visible: root.alarmRingtone !== "" &&
+                                     (!root.alarmEngine ||
+                                      root.alarmRingtone !== root.alarmEngine.defaultRingtone)
+                            CarText {
+                                Layout.fillWidth: true
+                                maximumLineCount: 1
+                                text: I18n.t("片段起点") + " · " + I18n.t("15 秒")
+                            }
+                            IconButton {
+                                objectName: "alarmClipBack"
+                                iconName: "remove"
+                                label: I18n.t("片段起点提前")
+                                onClicked: root.alarmRingtoneStartMs =
+                                    Math.max(0, root.alarmRingtoneStartMs - 5000)
+                            }
+                            CarText {
+                                objectName: "alarmClipStartLabel"
+                                heading: true
+                                maximumLineCount: 1
+                                horizontalAlignment: Text.AlignHCenter
+                                Layout.preferredWidth: 76 * root.uiScale
+                                text: root.alarmEngine
+                                      ? root.alarmEngine.clipStartLabel(
+                                            { ringtoneStartMs: root.alarmRingtoneStartMs }) : "00:00"
+                            }
+                            IconButton {
+                                objectName: "alarmClipForward"
+                                iconName: "add"
+                                label: I18n.t("片段起点推后")
+                                onClicked: root.alarmRingtoneStartMs =
+                                    Math.min(300000, root.alarmRingtoneStartMs + 5000)
+                            }
+                        }
+
                         // 标题与自己的数字框同一行：两行搞定，不再出现“共用选择器”的错觉。
                         RowLayout {
                             Layout.fillWidth: true
