@@ -25,6 +25,8 @@ endif()
 add_library(terminal_protocol STATIC
     src/protocol/pibridge_protocol.cpp
     src/protocol/pibridge_protocol.h
+    src/protocol/control_event.cpp
+    src/protocol/control_event.h
     src/protocol/data_checksum.h)
 target_include_directories(terminal_protocol PUBLIC src)
 target_link_libraries(terminal_protocol PUBLIC Qt6::Core)

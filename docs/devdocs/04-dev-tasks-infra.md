@@ -19,7 +19,7 @@ generated_at: 2026-10-26
 | 依赖 | T-01 |
 | 追溯 | F-001 / AC-001 / IT-002 |
 | 文件范围 | Pi应用构建入口、串口传输层、构建/实机记录 |
-| 具体路径 | `pi_terminal/CMakeLists.txt`、`src/transport/PogoControlTransport.{h,cpp}`、`src/protocol/pibridge_protocol.cpp`、`tools/mock_bridge.py`；ESP桥板 `main/main.c`、`build.ps1`、`tests/` |
+| 具体路径 | `pi_terminal/CMakeLists.txt`、`src/transport/PogoControlTransport.{h,cpp}`、`src/protocol/pibridge_protocol.cpp`、`pi_terminal/tools/mock_bridge.py`；ESP桥板 `main/main.c`、`build.ps1`、`tests/` |
 
 ### 工作内容
 
@@ -27,8 +27,8 @@ generated_at: 2026-10-26
 - 核验 USB-UART 115200 8N1。
 - 同时记录临时 `/dev/ttyUSB0` 和稳定 `/dev/serial/by-id/`。
 - 记录内核、编译器、Qt plugin path、串口权限组。
-- D同时负责P0最小跨仓SDK来源清单（来源仓/commit/路径/哈希，Z验证构建）：Pi提供C ABI/配包/模拟器，ESP提供正式固件/共享组件；当前两仓同步检查均失败，先解释并修复各自映射/清单，再把副本当权威。完整SDK发布工具仍在P2，不阻止第1天只读预检。
-- ESP桥板host test runner当前并发发送fixture依赖`windows.h`；Linux GCC不能直接完整运行。D须记录受支持工具链/平台，不能把局部RC522测试通过写作全套通过；需要Linux支持时在协议PR补可移植fixture。
+- D负责 **Pi 侧**最小 SDK 来源清单（来源仓/commit/路径/哈希，Z 验证构建）：Pi 提供 C ABI/配包/模拟器。**ESP 侧条目由 L 自行提交**，D 只消费 L 给出的路径与哈希，不修改 ESP 仓库、不代 L 整理其清单。两侧清单由 F 汇总。当前两仓同步检查均失败，各自解释并修复自己那一半的映射/清单，再把副本当权威。完整SDK发布工具仍在P2，不阻止第1天只读预检。
+- **ESP 桥板 host test runner 的可移植性问题归 L**（依赖 `windows.h`，Linux GCC 不能完整运行）。D 只记录"该套件在本轮不可用"，不得把局部 RC522 测试通过写成全套通过；也不能代替 L 去修 ESP 侧 fixture。
 
 ### 测试方法
 

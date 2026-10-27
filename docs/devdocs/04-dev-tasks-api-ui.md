@@ -50,7 +50,7 @@ D/Z/L 对字段和依赖逐项签字确认；检查任务编号唯一、依赖�
 | 依赖 | T-01 |
 | 追溯 | F-005 / AC-005 / UT-003、IT-005 |
 | 接口 | direction/kind/sequence/length/CRC framing、attach/status/detach、`rfid_card` |
-| 文件范围 | 现有Pi：`pi_terminal/src/protocol/pibridge_protocol.cpp`、`src/transport/PogoControlTransport.cpp`、`tools/mock_bridge.py`；ESP：`esp/S3_PiBridge_LinkIt_Host/main/main.c`、`rfid_service.c`、`tests/` |
+| 文件范围 | 现有Pi：`pi_terminal/src/protocol/pibridge_protocol.cpp`、`src/transport/PogoControlTransport.cpp`、`pi_terminal/tools/mock_bridge.py`（主机侧假桥板，自测用）；**依赖远端（不改动）**：`esp/S3_PiBridge_LinkIt_Host/main/main.c`、`rfid_service.c`、`tests/` |
 
 ### 工作内容
 
@@ -83,7 +83,7 @@ D/Z/L 对字段和依赖逐项签字确认；检查任务编号唯一、依赖�
 | review_profile | `audit` |
 | 依赖 | T-04、T-07 |
 | 追溯 | F-006 / AC-006 / IT-008、E2E-001 |
-| 文件范围 | 现有Pi：`src/transport/PogoControlTransport.cpp`、`src/core/HostEventDetector.h`、`src/core/ConnectionManager.cpp`；新增RFID事件router/auth callback；ESP源 `main/rfid_service.c` |
+| 文件范围 | 现有Pi：`src/transport/PogoControlTransport.cpp`、`src/core/HostEventDetector.h`、`src/core/ConnectionManager.cpp`；新增RFID事件router/auth callback；**依赖远端（不改动）**：`main/rfid_service.c` 的事件字段形状 |
 
 ### 测试方法
 
@@ -131,15 +131,15 @@ QML不得读取SQLCipher文件、raw UID或持有数据库密钥；所有操作�
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.D（协议/加密传输） |
-| 协作 | Mr.L（ESP服务）、Mr.Z（Pi TLS/BLE会话及用户授权）、Mr.F（安全评审） |
+| 主责 | Mr.D（**Pi 侧**协议/加密传输对端） |
+| 协作 | Mr.L（ESP 侧实现，等软件完成后开工）、Mr.Z（Pi TLS/BLE 会话及用户授权）、Mr.F（安全评审） |
 | 层级/审核 | 🔴 安全协议；`review_profile=audit` |
 | TDD 模式 | 安全集成测试先行：明文/未配对连接拒绝与证书校验失败测试→安全lane实现→网络抓包/降级复测 |
 | review_profile | `audit` |
 | 依赖 | T-01、T-03、T-04 |
 | 追溯 | F-013 / AC-013 / IT-014 |
 | 数据面 | PBR/LinkIt 只控制；业务payload走固定BLE或Pi hotspot LAN/TCP安全lane |
-| 文件范围 | Pi：`pi_terminal/src/transport/HotspotLanTransport.{h,cpp}`、`BleTransport.{h,cpp}`、`CMakeLists.txt`；ESP：`esp/shared/module_data_service/module_data_service.c`、`module_data_wifi.c`、`module_data_ble_gatt.c`、`include/module_data_service.h`；具体TLS/BLE security API以IDF5.5.4兼容验证结果冻结 |
+| 文件范围 | Pi 侧（D）：`pi_terminal/src/transport/HotspotLanTransport.{h,cpp}`、`BleTransport.{h,cpp}`、`CMakeLists.txt`；**ESP 侧归 L，D 不改动**：`esp/shared/module_data_service/module_data_service.c`、`module_data_wifi.c`、`module_data_ble_gatt.c`、`include/module_data_service.h`；具体TLS/BLE security API以IDF5.5.4兼容验证结果冻结 |
 
 ### 工作内容
 
@@ -165,13 +165,13 @@ QML不得读取SQLCipher文件、raw UID或持有数据库密钥；所有操作�
 
 ### Review 要点
 
-D提交协议/key separation设计，F审核算法/证书验证/fail-closed，L证明ESP TLS/BLE属性实测，Z证明Pi端严格校验；PBR控制面与业务数据面不能混淆。
+D提交 Pi 侧协议/key separation 设计，F审核算法/证书验证/fail-closed，Z证明Pi端严格校验；ESP TLS/BLE 属性实测由 L 在软件完成后执行；PBR控制面与业务数据面不能混淆。
 
 ## T-13 盆栽模块安全接入和完整数据
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（ESP）、Mr.D（PBR接入）、Mr.Z（用户归属/UI） |
+| 主责 | Mr.L（ESP 固件）、Mr.D（**Pi 侧接口与字段**）、Mr.Z（用户归属/UI） |
 | 层级/审核 | 🟡 `guarded` |
 | TDD 模式 | 集成测试先行：模块会话/数据归属→业务数据接入→端到端复测 |
 | review_profile | `guarded` |
@@ -197,7 +197,7 @@ D提交协议/key separation设计，F审核算法/证书验证/fail-closed，L�
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（硬件/固件）、Mr.D（事件协议）、Mr.Z（页面/会话权限） |
+| 主责 | Mr.L（硬件/固件）、Mr.D（**Pi 侧事件字段与接入接口**）、Mr.Z（页面/会话权限） |
 | 层级/审核 | 🟡 `guarded` |
 | TDD 模式 | 集成测试先行：两路遮挡/恢复输入→事件实现→探头实机验证 |
 | review_profile | `guarded` |
@@ -221,7 +221,7 @@ D提交协议/key separation设计，F审核算法/证书验证/fail-closed，L�
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（实机）、Mr.D（桥板/slot路由）、Mr.Z（用户/页面） |
+| 主责 | Mr.L（实机）、Mr.D（**Pi 侧路由与状态机**）、Mr.Z（用户/页面） |
 | 层级/审核 | 🔴 `audit` |
 | TDD 模式 | E2E先行：两模块独立运行/断开测试→闭环实现→回归 |
 | review_profile | `audit` |
@@ -244,7 +244,7 @@ D提交协议/key separation设计，F审核算法/证书验证/fail-closed，L�
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（实机）、Mr.D（桥板/slot路由）、Mr.Z（用户/页面）、Mr.F（裁决） |
+| 主责 | Mr.L（实机）、Mr.D（**Pi 侧路由与状态机**）、Mr.Z（用户/页面）、Mr.F（裁决） |
 | 层级/审核 | 🔴 `audit` |
 | TDD 模式 | 系统测试先行：双槽并发/拔槽测试→双路路由实现→压力复测 |
 | review_profile | `audit` |

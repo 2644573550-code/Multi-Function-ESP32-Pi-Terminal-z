@@ -4,17 +4,23 @@
 #include <QRegularExpression>
 #include <QHash>
 
+#include "protocol/control_event.h"
+
 // Physical debounce belongs to ESP32. This layer validates bridge identity only.
 class HostEventDetector : public QObject {
     Q_OBJECT
 public:
     explicit HostEventDetector(QObject *parent = nullptr) : QObject(parent) {}
     static bool valid(const QJsonObject &event) {
+        // p0-control-v1 events are validated field by field; the pre-P0
+        // schema-less attach/detach stays accepted until T-05 replaces it.
+        if (PbrControl::validate(event).verdict == PbrControl::Verdict::Rejected) return false;
         const auto kind = event.value("event").toString();
         const double id = event.value("module_id").toDouble(-1);
         return (kind == "attach" || kind == "detach") && id >= 1 && id <= 255 && id == int(id)
             && QRegularExpression("^[A-Za-z0-9_-]{1,64}$").match(event.value("module_instance").toString()).hasMatch();
     }
+
 public slots:
     void reset() { last_.clear(); }
     void consume(const QJsonObject &event) {
