@@ -607,6 +607,38 @@ private slots:
         QVERIFY(sync->property("status").toString().contains(QStringLiteral("线路二")));
     }
 
+    // 计时器轮盘不能自己改值：Tumbler 首次布局/居中会动 currentIndex，
+    // 之前会把默认 5 分钟写成别的值（真机 settings 已被污染过一次）。
+    void timerWheelsDoNotChangeValuesOnTheirOwn() {
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"width", 800}, {"height", 365}, {"uiScale", 0.75}, {"active", true}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *page = qobject_cast<QQuickItem *>(object.data());
+        QQuickWindow window;
+        window.resize(800, 365);
+        page->setParentItem(window.contentItem());
+        page->setWidth(800);
+        page->setHeight(365);
+        window.show();
+        QMetaObject::invokeMethod(page, "setTab", Q_ARG(QVariant, 1));
+        QTest::qWait(1500);   // 超过轮盘的 ready(600ms) 与布局稳定时间
+        QCOMPARE(page->property("timerHours").toInt(), 0);
+        QCOMPARE(page->property("timerMinutes").toInt(), 5);
+        QCOMPARE(page->property("timerSeconds").toInt(), 0);
+        QCOMPARE(page->property("timerLabel").toString(), QStringLiteral("05:00"));
+
+        // 预设仍然能改值（程序性变化要能推进轮盘，且不反向污染）
+        QMetaObject::invokeMethod(page, "applyPreset", Q_ARG(QVariant, 10));
+        QTest::qWait(300);
+        QCOMPARE(page->property("timerMinutes").toInt(), 10);
+        QCOMPARE(page->property("timerLabel").toString(), QStringLiteral("10:00"));
+    }
+
     // 340px 宽的卡片是双栏的硬约束：卡片内任何可见控件都不得越过卡片右边界。
     // 计时器预设原本按页面宽度算列数、三组步进器挤一行，真机上「秒」直接被挤出卡片。
     void paneContentStaysInsideCard() {

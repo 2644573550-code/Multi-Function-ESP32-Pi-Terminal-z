@@ -738,34 +738,69 @@ Item {
                     }
                 }
 
-                // iOS 式轮盘：时/分/秒 三个 Tumbler 并排一行，滚动选值。
-                // 比原来的「三行 ± 按钮」省一半高度，也不用再挤数字输入框。
+                // iOS 式轮盘：时/分/秒 三个 Tumbler 并排一行，每个上方标注单位。
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Theme.gap / 2
-                    Wheel {
-                        objectName: "timerHourWheel"
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        caption: I18n.t("时")
-                        maximum: 23
-                        value: root.timerHours
-                        onScrolled: function(value) { root.timerHours = value }
+                        spacing: 0
+                        CarText {
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                            maximumLineCount: 1
+                            subdued: true
+                            fontPixelSize: Theme.fontCaption
+                            text: I18n.t("时")
+                        }
+                        Wheel {
+                            objectName: "timerHourWheel"
+                            Layout.fillWidth: true
+                            caption: I18n.t("时")
+                            maximum: 23
+                            value: root.timerHours
+                            onScrolled: function(value) { root.timerHours = value }
+                        }
                     }
-                    Wheel {
-                        objectName: "timerMinuteWheel"
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        caption: I18n.t("分")
-                        maximum: 59
-                        value: root.timerMinutes
-                        onScrolled: function(value) { root.timerMinutes = value }
+                        spacing: 0
+                        CarText {
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                            maximumLineCount: 1
+                            subdued: true
+                            fontPixelSize: Theme.fontCaption
+                            text: I18n.t("分")
+                        }
+                        Wheel {
+                            objectName: "timerMinuteWheel"
+                            Layout.fillWidth: true
+                            caption: I18n.t("分")
+                            maximum: 59
+                            value: root.timerMinutes
+                            onScrolled: function(value) { root.timerMinutes = value }
+                        }
                     }
-                    Wheel {
-                        objectName: "timerSecondWheel"
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        caption: I18n.t("秒")
-                        maximum: 59
-                        value: root.timerSeconds
-                        onScrolled: function(value) { root.timerSeconds = value }
+                        spacing: 0
+                        CarText {
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                            maximumLineCount: 1
+                            subdued: true
+                            fontPixelSize: Theme.fontCaption
+                            text: I18n.t("秒")
+                        }
+                        Wheel {
+                            objectName: "timerSecondWheel"
+                            Layout.fillWidth: true
+                            caption: I18n.t("秒")
+                            maximum: 59
+                            value: root.timerSeconds
+                            onScrolled: function(value) { root.timerSeconds = value }
+                        }
                     }
                 }
 
@@ -1024,34 +1059,54 @@ Item {
                                   ? I18n.t("保存会覆盖这一条，启用状态保持不变")
                                   : I18n.t("到点弹通知并语音播报；闹钟会保存到本机")
 
-                        // 时/分 各占一行（标签 + 数字框 + ± 同一行）：并排塞不下 340px 卡片。
+                        // 闹钟时间：一行两列（时 | 分），每列「标签在上、紧凑步进器在下」。
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: Theme.gap / 2
-                            CarText { text: I18n.t("时"); maximumLineCount: 1 }
-                            Item { Layout.fillWidth: true }
-                            StepperBox {
-                                objectName: "alarmHourStepper"
-                                value: root.alarmHour
-                                maximum: 23
-                                caption: I18n.t("时")
-                                onAdjusted: function(delta) {
-                                    root.alarmHour = (root.alarmHour + delta + 24) % 24
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
+                                CarText {
+                                    Layout.fillWidth: true
+                                    horizontalAlignment: Text.AlignHCenter
+                                    maximumLineCount: 1
+                                    subdued: true
+                                    fontPixelSize: Theme.fontCaption
+                                    text: I18n.t("时")
+                                }
+                                StepperBox {
+                                    objectName: "alarmHourStepper"
+                                    Layout.alignment: Qt.AlignHCenter
+                                    compact: true
+                                    value: root.alarmHour
+                                    maximum: 23
+                                    caption: I18n.t("时")
+                                    onAdjusted: function(delta) {
+                                        root.alarmHour = (root.alarmHour + delta + 24) % 24
+                                    }
                                 }
                             }
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: Theme.gap / 2
-                            CarText { text: I18n.t("分"); maximumLineCount: 1 }
-                            Item { Layout.fillWidth: true }
-                            StepperBox {
-                                objectName: "alarmMinuteStepper"
-                                value: root.alarmMinute
-                                maximum: 59
-                                caption: I18n.t("分")
-                                onAdjusted: function(delta) {
-                                    root.alarmMinute = (root.alarmMinute + delta + 60) % 60
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
+                                CarText {
+                                    Layout.fillWidth: true
+                                    horizontalAlignment: Text.AlignHCenter
+                                    maximumLineCount: 1
+                                    subdued: true
+                                    fontPixelSize: Theme.fontCaption
+                                    text: I18n.t("分")
+                                }
+                                StepperBox {
+                                    objectName: "alarmMinuteStepper"
+                                    Layout.alignment: Qt.AlignHCenter
+                                    compact: true
+                                    value: root.alarmMinute
+                                    maximum: 59
+                                    caption: I18n.t("分")
+                                    onAdjusted: function(delta) {
+                                        root.alarmMinute = (root.alarmMinute + delta + 60) % 60
+                                    }
                                 }
                             }
                         }
@@ -1428,6 +1483,7 @@ Item {
         property int value: 0
         property int maximum: 59
         property string caption: ""
+        property bool compact: false      // 紧凑形态：按钮 42、数字框 48
         readonly property string paddedValue: value < 10 ? "0" + value : String(value)
         signal adjusted(int delta)
         function applyText(raw) {
@@ -1435,7 +1491,8 @@ Item {
             if (digits === "") return
             value = TimeMath.clamp(Number(digits), 0, maximum)
         }
-        implicitHeight: Math.max(56 * root.uiScale, stepperRow.implicitHeight + 4 * root.uiScale)
+        implicitHeight: Math.max((box.compact ? 44 : 56) * root.uiScale,
+                                 stepperRow.implicitHeight + 4 * root.uiScale)
         implicitWidth: stepperRow.implicitWidth + 8 * root.uiScale
         radius: Theme.shapeLarge
         color: Theme.surfaceContainerHigh
@@ -1448,12 +1505,14 @@ Item {
             IconButton {
                 iconName: "remove"
                 label: I18n.t("减少") + " " + box.caption
+                implicitWidth: box.compact ? 42 * root.uiScale : Theme.hit
+                implicitHeight: implicitWidth
                 onClicked: box.adjusted(-1)
             }
             TextInput {
                 id: stepperInput
                 objectName: "timeNumberInput"
-                Layout.preferredWidth: 72 * root.uiScale
+                Layout.preferredWidth: (box.compact ? 48 : 72) * root.uiScale
                 horizontalAlignment: TextInput.AlignHCenter
                 verticalAlignment: TextInput.AlignVCenter
                 inputMethodHints: Qt.ImhDigitsOnly
@@ -1474,6 +1533,8 @@ Item {
             IconButton {
                 iconName: "add"
                 label: I18n.t("增加") + " " + box.caption
+                implicitWidth: box.compact ? 42 * root.uiScale : Theme.hit
+                implicitHeight: implicitWidth
                 onClicked: box.adjusted(1)
             }
         }
@@ -1504,7 +1565,10 @@ Item {
             onTriggered: wheel.ready = true
         }
         onValueChanged: if (currentIndex !== value) currentIndex = value
-        onCurrentIndexChanged: if (wheel.ready) wheel.scrolled(currentIndex)
+        // 只有用户真的在滚（moving/flicking）才回写模型：首次布局的自动居中、
+        // 卡片尺寸变化引起的重新居中都不是用户操作，回写会把 5 分钟改成乱值。
+        onCurrentIndexChanged: if (wheel.ready && (wheel.moving || wheel.flicking))
+                                   wheel.scrolled(currentIndex)
         background: Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             y: (parent.height - wheel.itemHeight) / 2
