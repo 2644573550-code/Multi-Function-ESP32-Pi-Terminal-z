@@ -15,6 +15,12 @@ Item {
 
     signal notifyRequested(string title, string message, bool important)
     signal announceRequested(string text)
+    // 列表内容变化（增删改）。页面靠它把"正在编辑的那条被删掉"这种情况收干净，
+    // 不依赖嵌套布局里的非可视 Connections 去接 ListModel 的 countChanged。
+    // 不能叫 alarmsChanged：alarms 是 alias 属性，Qt 会自动生成同名变更信号。
+    signal alarmListChanged()
+    // 删掉的是第几条：页面据此决定"正在编辑的那条没了"还是"编号整体前移"。
+    signal alarmRemoved(int index)
 
     readonly property int maxAlarms: 8
     readonly property string defaultRingtone: "qrc:/ringtones/default-ringtone.mp3"
@@ -182,6 +188,24 @@ Item {
         }
         alarmModel.append(item)
         persist(); recount()
+        alarmListChanged()
+        return true
+    }
+
+    // 就地修改：保留这一条的启用状态；时刻+名称与其他条目重复时拒绝（返回 false）。
+    function updateAlarm(index, record) {
+        if (index < 0 || index >= alarmModel.count) return false
+        const item = normalize(record)
+        for (let i = 0; i < alarmModel.count; ++i) {
+            if (i === index) continue
+            const other = alarmModel.get(i)
+            if (other.hour === item.hour && other.minute === item.minute &&
+                other.name === item.name) return false
+        }
+        item.alarmEnabled = alarmModel.get(index).alarmEnabled
+        alarmModel.set(index, item)
+        persist(); recount()
+        alarmListChanged()
         return true
     }
 
@@ -197,6 +221,8 @@ Item {
         if (index < 0 || index >= alarmModel.count) return
         alarmModel.remove(index)
         persist(); recount()
+        alarmListChanged()
+        alarmRemoved(index)
     }
 
     function alarmTimeLabel(alarm) {

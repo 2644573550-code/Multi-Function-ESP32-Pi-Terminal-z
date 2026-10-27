@@ -18,9 +18,17 @@
 
 ## 双栏布局与滚动
 
-`>= 900 * max(1, uiScale)` 时左右两栏（左栏 `clamp(340, 42%, 460)`），否则单栏且左栏在上。
-断点乘 `uiScale` 是为了跟随作者划定的缩放边界（`autoScale ∈ [0.65, 1.4]`，`textScale ∈ {1, 1.25, 1.5}`）：
-大字档若仍按 900 硬断，两栏各只剩三百多像素。
+`width >= 760 * max(1, uiScale)` **且** `height >= 420 * max(1, uiScale)` 时左右两栏
+（左栏 `clamp(340, 42%, 460)`），否则单栏且左栏在上、整页滚动。两个数都是从真机视口反推的：
+
+- 1024×600 窗口下时间页只拿到约 **800×365**（窗口的 78%×61%，`uiScale` 0.75）。按 900 断，
+  Pi 目标屏永远是单栏；
+- 但同一视口若只按宽度放行双栏，卡片会被压到 253px、正文只剩 **129px**，而时钟卡正文要
+  165px、世界时钟要 349px——两栏各自滚动还不如单栏整页滚动。1400×900 窗口的页面是
+  **1097×502**，420 的门槛刚好放它进去（两栏模式详见下）。
+
+断点乘 `uiScale` 跟随作者划定的缩放边界（`autoScale ∈ [0.65, 1.4]`，`textScale ∈ {1, 1.25, 1.5}`）：
+低缩放仍按 760/420，大字档抬到 950–1140 / 525–630。
 
 两栏模式下**卡片撑满所在行，正文在卡片内部滚动**；页面本身不滚。这条约束由三处代码共同保证，
 改任何一处都要重跑 `twoPanePanesFillViewport`：
@@ -93,6 +101,24 @@ QML 在 `Component.onCompleted` 之前就会把属性初值写进属性，若那
 `trusted/*`（插件信任记录）与宿主偏好同在一个 QSettings 文件里，页面脚本必须够不到它们，
 这条前缀白名单就是那条边界；`runtime_test` 的 `pageSettingsArePrefixScoped` 覆盖了拒绝路径。
 
+## 字号与 token
+
+`CarText/CarButton.fontPixelSize` 是**像素语义**（内部换算成 pt），`Theme.body/title/hero`
+是 **pt 语义**，两者差约 1.33 倍，不能互相替换。时间页的说明文字、城市时间、读数统一走像素
+通道，用的是 `Theme.fontCaption/fontLabel/fontStrong/fontDisplay`（= 12/13/22/24 ×
+`scaleFactor`）。响应式读数（数字钟、计时器、秒表）保留 `min(上限 × uiScale, 宽度/N)` 的算式，
+它们的上限本来就由可用宽度决定。
+
+## 闹钟点行回填编辑
+
+点「已设置闹钟」里的任意一行 → 左栏回填该条，标题变「编辑闹钟」，按钮变「保存修改 / 取消」：
+
+- 保存走 `AlarmEngine.updateAlarm(index, record)`：**就地修改**，保留原来的启用状态；
+  时刻+名称与其他条目重复时拒绝写模型并提示，仍留在编辑态。
+- 取消回新建态，表单复位为默认（07:30、每天、默认铃声、30s、5min）。
+- 删除正在编辑的那条 → 自动回新建态；删除它前面的条目 → 编辑编号前移一位，仍编辑同一条
+  （靠引擎的 `alarmRemoved(index)`，不依赖 ListModel 的 `countChanged`）。
+
 ## 校时在设置页
 
 校时的状态与请求都在 `TimeSync.qml`（`Main.qml` 实例化一次）：城市选择、同步到的偏移、
@@ -150,7 +176,9 @@ ctest --test-dir /tmp/terminal-dev -R 'time_tools_page|runtime_models_state_file
 显式错误、自定义模式不回退公共接口、闹钟与计时器预设跨页面重建后仍存在。
 
 本轮新增：`twoPanePanesFillViewport`（两档视口 × 四页签：并排、等高、底边不越视口、正文可滚）、
-`twoPaneBreakpointFollowsScale`（1024/1400/900/800 与 0.65/1.5 缩放的断点矩阵）、
+`twoPaneBreakpointFollowsScale`（真实 Pi 视口 800@0.75、760/700、1024/1400 与 0.65/1.5 缩放的
+断点矩阵）、`alarmRowEditFlow`（真鼠标点行 → 回填 → 就地保存保留启用位 → 取消 → 冲突拒绝 →
+删条收干净）、
 `paneScrollAffordanceIsVisible`（App 真实视口 1097×502 下必须出现指示条与渐隐，滚到底渐隐消失，
 假溢出不得画滚动条）、`hourlyChime`（整点一次、时段含两端/跨午夜、响铃跳过、持久化）、
 `settingsSectionDrivesOwners`（模式/地址/状态/开关写的都是 TimeSync 与 AlarmEngine）、

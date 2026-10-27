@@ -11,6 +11,9 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUrlQuery>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QJSValue>
 #include "ui/TerminalUi.h"
 
@@ -101,6 +104,17 @@ protected:
                                               .arg(absolute % 60, 2, 10, QLatin1Char('0'));
     }
 };
+
+// Repeater 生成的 delegate 的 QObject 父链不在页面对象下，findChild 找不到它们；
+// 这里按可视树递归查找，页面里任何层级的控件都能定位。
+QQuickItem *findItemByObjectName(QQuickItem *root, const QString &name) {
+    if (!root) return nullptr;
+    if (root->objectName() == name) return root;
+    for (QQuickItem *child : root->childItems()) {
+        if (QQuickItem *found = findItemByObjectName(child, name)) return found;
+    }
+    return nullptr;
+}
 
 } // namespace
 
@@ -594,20 +608,148 @@ private slots:
         QVERIFY(sync->property("status").toString().contains(QStringLiteral("线路二")));
     }
 
+    // 闹钟点行回填编辑：回填、就地保存（保留启用位）、取消回新建态、冲突拒绝。
+    void alarmRowEditFlow() {
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent syncComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QVERIFY2(syncComponent.isReady(), qPrintable(syncComponent.errorString()));
+        QScopedPointer<QObject> sync(syncComponent.create());
+        QVERIFY(sync);
+        QQmlComponent alarmComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/AlarmEngine.qml")));
+        QVERIFY2(alarmComponent.isReady(), qPrintable(alarmComponent.errorString()));
+        QScopedPointer<QObject> alarm(alarmComponent.create());
+        QVERIFY(alarm);
+        auto add = [&alarm](int hour, int minute, const QString &name, int ring, int snooze) {
+            QVariantMap record;
+            record.insert(QStringLiteral("hour"), hour);
+            record.insert(QStringLiteral("minute"), minute);
+            record.insert(QStringLiteral("repeatDaily"), true);
+            record.insert(QStringLiteral("name"), name);
+            record.insert(QStringLiteral("ringtone"), QString());
+            record.insert(QStringLiteral("ringSeconds"), ring);
+            record.insert(QStringLiteral("snoozeMinutes"), snooze);
+            QVariant ok;
+            QMetaObject::invokeMethod(alarm.data(), "addAlarm", Q_RETURN_ARG(QVariant, ok),
+                                      Q_ARG(QVariant, record));
+            return ok.toBool();
+        };
+        QVERIFY(add(6, 45, QStringLiteral("起床"), 20, 5));
+        QVERIFY(add(7, 15, QStringLiteral("上班"), 30, 10));
+        auto *model = alarm->property("alarms").value<QObject *>();
+        QVERIFY(model);
+        // 读回条目走持久化的 JSON：ListModel.get() 返回的是 QObject 包装，不适合断言，
+        // 而 persist() 每次改动都会写 time/alarms，正好同时验证落盘内容。
+        auto rowAt = [&host](int index) {
+            const QJsonArray rows =
+                QJsonDocument::fromJson(host.settings.value(QStringLiteral("time/alarms")).toUtf8())
+                    .array();
+            return index < rows.size() ? rows.at(index).toObject() : QJsonObject();
+        };
+
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0},
+             {"alarmEngine", QVariant::fromValue(alarm.data())},
+             {"timeSync", QVariant::fromValue(sync.data())}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *page = qobject_cast<QQuickItem *>(object.data());
+        QVERIFY(page);
+        // 标签页是 Loader 懒加载、行由 Repeater 生成，都要真实窗口才稳定存在。
+        QQuickWindow window;
+        window.resize(1024, 600);
+        page->setParentItem(window.contentItem());
+        page->setWidth(1024);
+        page->setHeight(600);
+        window.show();
+        QMetaObject::invokeMethod(page, "setTab", Q_ARG(QVariant, 3));
+        QTest::qWait(200);
+        auto *pane = page->findChild<QQuickItem *>(QStringLiteral("alarmEditPane"));
+        QVERIFY(pane);
+        QCOMPARE(pane->property("title").toString(), QStringLiteral("新建闹钟"));
+
+        // 点第 2 行 → 左栏回填、标题切编辑态
+        auto *tap = findItemByObjectName(page, QStringLiteral("alarmRowTap1"));
+        QVERIFY(tap);
+        // 真点一下：用真实鼠标事件走行点击，避免直接调私有函数绕过接线。
+        const QPointF tapCenter = tap->mapToScene(QPointF(tap->width() / 2, tap->height() / 2));
+        QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, tapCenter.toPoint());
+        QTest::qWait(80);
+        QCOMPARE(page->property("editingAlarmIndex").toInt(), 1);
+        QVERIFY(page->property("editingAlarm").toBool());
+        QCOMPARE(page->property("alarmHour").toInt(), 7);
+        QCOMPARE(page->property("alarmMinute").toInt(), 15);
+        QCOMPARE(page->property("alarmName").toString(), QStringLiteral("上班"));
+        QCOMPARE(page->property("alarmRingSeconds").toInt(), 30);
+        QCOMPARE(page->property("alarmSnoozeMinutes").toInt(), 10);
+        QTRY_COMPARE(pane->property("title").toString(), QStringLiteral("编辑闹钟"));
+
+        // 启用位先关掉：就地保存必须保留它，条数不变
+        QMetaObject::invokeMethod(alarm.data(), "setEnabled", Q_ARG(QVariant, 1), Q_ARG(QVariant, false));
+        page->setProperty("alarmHour", 21);
+        page->setProperty("alarmMinute", 5);
+        page->setProperty("alarmName", QStringLiteral("夜班"));
+        QMetaObject::invokeMethod(page, "saveAlarm");
+        QCOMPARE(model->property("count").toInt(), 2);
+        QCOMPARE(rowAt(1).value(QStringLiteral("hour")).toInt(), 21);
+        QCOMPARE(rowAt(1).value(QStringLiteral("minute")).toInt(), 5);
+        QCOMPARE(rowAt(1).value(QStringLiteral("name")).toString(), QStringLiteral("夜班"));
+        QCOMPARE(rowAt(1).value(QStringLiteral("alarmEnabled")).toBool(), false);
+        // 保存后回新建态，表单复位
+        QCOMPARE(page->property("editingAlarmIndex").toInt(), -1);
+        QCOMPARE(page->property("alarmHour").toInt(), 7);
+        QCOMPARE(page->property("alarmName").toString(), QString());
+        QTRY_COMPARE(pane->property("title").toString(), QStringLiteral("新建闹钟"));
+
+        // 取消：回新建态且不落盘
+        QMetaObject::invokeMethod(page, "beginEditAlarm", Q_ARG(QVariant, 0));
+        QCOMPARE(page->property("editingAlarmIndex").toInt(), 0);
+        QMetaObject::invokeMethod(page, "cancelAlarmEdit");
+        QCOMPARE(page->property("editingAlarmIndex").toInt(), -1);
+        QCOMPARE(page->property("alarmName").toString(), QString());
+        QCOMPARE(rowAt(0).value(QStringLiteral("name")).toString(), QStringLiteral("起床"));
+
+        // 冲突：改成与另一条同名同时刻 → 不写模型，仍在编辑态并提示
+        QMetaObject::invokeMethod(page, "beginEditAlarm", Q_ARG(QVariant, 0));
+        page->setProperty("alarmHour", 21);
+        page->setProperty("alarmMinute", 5);
+        page->setProperty("alarmName", QStringLiteral("夜班"));
+        QSignalSpy notified(page, SIGNAL(notifyRequested(QString, QString, bool)));
+        QMetaObject::invokeMethod(page, "saveAlarm");
+        QCOMPARE(notified.count(), 1);
+        QCOMPARE(rowAt(0).value(QStringLiteral("hour")).toInt(), 6);
+        QCOMPARE(page->property("editingAlarmIndex").toInt(), 0);
+
+        // 编辑中的条目被删掉 → 自动回新建态
+        QMetaObject::invokeMethod(alarm.data(), "removeAlarm", Q_ARG(QVariant, 0));
+        QCOMPARE(page->property("editingAlarmIndex").toInt(), -1);
+        QCOMPARE(model->property("count").toInt(), 1);
+        QCOMPARE(page->property("alarmHour").toInt(), 7);
+    }
+
     // 双栏断点跟随作者划定的缩放边界：width >= 900 * max(1, uiScale)。
     void twoPaneBreakpointFollowsScale_data() {
         QTest::addColumn<int>("width");
+        QTest::addColumn<int>("height");
         QTest::addColumn<double>("uiScale");
         QTest::addColumn<bool>("twoPane");
-        QTest::newRow("1024@1.0") << 1024 << 1.0 << true;
-        QTest::newRow("1024@1.5-big-text") << 1024 << 1.5 << false;
-        QTest::newRow("1400@1.5-big-text") << 1400 << 1.5 << true;
-        QTest::newRow("900@0.65") << 900 << 0.65 << true;   // 低缩放仍是 900
-        QTest::newRow("800@1.0") << 800 << 1.0 << false;
+        QTest::newRow("1024x600@1.0") << 1024 << 600 << 1.0 << true;
+        QTest::newRow("1024x600@1.5-big-text") << 1024 << 600 << 1.5 << false;  // 宽断点 1140
+        QTest::newRow("1400x900@1.5-big-text") << 1400 << 900 << 1.5 << true;   // 1140/630 都过
+        QTest::newRow("1400x900@1.0") << 1400 << 900 << 1.0 << true;
+        QTest::newRow("app-viewport-1097x502@1.09") << 1097 << 502 << 1.09 << true;
+        QTest::newRow("pi-real-800x365@0.75") << 800 << 365 << 0.75 << false;   // 太矮，退回单栏
+        QTest::newRow("800x460@0.75") << 800 << 460 << 0.75 << true;
+        QTest::newRow("760x600@1.0") << 760 << 600 << 1.0 << true;
+        QTest::newRow("700x600@1.0") << 700 << 600 << 1.0 << false;
+        QTest::newRow("900x600@0.65") << 900 << 600 << 0.65 << true;  // 低缩放仍按 760/420
     }
 
     void twoPaneBreakpointFollowsScale() {
         QFETCH(int, width);
+        QFETCH(int, height);
         QFETCH(double, uiScale);
         QFETCH(bool, twoPane);
         TimeToolsHost host;
@@ -616,15 +758,15 @@ private slots:
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
         QVERIFY2(component.isReady(), qPrintable(component.errorString()));
         QScopedPointer<QObject> object(component.createWithInitialProperties(
-            {{"width", width}, {"height", 600}, {"uiScale", uiScale}, {"active", true}}));
+            {{"width", width}, {"height", height}, {"uiScale", uiScale}, {"active", true}}));
         QVERIFY2(object, qPrintable(component.errorString()));
         auto *page = qobject_cast<QQuickItem *>(object.data());
         QCOMPARE(page->property("twoPane").toBool(), twoPane);
         QQuickWindow window;
-        window.resize(width, 600);
+        window.resize(width, height);
         page->setParentItem(window.contentItem());
         page->setWidth(width);
-        page->setHeight(600);
+        page->setHeight(height);
         window.show();
         QTest::qWait(160);
         auto *left = page->findChild<QQuickItem *>(QStringLiteral("clockLocalPane"));
@@ -856,13 +998,17 @@ private slots:
     void twoPanePanesFillViewport_data() {
         QTest::addColumn<int>("width");
         QTest::addColumn<int>("height");
-        QTest::newRow("pi-1024x600") << 1024 << 600;
-        QTest::newRow("desktop-1400x900") << 1400 << 900;
+        QTest::addColumn<double>("uiScale");
+        // 真机视口退回单栏，由页面整体滚动（双栏会把正文压到 129px）
+        QTest::newRow("pi-real-800x365-single") << 800 << 365 << 0.75;
+        QTest::newRow("pi-1024x600") << 1024 << 600 << 1.0;
+        QTest::newRow("desktop-1400x900") << 1400 << 900 << 1.0;
     }
 
     void twoPanePanesFillViewport() {
         QFETCH(int, width);
         QFETCH(int, height);
+        QFETCH(double, uiScale);
         TimeToolsHost host;
         QQmlEngine engine;
         engine.rootContext()->setContextProperty("systemTools", &host);
@@ -877,7 +1023,7 @@ private slots:
         QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
         QVERIFY2(component.isReady(), qPrintable(component.errorString()));
         QScopedPointer<QObject> object(component.createWithInitialProperties(
-            {{"width", width}, {"height", height}, {"uiScale", 1.0}, {"active", true},
+            {{"width", width}, {"height", height}, {"uiScale", uiScale}, {"active", true},
              {"alarmEngine", QVariant::fromValue(alarmObject.data())},
              {"timeSync", QVariant::fromValue(syncObject.data())}}));
         QVERIFY2(object, qPrintable(component.errorString()));
@@ -917,6 +1063,17 @@ private slots:
                     << "content" << leftBody->property("contentHeight").toDouble()
                     << rightBody->property("contentHeight").toDouble();
 
+            if (!page->property("twoPane").toBool()) {
+                // 高不够或太窄：退回单栏，两卡上下堆叠、整页滚动
+                QVERIFY2(right->mapToItem(page, QPointF(0, 0)).y() >
+                             left->mapToItem(page, QPointF(0, 0)).y() + left->height() - 1,
+                         row.name);
+                QVERIFY2(flick->property("contentHeight").toDouble() > flick->height() + 1,
+                         qPrintable(row.name + QStringLiteral(": single column must scroll as one page")));
+                QVERIFY2(left->height() + 1 >= left->property("implicitHeight").toDouble(),
+                         qPrintable(row.name + QStringLiteral(": single-column card keeps content height")));
+                continue;
+            }
             // 1) 双栏时页面自身不滚动：视口就是全部可见高度。
             QVERIFY2(qAbs(flick->property("contentHeight").toDouble() - flick->height()) <= 1,
                      qPrintable(row.name + QStringLiteral(": page scrolls in two-pane")));

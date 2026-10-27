@@ -39,11 +39,16 @@ Item {
     readonly property int tabAlarm: 3
     property int tab: 0
 
-    // 平板式双栏：宽屏左右分布，窄屏退回单栏（左栏在上）。
-    // 断点随作者划定的缩放边界走：autoScale ∈ [0.65, 1.4] × textScale ∈ {1, 1.25, 1.5}
-    // 得到 uiScale ∈ [0.65, 2.1]。大字档若仍按 900 硬断，两栏各只剩三百多像素，
-    // 正文会全挤进内部滚动，所以断点取 900 * max(1, uiScale)，低缩放时保持 900 不变。
-    readonly property bool twoPane: width >= 900 * Math.max(1, uiScale)
+    // 平板式双栏：宽且够高才左右分布，否则单栏（左栏在上）由页面整体滚动。
+    // 两个断点都乘 max(1, uiScale)，跟随作者的缩放边界（autoScale 0.65–1.4 ×
+    // 界面比例 1/1.25/1.5）：
+    // - 宽 760：1024×600 窗口下页面只拿到约 800×365（窗口的 78%×61%），按 900 断
+    //   会让 Pi 目标屏永远单栏；
+    // - 高 420：同样在这个真机视口下，双栏会把卡片压到 253px、正文只剩 129px，
+    //   而时钟卡正文要 165px——两栏各自滚动还不如单栏整页滚动。900px 高的窗口里
+    //   页面是 502px，420 的门槛放它进去。
+    readonly property bool twoPane: width >= 760 * Math.max(1, uiScale)
+                                    && height >= 420 * Math.max(1, uiScale)
     readonly property real leftPaneWidth: Math.max(340, Math.min(460, width * 0.42))
 
     // 城市选择、同步到的偏移与校时线路状态都归 TimeSync.qml（Main 实例化一次），
@@ -98,6 +103,18 @@ Item {
     property double timerSavedAt: 0
     // 初值 true：构造期的初值赋值不能先覆盖磁盘上的 time/clock-style，见 TimeSync.qml。
     property bool loadingSettings: true
+    // 删除时收干净编辑态：删的就是正在编辑那条 → 回新建态；删的是它前面的 →
+    // 编号前移一位，继续编辑同一条。接引擎信号而不是 ListModel 的 countChanged，
+    // 因为布局里的非可视 Connections 不可靠。
+    Connections {
+        target: root.alarmEngine
+        function onAlarmRemoved(index) {
+            if (!root.editingAlarm) return
+            if (index === root.editingAlarmIndex) root.resetAlarmForm()
+            else if (root.editingAlarmIndex > index) root.editingAlarmIndex -= 1
+        }
+    }
+
     Timer {
         id: timerSaveTimer
         interval: 400
@@ -194,6 +211,9 @@ Item {
     property int alarmRingSeconds: 30
     property int alarmSnoozeMinutes: 5
     property bool ringtonePickerOpen: false
+    // -1 = 新建；>=0 = 正在编辑「已设置闹钟」里的第几条（点行回填）。
+    property int editingAlarmIndex: -1
+    readonly property bool editingAlarm: editingAlarmIndex >= 0
     property string ringtoneFolder: ""
     property var ringtoneRows: []
     readonly property var alarmList: alarmEngine ? alarmEngine.alarms : null
@@ -266,6 +286,59 @@ Item {
     }
 
     // ---------------------------------------------------------------- 闹钟表单
+
+    // 点右侧某一行：把该条回填到左栏，标题与按钮切到编辑态。
+    function beginEditAlarm(index) {
+        if (!alarmEngine || index < 0 || index >= alarmEngine.alarms.count) return
+        const record = alarmEngine.alarms.get(index)
+        alarmHour = record.hour
+        alarmMinute = record.minute
+        alarmRepeatDaily = record.repeatDaily
+        alarmName = record.name
+        alarmNameTouched = true
+        alarmRingtone = record.ringtone
+        alarmRingSeconds = record.ringSeconds
+        alarmSnoozeMinutes = record.snoozeMinutes
+        editingAlarmIndex = index
+    }
+
+    function resetAlarmForm() {
+        editingAlarmIndex = -1
+        alarmHour = 7
+        alarmMinute = 30
+        alarmRepeatDaily = true
+        alarmName = ""
+        alarmNameTouched = false
+        alarmRingSeconds = 30
+        alarmSnoozeMinutes = 5
+        if (alarmEngine) {
+            alarmEngine.stopPreview()
+            alarmRingtone = alarmEngine.defaultRingtone
+        }
+    }
+
+    function cancelAlarmEdit() {
+        resetAlarmForm()
+    }
+
+    function saveAlarm() {
+        if (!alarmEngine) return
+        const record = {
+            hour: alarmHour,
+            minute: alarmMinute,
+            repeatDaily: alarmRepeatDaily,
+            name: alarmName.trim(),
+            ringtone: alarmRingtone,
+            ringSeconds: alarmRingSeconds,
+            snoozeMinutes: alarmSnoozeMinutes
+        }
+        if (editingAlarm) {
+            if (alarmEngine.updateAlarm(editingAlarmIndex, record)) resetAlarmForm()
+            else notifyRequested(I18n.t("闹钟"), I18n.t("已有同名同时刻的闹钟，未保存"), false)
+            return
+        }
+        addAlarmFromForm()
+    }
 
     function addAlarmFromForm() {
         if (!alarmEngine) return
@@ -520,7 +593,7 @@ Item {
                     CarText {
                         Layout.fillWidth: true
                         maximumLineCount: 1
-                        fontPixelSize: 13 * root.uiScale
+                        fontPixelSize: Theme.fontLabel
                         text: I18n.t("城市") + " " + root.cities.length + "/" + root.maxCities
                     }
                     CarButton {
@@ -561,7 +634,7 @@ Item {
                             Layout.preferredWidth: 84 * root.uiScale
                             horizontalAlignment: Text.AlignRight
                             maximumLineCount: 1
-                            fontPixelSize: 24 * root.uiScale
+                            fontPixelSize: Theme.fontDisplay
                             text: TimeMath.formatHm(TimeMath.cityParts(root.cityTickMs, root.zoneOffsets[index]))
                         }
                         CarText {
@@ -569,7 +642,7 @@ Item {
                             Layout.preferredWidth: 132 * root.uiScale
                             horizontalAlignment: Text.AlignRight
                             maximumLineCount: 1
-                            fontPixelSize: 24 * root.uiScale
+                            fontPixelSize: Theme.fontDisplay
                             text: TimeMath.formatOffset(root.zoneOffsets[index])
                         }
                     }
@@ -842,21 +915,21 @@ Item {
                             CarText {
                                 Layout.preferredWidth: 72 * root.uiScale
                                 maximumLineCount: 1
-                                fontPixelSize: 12 * root.uiScale
+                                fontPixelSize: Theme.fontCaption
                                 text: I18n.t("计次")
                             }
                             CarText {
                                 Layout.fillWidth: true
                                 maximumLineCount: 1
                                 horizontalAlignment: Text.AlignRight
-                                fontPixelSize: 12 * root.uiScale
+                                fontPixelSize: Theme.fontCaption
                                 text: I18n.t("分段")
                             }
                             CarText {
                                 Layout.preferredWidth: 120 * root.uiScale
                                 maximumLineCount: 1
                                 horizontalAlignment: Text.AlignRight
-                                fontPixelSize: 12 * root.uiScale
+                                fontPixelSize: Theme.fontCaption
                                 text: I18n.t("总计")
                             }
                         }
@@ -922,8 +995,10 @@ Item {
                         objectName: "alarmEditPane"
                         iconName: "alarm"
                         accentColor: "#ff6584"
-                        title: I18n.t("新建闹钟")
-                        subtitle: I18n.t("到点弹通知并语音播报；闹钟会保存到本机")
+                        title: root.editingAlarm ? I18n.t("编辑闹钟") : I18n.t("新建闹钟")
+                        subtitle: root.editingAlarm
+                                  ? I18n.t("保存会覆盖这一条，启用状态保持不变")
+                                  : I18n.t("到点弹通知并语音播报；闹钟会保存到本机")
 
                         RowLayout {
                             Layout.alignment: Qt.AlignHCenter
@@ -1047,10 +1122,16 @@ Item {
                             Layout.fillWidth: true
                             Item { Layout.fillWidth: true }
                             CarButton {
+                                objectName: "alarmCancelEditButton"
+                                visible: root.editingAlarm
+                                text: I18n.t("取消")
+                                onClicked: root.cancelAlarmEdit()
+                            }
+                            CarButton {
                                 objectName: "alarmAddButton"
                                 accent: true
-                                text: I18n.t("添加闹钟")
-                                onClicked: root.addAlarmFromForm()
+                                text: root.editingAlarm ? I18n.t("保存修改") : I18n.t("添加闹钟")
+                                onClicked: root.saveAlarm()
                             }
                         }
                     }
@@ -1075,7 +1156,8 @@ Item {
                         }
                         Repeater {
                             model: root.alarmList
-                            delegate: RowLayout {
+                            delegate: Item {
+                                id: alarmRow
                                 required property int index
                                 required property int hour
                                 required property int minute
@@ -1086,52 +1168,72 @@ Item {
                                 required property int snoozeMinutes
                                 Layout.fillWidth: true
                                 implicitHeight: Math.max(Theme.hit, 48 * root.uiScale)
-                                spacing: Theme.gap
 
-                                Rectangle {
-                                    Layout.preferredWidth: 104 * root.uiScale
-                                    implicitHeight: 44 * root.uiScale
-                                    radius: Theme.shapeMedium
-                                    color: Theme.surfaceContainerHigh
-                                    border.width: 1
-                                    border.color: Theme.outlineVariant
-                                    CarText {
-                                        anchors.centerIn: parent
-                                        maximumLineCount: 1
-                                        fontPixelSize: 22 * root.uiScale
-                                        text: TimeMath.alarmTimeLabel({ hour: hour, minute: minute })
-                                    }
+                                // 点整行回填到左栏编辑。MouseArea 垫在下面（z 最低），
+                                // 开关与删除按钮盖子上面，仍然各自响应自己的点击。
+                                MouseArea {
+                                    objectName: "alarmRowTap" + alarmRow.index
+                                    anchors.fill: parent
+                                    z: -1
+                                    acceptedButtons: Qt.LeftButton
+                                    onClicked: root.beginEditAlarm(alarmRow.index)
+                                    Accessible.name: I18n.t("编辑这个闹钟")
                                 }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 0
-                                    CarText {
+                                RowLayout {
+                                    anchors.fill: parent
+                                    spacing: Theme.gap
+                                    Rectangle {
+                                        Layout.preferredWidth: 104 * root.uiScale
+                                        implicitHeight: 44 * root.uiScale
+                                        radius: Theme.shapeMedium
+                                        color: Theme.surfaceContainerHigh
+                                        border.width: 1
+                                        border.color: alarmRow.index === root.editingAlarmIndex
+                                                      ? Theme.accent : Theme.outlineVariant
+                                        CarText {
+                                            anchors.centerIn: parent
+                                            maximumLineCount: 1
+                                            fontPixelSize: Theme.fontStrong
+                                            text: TimeMath.alarmTimeLabel(
+                                                      { hour: alarmRow.hour, minute: alarmRow.minute })
+                                        }
+                                    }
+                                    ColumnLayout {
                                         Layout.fillWidth: true
-                                        maximumLineCount: 1
-                                        elide: Text.ElideRight
-                                        text: name !== "" ? name : I18n.t("闹钟")
+                                        spacing: 0
+                                        CarText {
+                                            Layout.fillWidth: true
+                                            maximumLineCount: 1
+                                            elide: Text.ElideRight
+                                            text: alarmRow.name !== "" ? alarmRow.name : I18n.t("闹钟")
+                                        }
+                                        CarText {
+                                            Layout.fillWidth: true
+                                            maximumLineCount: 1
+                                            elide: Text.ElideRight
+                                            fontPixelSize: Theme.fontCaption
+                                            text: (alarmRow.repeatDaily ? I18n.t("每天") : I18n.t("仅一次")) + " · " +
+                                                  alarmRow.ringSeconds + I18n.t("秒") + " · " +
+                                                  I18n.t("再响") + " " + alarmRow.snoozeMinutes + I18n.t("分")
+                                        }
                                     }
-                                    CarText {
-                                        Layout.fillWidth: true
-                                        maximumLineCount: 1
-                                        elide: Text.ElideRight
-                                        fontPixelSize: 12 * root.uiScale
-                                        text: (repeatDaily ? I18n.t("每天") : I18n.t("仅一次")) + " · " +
-                                              ringSeconds + I18n.t("秒") + " · " +
-                                              I18n.t("再响") + " " + snoozeMinutes + I18n.t("分")
+                                    Switch {
+                                        id: alarmRowSwitch
+                                        implicitHeight: Theme.hit
+                                        Accessible.name: I18n.t("启用闹钟")
+                                        Binding {
+                                            target: alarmRowSwitch
+                                            property: "checked"
+                                            value: alarmRow.alarmEnabled
+                                        }
+                                        onClicked: root.alarmEngine.setEnabled(alarmRow.index,
+                                                                                !alarmRow.alarmEnabled)
                                     }
-                                }
-                                Switch {
-                                    id: alarmRowSwitch
-                                    implicitHeight: Theme.hit
-                                    Binding { target: alarmRowSwitch; property: "checked"; value: alarmEnabled }
-                                    onClicked: root.alarmEngine.setEnabled(index, !alarmEnabled)
-                                    Accessible.name: I18n.t("启用闹钟")
-                                }
-                                IconButton {
-                                    iconName: "delete"
-                                    label: I18n.t("删除闹钟")
-                                    onClicked: root.alarmEngine.removeAlarm(index)
+                                    IconButton {
+                                        iconName: "delete"
+                                        label: I18n.t("删除闹钟")
+                                        onClicked: root.alarmEngine.removeAlarm(alarmRow.index)
+                                    }
                                 }
                             }
                         }
@@ -1220,7 +1322,7 @@ Item {
                             Layout.fillWidth: true
                             maximumLineCount: 1
                             elide: Text.ElideMiddle
-                            fontPixelSize: 12 * root.uiScale
+                            fontPixelSize: Theme.fontCaption
                             text: "/" + root.ringtoneFolder
                         }
                     }
@@ -1266,7 +1368,7 @@ Item {
                         CarText {
                             Layout.fillWidth: true
                             wrapMode: Text.Wrap
-                            fontPixelSize: 12 * root.uiScale
+                            fontPixelSize: Theme.fontCaption
                             text: I18n.t("支持 mp3 / wav / m4a / ogg；只列出这些格式，且受文件管理沙箱限制。")
                         }
                         CarButton {

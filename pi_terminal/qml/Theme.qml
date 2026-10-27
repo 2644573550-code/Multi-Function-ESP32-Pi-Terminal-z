@@ -16,6 +16,13 @@ QtObject {
     readonly property real body: 18 * scaleFactor
     readonly property real title: 24 * scaleFactor
     readonly property real hero: 32 * scaleFactor
+    // 像素语义的字号 token：CarText/CarButton 的 fontPixelSize 通道按逻辑像素渲染
+    // （内部换算成 pt），与上面 pt 语义的 body/title/hero 是两条通道，不要混着写。
+    // 时间页的说明文字、城市时间与读数都走这条通道，数值与原字号一一对应。
+    readonly property real fontCaption: 12 * scaleFactor
+    readonly property real fontLabel: 13 * scaleFactor
+    readonly property real fontStrong: 22 * scaleFactor
+    readonly property real fontDisplay: 24 * scaleFactor
     readonly property real icon: 24 * scaleFactor
     readonly property real shapeSmall: 8 * scaleFactor
     readonly property real shapeMedium: 12 * scaleFactor
