@@ -1,6 +1,6 @@
 ---
 generated_by: dev-tasks
-spec_version: 1.3
+spec_version: 1.4
 generated_at: 2026-10-28
 owner: Mr.Z
 source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
@@ -10,10 +10,13 @@ source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
 > 个人执行清单，不替代 [总计划](04-dev-tasks.md) 与各任务卡。冲突时以任务卡和 [F 审核稿](04-dev-tasks-f-day1.md) 为准。
 
 **基线**：Pi `82db652`（2026-10-28，PR #30 / T-05 控制 schema）。
-上一版清单基于 `f9f109a`，本次上游共 8 个 commit / 25 个文件，`pi_terminal/` 代码**有**变动（新增 `control_event.{h,cpp}`、`protocol_test.cpp` +84 行）。
+
+**进度**：今天是 **Day 3**。P0 起算日 2026-10-26（`04-dev-tasks.md` 生成日），Day 14 = **2026-11-08**。
+
+**排序原则**：本清单**按依赖排序，不按日期**。任务卡允许超前，只要上游前置已满足。下方「Day 闸门对照」只标出项目级时间点，不限制你的推进顺序——能提前做的就先做，卡住的才等。
 
 **本机环境**：x86_64 / Ubuntu 26.04，**不是**目标 Pi 3B / ARM64 Bookworm / Qt 6.5.3 / Wayland。
-本机无编译器、无 cmake、无 Qt、无 libsqlcipher。以下所有验收都必须在 Pi 实机复核，本机结果只能作开发预检。
+本机无编译器、无 cmake、无 Qt、无 libsqlcipher。标 ❓ 的实机验收项在本机无法完成。
 
 **现状标注**
 
@@ -24,22 +27,36 @@ source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
 
 ---
 
-## 0. 上一版之后的四项范围变更
+## Day 闸门对照
 
-> 来自 `04-dev-tasks.md` 顶部修订与 `docs/pbr-secure-v1/`，直接影响你的排期。
+项目级时间点，供对照，不约束你的执行顺序。
 
-1. **分工边界（2026-10-28 修订）**：**D 和 Z 只做 Pi 终端软件，不改 ESP 固件仓库。L 负责 ESP 固件，等 Pi 软件完成后再开工。** 采购/接线/电气核验不受限。
-   → 任务卡里出现的 `esp/` 一律是「依赖该仓库现状」，不是你要改的。
-2. **D 现在被卡在你身上**：`uidIndexKey()` 归 Z 实现，T-08 后半段与 T-12 都等 Z。
-   → 你的 T-04 是全队关键路径，不只是你自己的进度。
-3. **`deriveUidIndex` 签名已冻结**（DR-14）：D 实现并调用，**密钥生成/存储/轮换归你**。
-4. **B-01 密码协议已由 F 交付**（规范修订 2 + 向量 + mbedtls 2.28/3.6.5 各 7/7），但**等 D 签认，未冻结**。与你的 T-10 KDF 参数无直接依赖，但 B-06 仍待 F 审定。
+| Day | 项目要求 Z 交付 | 你的状态 |
+|---|---|---|
+| 1 | Qt/SQLCipher driver 与 worker UID/sandbox 预检（B-02、B-03、B-06） | 未交（见 §1） |
+| 2-3 | **PIN/session 骨架、SQLCipher schema 骨架** | 待开工（见 §2 D1、§3 D4） |
+| 4-6 | 每用户 DB、worker 最小隔离 | 提前可做（见 §3 D8、§3 D11） |
+| 7 | 中期演示：SQLCipher 跨用户拒绝、worker 拒网 | — |
+| 8-10 | 登录 UI、TLS/BLE 业务 lane | 提前可做（见 §3 D9、§4） |
+| 13 | PR 自测与 F 审核 | — |
+| 14 | T-16 完整用户旅程与 P0 签字 | — |
+
+> Day 3 闸门原文：「第3天关键预检或第7天关键闭环失败时，F保留全部硬门槛并重新排期、记录负责人和新截止日」。预检未交不等于 P0 自动失败，但 F 需要记录 blocker。
 
 ---
 
-## 一、第 1 天预检回执（已逾期）
+## 0. 上游范围变更（影响排期）
 
-> [F 审核稿第 8 节](04-dev-tasks-f-day1.md#8-第一天预检回执与阻塞台账)要求当日提交。回执格式固定：
+1. **分工边界（2026-10-28 修订）**：**D 和 Z 只做 Pi 终端软件，不改 ESP 固件仓库。L 负责 ESP 固件，等 Pi 软件完成后再开工。** 采购/接线/电气核验不受限。
+2. **D 现在被卡在你身上**：`uidIndexKey()` 归 Z 实现，T-08 后半段与 T-12 都等 Z。你的 T-04 是全队关键路径。
+3. **`deriveUidIndex` 签名已冻结**（DR-14）：D 实现并调用，**密钥生成/存储/轮换归你**。
+4. **B-01 密码协议已由 F 交付**（规范修订 2 + 向量 + mbedtls 2.28/3.6.5 各 7/7），**等 D 签认，未冻结**。
+
+---
+
+## 1. 第 1 天预检回执
+
+> [F 审核稿第 8 节](04-dev-tasks-f-day1.md#8-第一天预检回执与阻塞台账)。回执格式固定：
 > `B编号 / owner / commit / 目标硬件与版本 / 命令与脱敏结果 / PASS或FAIL或NOT_RUN / 风险 / 修复动作 / 截止日 / PR链接`
 > 没有执行日期和实际结果的模板不算证据。
 
@@ -47,13 +64,13 @@ source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
 
 - [ ] ✅ **确认目标 Qt 6.5.3 能否加载/构建 SQLCipher driver**，交实测日志
   - Qt 官方发行版不带 SQLCipher driver，需自编译 `QSQLITE` 插件替换
-  - 失败即 T-10 阻塞，须当日上报 F，**不得用普通 SQLite 冒充**
+  - 失败即 T-10 阻塞，须上报 F，**不得用普通 SQLite 冒充**
 - [ ] ✅ **记录实际加载库与 `cipher_version`**（`PRAGMA cipher_version`）
 - [ ] ✅ **验证错误 key 被拒绝**，记录打开耗时
 - [ ] ✅ **记录 Pi OS / Qt / plugin path**
-  - 注意：目标 Qt 是 **6.5.3**，历史实机记录是 6.4.2，CMake 最低 6.4；三者需在回执里分清
+  - 目标 **6.5.3**，历史实机 **6.4.2**，CMake 最低 **6.4**；三者须在回执里分清
 - [ ] 📋 **验证 Pi 侧 SDK 来源/哈希清单可构建**（D 交清单，Z 验证）
-  - ESP 侧条目现在归 L 提交，D 只消费路径与哈希，你只验证 Pi 侧那一半
+  - ESP 侧条目归 L 提交，D 只消费路径与哈希；你只验证 Pi 侧那一半
 
 ### B-03：worker 隔离
 
@@ -72,31 +89,36 @@ source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
 
 ---
 
-## 二、Z 主责任务
+## 2. D1 — 解除 D 的阻塞（最高优先）
 
-### 新增：`uidIndexKey()` — 解除 D 的阻塞
-
-> 来自 `F-REVIEW-2.md` §5.3 / DR-14。签名已冻结，**D 只调用，你负责实现与密钥生命周期**。
+> 这是**别人在等你的唯一硬阻塞**。D 已用固定测试密钥 stub 自测，你交付后他切真实现。
+> 签名冻结见 `F-REVIEW-2.md` §5.3 / DR-14。不属于 T-04/T-10/T-11 任一张任务卡。
 
 - [ ] ✅ **新建 `pi_terminal/src/security/uid_index_key.h`**
   ```cpp
   bool uidIndexKey(QByteArray *out32);   // 成功 true；密钥不可用时 false
   ```
-- [ ] ✅ **密钥生成/存储/轮换归你**（T-04/T-10 可信存储域），D 不接触、不缓存、不落盘
-- [ ] ✅ **密钥缺失时 RFID 路径失败关闭**，不退回明文 UID 比较
-  - D 的 `deriveUidIndex()` 返回空 `QByteArray` 即 `INVALID_MESSAGE`
-- [ ] ❓ **确认密钥存放位置**：是并入每用户 DB 域、还是独立的整机密钥？F 未明确到文件级
+- [ ] ❓ **裁决密钥存放位置**：并入每用户 DB 域，还是独立整机密钥？F 未定到文件级
+  - 并行要求：D 的 `deriveUidIndex()` 在密钥缺失时返回空 `QByteArray` → `INVALID_MESSAGE`
+- [ ] ✅ **实现密钥生成**，32 字节随机源
+- [ ] ✅ **实现密钥存储**，D 不接触、不缓存、不落盘
+- [ ] ✅ **实现密钥轮换路径**
+- [ ] ✅ **密钥缺失时返回 false**，RFID 路径失败关闭，不退回明文 UID 比较
+- [ ] ✅ **写测试**：密钥存在/缺失/轮换后旧索引不再匹配
 
-**注**：这项不在 T-04/T-10/T-11 任一任务卡内，是 PR #30 之后新增给 Z 的交付物。D 侧已用固定测试密钥 stub 自测，你交付后他切真实现。
+---
 
-### T-04 用户、PIN 和会话服务（🔴 audit）
+## 3. Z 主责任务（按依赖排序）
+
+### D4 — T-04 用户、PIN 和会话服务（🔴 audit）
 
 > 依赖 T-01、T-03 · 追溯 UT-002、IT-004 · 测试先行
-> **现在是全队关键路径**：T-12、T-15 等 Z 的 T-04
+> **Day 2-3 闸门要求「PIN/session 骨架」**，后续 T-10、T-12、T-15 全部依赖它
 
 - [ ] ✅ **新建 `pi_terminal/src/security/`**
   - `UserService.{h,cpp}`、`AuthService.{h,cpp}`、`PinPolicy.{h,cpp}`、`SessionManager.{h,cpp}`
 - [ ] ✅ **接入 `pi_terminal/CMakeLists.txt` 与 `src/app/TerminalApplication.{h,cpp}`**
+- [ ] ✅ **先交骨架**（闸门 Day 2-3）：接口定义 + 空实现 + UT-002 测试骨架可编译
 - [ ] ✅ **用户创建/停用，PIN 设置/验证/修改**，至少 6 位 ASCII 数字
 - [ ] ✅ **错误限速与临时锁定**：每账号连错 5 次锁 60 秒；终端级 1 次/秒
   - 未知账号同样计入；错误提示不区分「账号不存在」与「PIN 错误」
@@ -108,17 +130,20 @@ source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
   - 迟到事件不得写入新用户
 - [ ] ✅ **管理员与普通用户区分**，管理员不得读他人健康记录
 - [ ] ✅ **PIN 服务在可信 C++ 层**，QML 不持有密钥
-- [ ] ✅ **写 UT-002**：正确/错误 PIN、限速阈值、锁定超时、并发登录、切换、退出
+- [ ] ✅ **补全 UT-002**：正确/错误 PIN、限速阈值、锁定超时、并发登录、切换、退出
 - [ ] ❓ **服务端执行会话撤销**，不能只隐藏 UI 控件
 
 **验收**：正确 PIN 建唯一会话；错误不泄漏账号存在性；达阈值锁定；切换后旧 token 全拒；管理员请求成员健康数据被拒并留审计记录。
 
-### T-10 每用户 SQLCipher 最小存储（🔴 audit）
+### D8 — T-10 每用户 SQLCipher 最小存储（🔴 audit）
 
-> 依赖 T-04 · 追溯 UT-005、IT-012 · 测试先行
+> 依赖 T-04（D4）· 追溯 UT-005、IT-012 · 测试先行
+> **Day 2-3 闸门要求「SQLCipher schema 骨架」**，Day 4-6 要求每用户 DB 完成
 
+- [ ] ✅ **B-02 先出结论**：driver 能不能加载决定这条线是否存在（见 §1）
 - [ ] ✅ **新建 `SqlCipherStore.{h,cpp}`、`UserDatabase.{h,cpp}`**
 - [ ] ✅ **CMake 加 `Qt6::Sql` 与 driver 配置**（当前 `CMakeLists.txt` 无 `Qt6::Sql`）
+- [ ] ✅ **先交 schema 骨架**（闸门 Day 2-3）：表结构 + 迁移框架 + 空实现
 - [ ] ✅ **每用户独立 SQLCipher DB**，密钥只由可信 service 管理
 - [ ] ✅ **每用户随机 DB key；PIN 经 KDF 派生 KEK 只用于封装/解封 DB key**
   - PIN 本身不作 SQLCipher key
@@ -129,15 +154,16 @@ source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
 - [ ] ⚠️ **同步改造盆栽明文 JSON**（T-11/T-13 联动）
   - `module-devkit/examples/smart-planter/History.h` 当前是明文 JSON（`QJsonDocument`），须改为可信 SQLCipher 数据 API 并禁用 P0 旧写入
   - 旧记录无用户归属：**不自动导入首个用户、不自动删除**，另留迁移记录
-- [ ] ✅ **写 UT-005**：A/B 各写标记，A 读 B、错误 key 打开、退出后重用旧 session
+- [ ] ✅ **补全 UT-005**：A/B 各写标记，A 读 B、错误 key 打开、退出后重用旧 session
 - [ ] ❓ **测 DB / WAL / log / temp 无 PIN、raw UID、明文健康值**
 - [ ] 📋 **记录 Pi 3B 上驱动加载、DB 打开、关键 PIN/查询延迟**
 
 **验收**：每用户 DB 加密；DB key 随机且异于 PIN；A 无法查改 B；锁屏后旧前台 API 拒访；日志无敏感值。
 
-### T-11 基础 worker 进程隔离与默认拒网（🔴 audit）
+### D11 — T-11 基础 worker 进程隔离与默认拒网（🔴 audit）
 
-> 依赖 T-03、T-04、T-10 · 追溯 IT-013 · 拒绝性集成测试先行
+> 依赖 T-03、T-04（D4）、T-10（D8）· 追溯 IT-013 · 拒绝性集成测试先行
+> **Day 4-6 闸门要求「worker 最小隔离」**
 
 - [ ] ✅ **模块代码移出宿主进程**
   - `ModuleManager.cpp:31` 当前 `QLibrary::setLoadHints`，同进程加载；须改为独立低权限 worker + 有界版本 IPC
@@ -154,9 +180,10 @@ source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
 **验收**：worker PID ≠ 宿主、UID 非特权；读不到 DB/密钥/`$HOME`；无公网；崩溃隔离。
 **注意**：`QProcess` 本身不是沙箱，必须证明 UID、文件权限、网络策略、systemd 实际生效。
 
-### T-09 Qt 登录、绑卡、锁屏、挂失（🟢 guarded）
+### D9 — T-09 Qt 登录、绑卡、锁屏、挂失（🟢 guarded）
 
-> 依赖 T-04、T-08、T-10 · 追溯 E2E-002 · Pi/Wayland/Qt 6.5.3 实机
+> 依赖 T-04（D4）、T-08（§4）、T-10（D8）· 追溯 E2E-002 · Pi/Wayland/Qt 6.5.3 实机
+> **Day 8-10 闸门要求「登录 UI」**，但依赖齐了就可以提前
 
 - [ ] ✅ **新增登录/锁屏/绑卡 QML 组件**（`qml/` 下 login/lock/user/pin 组件数 = **0**）
 - [ ] ✅ **在 CMake 资源表登记**
@@ -171,36 +198,36 @@ source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
 
 **验收**：刷卡不直接登录；PIN 正确才登录；绑卡须短时窗口；管理员不能读他人健康数据。
 
-### T-02 Z 部分：Qt 构建环境（⚪ audit，与 D 共担）
+### D2 — T-02 Z 部分：Qt 构建环境（⚪ audit，与 D 共担）
 
-> 依赖 T-01 · 追溯 IT-002
+> 依赖 T-01 · 追溯 IT-002 · **别人所有 Pi 侧工作都依赖这个能构建**
 
 - [ ] ❓ **在 Pi 3B / 64-bit Bookworm / Qt 6.5.3 / Wayland 上构建主项目**
 - [ ] ❓ **记录内核、编译器、Qt plugin path、串口权限组**
-- [ ] ⚠️ **Pi 服务不得以 root 运行** — 与 T-11 非特权 UID 一并核对
+- [ ] ⚠️ **Pi 服务不得以 root 运行** — 与 D11 非特权 UID 一并核对
 
 ---
 
-## 三、Z 协作项
+## 4. Z 协作项
 
 > 主责在他人，你负责其中用户/会话/页面/授权部分。
 > 修订后 D 只做 Pi 侧，L 等软件完成后才动固件——你的协作项基本都在 Pi 侧。
 
-### T-08 RC522 到 Pi 安全事件闭环
+### D8b — T-08 RC522 事件闭环（Z 部分：密钥与匹配）
 
-> 主责 D（PBR/事件链路）+ Z（用户匹配回调与密钥）· 依赖 T-04、T-07
+> 主责 D（PBR/事件链路）· 依赖 T-04（D4）、T-07（D 的）· **D 在等你的 `uidIndexKey`**
 
-- [ ] ✅ **`uidIndexKey()` 已在上方「新增」列出，优先交付以解 D 的阻塞**
+- [ ] ✅ **`uidIndexKey()` 已在 §2 D1 列出，优先交付**
 - [ ] ✅ **UID 匹配回调**：用 `deriveUidIndex()` 结果选用户（D 实现并调用，你提供密钥）
 - [ ] ✅ **选中用户后只显示 PIN 页**，不直接登录
 - [ ] ✅ **raw UID 只短暂驻留内存**，不进 DB / log / QSettings；QML / worker 只见选择结果
 - [ ] ❓ **验证未配对/篡改/重复/过期事件全部拒绝**
 - [ ] ❓ **确认 UID hex 大小写都接受**（校验时折叠，`deriveUidIndex` 收原始字节）
 
-### T-12 模块业务数据 TLS/BLE 安全传输（Z 部分）
+### D12 — T-12 业务数据 TLS/BLE（Z 部分：会话与授权）
 
-> 主责 D（**Pi 侧**对端）· Z 负责 Pi TLS/BLE 会话及用户授权 · **D 明确在等你**
-> **ESP 侧 TLS 归 L，等软件完成后对接**
+> 主责 D（**Pi 侧对端**）· **D 在等你的 T-04（D4）** · ESP 侧 TLS 归 L
+> **Day 8-10 闸门要求「TLS/BLE 业务 lane」**
 
 - [ ] ✅ **Pi 端 TLS 校验**（`HotspotLanTransport.cpp` 当前 SSL/TLS 代码行数 = **0**）
   - TLS ≥ 1.2；指纹白名单以 profile 为准、QSettings 为缓存
@@ -211,10 +238,9 @@ source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
 - [ ] ❓ **传输密钥与身份密钥分离**，不复用 `CONFIG_APP_PI_DATA_TOKEN`
 - [ ] 📋 **`TLS 会话 ≠ 设备已认证` 写进代码注释与文档**
 
-### T-13 / T-14 / T-15 / T-16 页面与会话权限（Z 部分）
+### D13-D16 — 页面与会话权限（Z 部分）
 
-> 修订后这几项的主责明确拆为：L 固件、D Pi 侧接口/字段/路由、Z 页面/UI。
-> **你不碰固件。**
+> 修订后这几项主责明确拆为：L 固件、D Pi 侧接口/字段/路由、Z 页面/UI。**你不碰固件。**
 
 - [ ] ✅ **T-13 用户归属/UI**：盆栽全部传感器数据按用户归属显示；退出后旧用户上下文不能读取
 - [ ] ✅ **T-14 页面/会话权限**：啸天受控状态 UI 复用安全业务 lane，不当作已有插件
@@ -225,10 +251,10 @@ source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
 
 ---
 
-## 四、T-01 签认
+## 5. T-01 签认
 
 > [IT-001](04-dev-tasks-f-day1.md#9-it-001-审查签认与验收顺序) 中 Z 行仍为「待本人确认」。
-> F 文档审定 + 密码协议交付**不**替代你的技术签认。
+> F 文档审定 + 密码协议交付**不**替代你的技术签认。Day 1 闸门要求收集技术签认。
 
 - [ ] ✅ **签认确认范围**：PIN/session、SQLCipher、worker IPC/OS 隔离、UI 边界
   - 记录格式：日期 / commit / PR 或 Issue
@@ -239,24 +265,25 @@ source: docs/devdocs/04-dev-tasks*.md; docs/pbr-secure-v1/*; Pi main 82db652
 
 ---
 
-## 五、阻塞项速查
+## 6. 阻塞项速查
 
 | 阻塞 | 影响 | 处置 |
 |---|---|---|
-| SQLCipher driver 不可用 | T-10 全线 | 当日上报 F，不得 SQLite 冒充 |
-| KDF 参数未审定 | T-04 / T-10 无法定验收 | 提交测量，等 F 回填 |
-| `uidIndexKey()` 未交付 | **D 的 T-08 后半段、T-12** | 优先做，见「新增」节 |
-| `QLibrary` 迁 worker | T-11 关键路径 | 先做最小边界，不追完整 seccomp |
-| BLE 无法强制加密 | T-12 | P0 固定 LAN-only，验证禁用 |
-| 本机无工具链 | 全部代码任务 | 需先装编译器/cmake/Qt 才能验证 |
-| 本机非 Pi | 全部验收 | 本机只预检，实机补证 |
+| **本机无工具链** | **§2、§3 全部代码任务** | 装编译器/cmake/Qt 才能编译与验证 |
+| SQLCipher driver 不可用 | D8（T-10）全线 | 上报 F，不得 SQLite 冒充 |
+| `uidIndexKey()` 未交付 | **D 的 T-08 后半段、T-12** | §2 D1，最高优先 |
+| 密钥存放位置未裁决 | D1 | 需 F 或你自行裁决 |
+| KDF 参数未审定 | D4 / D8 无法定验收 | 提交测量，等 F 回填 |
+| `QLibrary` 迁 worker | D11 关键路径 | 先做最小边界，不追完整 seccomp |
+| BLE 无法强制加密 | D12 | P0 固定 LAN-only，验证禁用 |
+| 本机非 Pi | 全部 ❓ 项 | 本机只预检，实机补证 |
 
 **明确不在 P0**：生产 CA、完整备份恢复、完整 systemd/seccomp 加固、啸天测速与户外、正式 NFC 卡、血压计、OTA。
 **明确不在 Z 范围**：ESP 固件（归 L，等 Pi 软件完成后开工）。
 
 ---
 
-## 附：上游本次变更摘要（`f9f109a` → `82db652`）
+## 附：上游变更摘要（`f9f109a` → `82db652`）
 
 | 类别 | 内容 |
 |---|---|
