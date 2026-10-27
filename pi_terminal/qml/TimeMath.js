@@ -58,6 +58,25 @@ function formatYmd(parts) {
     return parts.year + "-" + pad2(parts.month) + "-" + pad2(parts.day);
 }
 
+// 12 小时制的钟点：0 -> 12（上午），13 -> 1（下午）。
+function hour12(hour) {
+    var h = Math.floor(Number(hour) || 0) % 24;
+    if (h < 0) h += 24;
+    return h % 12 === 0 ? 12 : h % 12;
+}
+
+// 0–11 点为上午，12–23 点为下午。
+function isAfternoon(hour) {
+    var h = Math.floor(Number(hour) || 0) % 24;
+    if (h < 0) h += 24;
+    return h >= 12;
+}
+
+// 12 小时制的 "HH:MM"（钟点不补零，符合中文习惯：7:30、12:00）。
+function formatHm12(parts) {
+    return hour12(parts.hour) + ":" + pad2(parts.minute);
+}
+
 // 480 -> "UTC+08:00", -210 -> "UTC-03:30".
 function formatOffset(minutes) {
     var total = Math.round(Number(minutes) || 0);

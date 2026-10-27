@@ -1186,20 +1186,41 @@ private slots:
         window.show();
         QTest::qWait(160);
 
-        // 模式按钮写回 TimeSync（并持久化）
-        auto *custom = section->findChild<QQuickItem *>(QStringLiteral("timeSyncModeCustom"));
-        QVERIFY(custom);
-        QMetaObject::invokeMethod(custom, "clicked");
+        // 自动校时开关写回 TimeSync 并持久化（默认开）
+        QVERIFY(sync->property("autoSync").toBool());
+        auto *autoSwitch = section->findChild<QQuickItem *>(QStringLiteral("timeAutoSyncSwitch"));
+        QVERIFY(autoSwitch);
+        QMetaObject::invokeMethod(autoSwitch, "clicked");
+        QVERIFY(!sync->property("autoSync").toBool());
+        QCOMPARE(host.settings.value(QStringLiteral("time/sync-auto")), QStringLiteral("0"));
+        QMetaObject::invokeMethod(autoSwitch, "clicked");
+        QVERIFY(sync->property("autoSync").toBool());
+
+        // 自动选线路：关掉就是自定义服务器模式，地址框跟着出现
+        auto *routeSwitch = section->findChild<QQuickItem *>(QStringLiteral("timeAutoRouteSwitch"));
+        QVERIFY(routeSwitch);
+        QMetaObject::invokeMethod(routeSwitch, "clicked");
         QCOMPARE(sync->property("apiMode").toString(), QStringLiteral("custom"));
         QCOMPARE(host.settings.value(QStringLiteral("time/api-mode")), QStringLiteral("custom"));
-        // 自定义地址输入框只在自定义模式下出现
         auto *field = section->findChild<QQuickItem *>(QStringLiteral("timeSyncHostField"));
         QVERIFY(field);
         QVERIFY(field->isVisible());
-        // 校时状态就是 TimeSync 的状态
-        auto *status = section->findChild<QQuickItem *>(QStringLiteral("timeSyncStatus"));
-        QVERIFY(status);
-        QCOMPARE(status->property("text").toString(), sync->property("status").toString());
+
+        // 时间格式切换写回 Main 持有的值（这里是分区自己的 property + 信号）
+        auto *format12 = section->findChild<QQuickItem *>(QStringLiteral("timeFormat12"));
+        QVERIFY(format12);
+        QSignalSpy formatSpy(section, SIGNAL(timeFormatRequested(QString)));
+        QMetaObject::invokeMethod(format12, "clicked");
+        QCOMPARE(formatSpy.count(), 1);
+        QCOMPARE(formatSpy.at(0).at(0).toString(), QStringLiteral("12"));
+
+        // 只读的当前时间/时区有内容
+        auto *nowValue = section->findChild<QQuickItem *>(QStringLiteral("timeNowValue"));
+        QVERIFY(nowValue);
+        QVERIFY(!nowValue->property("text").toString().isEmpty());
+        auto *zoneValue = section->findChild<QQuickItem *>(QStringLiteral("timeZoneValue"));
+        QVERIFY(zoneValue);
+        QVERIFY(zoneValue->property("text").toString().contains(QStringLiteral("UTC")));
         // 线路失效/校时失败必须弹窗（曾经只有状态行文字，用户看不到）
         QVERIFY(!section->property("alertPopupOpen").toBool());
         sync->setProperty("alertText", QStringLiteral("线路二 · HTTP 503\n所有校时接口均不可用，仍显示内置时区。"));

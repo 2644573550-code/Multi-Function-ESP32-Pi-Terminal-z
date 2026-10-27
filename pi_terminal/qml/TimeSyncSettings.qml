@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "TimeMath.js" as TimeMath
 
 // 设置页的「时间与报时」分区：世界时钟校时 + 整点报时。
 //
@@ -18,6 +19,33 @@ SettingsGroup {
     // 指针表盘配色：auto / light / dark，由 Main 持有并持久化。
     property string clockFace: "auto"
     signal clockFaceRequested(string mode)
+    // 时间格式：24 / 12（上午·下午），同样由 Main 持有。
+    property string timeFormat: "24"
+    signal timeFormatRequested(string mode)
+
+    property string nowText: ""
+    property int localOffsetMinutes: 0
+    readonly property string statusText: {
+        if (!timeSync) return ""
+        if (timeSync.syncing) return I18n.t("正在校时") + "…"
+        if (timeSync.lastAttempt === "") return I18n.t("尚未校时，世界时钟按内置标准时区显示")
+        return (timeSync.lastAttemptOk ? I18n.t("上次校时 ") : I18n.t("上次校时未成功 "))
+               + timeSync.lastAttempt
+               + (timeSync.lastAttemptOk ? "" : I18n.t("，仍显示内置时区"))
+    }
+
+    function refreshNow() {
+        const parts = TimeMath.localParts(Date.now())
+        localOffsetMinutes = TimeMath.localOffsetMinutes(Date.now())
+        const date = parts.year + I18n.t("年") + parts.month + I18n.t("月") + parts.day + I18n.t("日")
+        const time = settings.timeFormat === "12"
+                     ? TimeMath.formatHm12(parts) + " " +
+                       (TimeMath.isAfternoon(parts.hour) ? I18n.t("下午") : I18n.t("上午"))
+                     : TimeMath.formatHms(parts, false)
+        nowText = date + "  " + time
+    }
+
+    Component.onCompleted: refreshNow()
 
     // 供页面/测试观察：线路失效弹窗是否在屏上。
     readonly property bool alertPopupOpen: syncAlert.visible
@@ -63,30 +91,90 @@ SettingsGroup {
         text: I18n.t("自动模式：06:00–17:59 用浅色盘面，其余时间用深色盘面；城市钟按各自城市的时间判断。")
     }
 
-    // ------------------------------------------------------------ 校时方式
+    // ------------------------------------------------------------ 日期与时间（自动校时）
 
+    // 仿系统「日期和时间」设置：开关 + 只读值，用户不需要点「校时」。
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.gap / 2
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 0
+            CarText {
+                Layout.fillWidth: true
+                maximumLineCount: 1
+                text: I18n.t("自动设置日期和时间")
+            }
+            CarText {
+                Layout.fillWidth: true
+                maximumLineCount: 1
+                elide: Text.ElideRight
+                subdued: true
+                fontPixelSize: Theme.fontCaption
+                text: I18n.t("需要联网；启动后静默校时一次，之后每 6 小时一次")
+            }
+        }
+        Switch {
+            id: autoTimeSwitch
+            objectName: "timeAutoSyncSwitch"
+            implicitHeight: Theme.hit
+            Accessible.name: I18n.t("自动设置日期和时间")
+            Binding {
+                target: autoTimeSwitch
+                property: "checked"
+                value: settings.timeSync ? settings.timeSync.autoSync : true
+            }
+            onClicked: if (settings.timeSync) settings.timeSync.setAutoSync(!settings.timeSync.autoSync)
+        }
+    }
+
+    // 只读的当前日期与时间
     RowLayout {
         Layout.fillWidth: true
         spacing: Theme.gap / 2
         CarText {
             Layout.fillWidth: true
             maximumLineCount: 1
-            text: I18n.t("校时方式")
+            text: I18n.t("日期和时间")
         }
-        CarButton {
-            objectName: "timeSyncModeAuto"
-            text: I18n.t("自动")
-            checked: settings.timeSync ? settings.timeSync.apiMode === "auto" : true
-            onClicked: if (settings.timeSync) settings.timeSync.apiMode = "auto"
-        }
-        CarButton {
-            objectName: "timeSyncModeCustom"
-            text: I18n.t("自定义服务器")
-            checked: settings.timeSync ? settings.timeSync.apiMode === "custom" : false
-            onClicked: if (settings.timeSync) settings.timeSync.apiMode = "custom"
+        CarText {
+            objectName: "timeNowValue"
+            maximumLineCount: 1
+            subdued: true
+            text: settings.nowText
         }
     }
+    Timer {
+        interval: 1000
+        running: true
+        repeat: true
+        onTriggered: settings.refreshNow()
+    }
 
+    // 自动选线路：开 = 线路一回退线路二，关 = 只用自定义服务器
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.gap / 2
+        CarText {
+            Layout.fillWidth: true
+            maximumLineCount: 1
+            text: I18n.t("自动选择校时线路")
+        }
+        Switch {
+            id: autoRouteSwitch
+            objectName: "timeAutoRouteSwitch"
+            implicitHeight: Theme.hit
+            Accessible.name: I18n.t("自动选择校时线路")
+            Binding {
+                target: autoRouteSwitch
+                property: "checked"
+                value: settings.timeSync ? settings.timeSync.apiMode === "auto" : true
+            }
+            onClicked: if (settings.timeSync)
+                           settings.timeSync.apiMode =
+                               settings.timeSync.apiMode === "auto" ? "custom" : "auto"
+        }
+    }
     CarField {
         objectName: "timeSyncHostField"
         Layout.fillWidth: true
@@ -95,90 +183,71 @@ SettingsGroup {
         placeholderText: "https://time.example.com"
         onTextChanged: if (settings.timeSync) settings.timeSync.customHost = text
     }
-    CarText {
-        Layout.fillWidth: true
-        visible: settings.timeSync ? settings.timeSync.apiMode === "custom" : false
-        wrapMode: Text.Wrap
-        subdued: true
-        text: I18n.t("自定义服务器需兼容 worldtimeapi.org 的返回格式（/api/timezone/<区域> → utc_offset、unixtime），失败不会自动改用公共接口。")
-    }
 
-    // ------------------------------------------------------------ 校时动作
-
+    // 时区（只读）：终端不修改系统时区，这里显示本机偏移；城市钟各按城市时区
     RowLayout {
         Layout.fillWidth: true
         spacing: Theme.gap / 2
+        CarText {
+            Layout.fillWidth: true
+            maximumLineCount: 1
+            text: I18n.t("时区")
+        }
+        CarText {
+            objectName: "timeZoneValue"
+            maximumLineCount: 1
+            subdued: true
+            text: TimeMath.formatOffset(settings.localOffsetMinutes) + " · " + I18n.t("本机")
+        }
+    }
+
+    // 时间格式：24 小时 / 上午·下午
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.gap / 2
+        CarText {
+            Layout.fillWidth: true
+            maximumLineCount: 1
+            text: I18n.t("时间格式")
+        }
+        CarButton {
+            objectName: "timeFormat24"
+            text: I18n.t("24 小时")
+            checked: settings.timeFormat === "24"
+            onClicked: settings.timeFormatRequested("24")
+        }
+        CarButton {
+            objectName: "timeFormat12"
+            text: I18n.t("上午/下午")
+            checked: settings.timeFormat === "12"
+            onClicked: settings.timeFormatRequested("12")
+        }
+    }
+
+    // 上次校时结果 + 手动入口（自动挡下平时不用点）
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.gap / 2
+        CarText {
+            objectName: "timeSyncStatus"
+            Layout.fillWidth: true
+            wrapMode: Text.Wrap
+            subdued: true
+            text: settings.statusText
+        }
         CarButton {
             objectName: "timeSyncStart"
-            accent: true
-            text: settings.timeSync && settings.timeSync.syncing
-                  ? I18n.t("同步中") + "…" : I18n.t("网络校时")
-            enabled: settings.timeSync ? !settings.timeSync.syncing : false
+            visible: settings.timeSync ? !settings.timeSync.syncing : false
+            text: I18n.t("立即校时")
             onClicked: if (settings.timeSync) settings.timeSync.syncTime()
         }
-        CarButton {
-            objectName: "timeSyncReset"
-            visible: settings.timeSync ? settings.timeSync.syncedOnce : false
-            text: I18n.t("恢复内置时区")
-            onClicked: if (settings.timeSync) settings.timeSync.resetZones()
-        }
-        Item { Layout.fillWidth: true }
-    }
-
-    // 接口队列：名字后面跟一个状态点（绿=可用，红=不可用，灰=本次未测）。
-    RowLayout {
-        Layout.fillWidth: true
-        spacing: Theme.gap
-        Repeater {
-            model: settings.timeSync ? settings.timeSync.providerIds : []
-            delegate: RowLayout {
-                required property var modelData
-                spacing: 6 * Theme.scaleFactor
-                CarText {
-                    maximumLineCount: 1
-                    elide: Text.ElideMiddle
-                    text: settings.timeSync ? settings.timeSync.providerLabel(modelData) : ""
-                }
-                Rectangle {
-                    objectName: "timeSyncProviderDot"
-                    width: 10 * Theme.scaleFactor
-                    height: width
-                    radius: width / 2
-                    color: {
-                        const state = settings.timeSync ? settings.timeSync.providerStateOf(modelData) : 0
-                        return state === 1 ? "#5ad59a" : state === -1 ? "#ff6584" : Theme.outlineVariant
-                    }
-                    Accessible.name: (settings.timeSync ? settings.timeSync.providerLabel(modelData) : "") + " " +
-                        (!settings.timeSync ? I18n.t("未测试")
-                         : settings.timeSync.providerStateOf(modelData) === 1 ? I18n.t("可用")
-                         : settings.timeSync.providerStateOf(modelData) === -1 ? I18n.t("不可用") : I18n.t("未测试"))
-                }
-            }
-        }
-        Item { Layout.fillWidth: true }
-    }
-
-    CarText {
-        objectName: "timeSyncStatus"
-        Layout.fillWidth: true
-        wrapMode: Text.Wrap
-        text: settings.timeSync ? settings.timeSync.status : ""
-    }
-    RowLayout {
-        Layout.fillWidth: true
-        visible: settings.timeSync ? settings.timeSync.alertText !== "" : false
-        CarButton {
-            objectName: "timeSyncAlertDismiss"
-            text: I18n.t("知道了")
-            onClicked: if (settings.timeSync) settings.timeSync.clearAlert()
-        }
-        Item { Layout.fillWidth: true }
     }
     CarText {
         Layout.fillWidth: true
         wrapMode: Text.Wrap
         subdued: true
-        text: I18n.t("校时只在你点击时联网；未校时的世界时钟用内置标准时区，不含夏令时规则。")
+        fontPixelSize: Theme.fontCaption
+        text: I18n.t("自动校时失败不会打断使用；只有手动点「立即校时」失败时才弹窗说明原因。")
     }
 
     // ------------------------------------------------------------ 整点报时

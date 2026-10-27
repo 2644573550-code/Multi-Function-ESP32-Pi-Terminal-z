@@ -139,6 +139,16 @@ assert.equal(context.zoneNeedsSync({dst: true}, false), true);
 assert.equal(context.zoneNeedsSync({dst: true}, true), false);
 assert.equal(context.zoneNeedsSync({dst: false}, false), false);
 
+// 12 小时制换算：0/12 点都显示 12，其余取余；下午从 12 点开始。
+assert.equal(context.hour12(0), 12);
+assert.equal(context.hour12(12), 12);
+assert.equal(context.hour12(13), 1);
+assert.equal(context.hour12(23), 11);
+assert.equal(context.isAfternoon(11), false);
+assert.equal(context.isAfternoon(12), true);
+assert.equal(context.formatHm12({hour: 7, minute: 5}), "7:05");
+assert.equal(context.formatHm12({hour: 15, minute: 30}), "3:30");
+
 // 城市目录：TimeSync/世界时钟都按 id 查偏移，重复 id 或越界偏移会让界面静默取错值。
 assert.equal(context.cityCatalog.length, 20);
 const ids = new Set();

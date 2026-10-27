@@ -24,6 +24,11 @@ Item {
     // 只记住同步成功的偏移；城市增删不会丢掉已经查到的时区。
     property var syncedOffsets: ({})
 
+    // 自动校时：默认开启，启动后静默同步一次、之后每 6 小时一次，失败不弹窗（无感）。
+    property bool autoSync: true
+    property bool silentSync: false
+    property string lastAttempt: ""
+    property bool lastAttemptOk: false
     property bool syncing: false
     property int syncedCount: 0
     property bool syncedOnce: false
@@ -55,6 +60,19 @@ Item {
         interval: 8000
         repeat: false
         onTriggered: sync.syncRequestFailed(sync.syncIndex, sync.syncToken, I18n.t("请求超时"))
+    }
+
+    Timer {
+        interval: 6000
+        running: true
+        repeat: false
+        onTriggered: if (sync.autoSync && !sync.syncing) sync.syncTimeSilently()
+    }
+    Timer {
+        interval: 6 * 3600 * 1000
+        running: sync.autoSync
+        repeat: true
+        onTriggered: if (!sync.syncing) sync.syncTimeSilently()
     }
 
     Component.onCompleted: sync.load()
@@ -108,6 +126,7 @@ Item {
         loading = true
         apiMode = settingRead("time/api-mode", "auto") === "custom" ? "custom" : "auto"
         customHost = settingRead("time/api-host", "")
+        autoSync = settingRead("time/sync-auto", "1") !== "0"
         const raw = settingRead("time/cities", "")
         if (raw !== "") {
             try {
@@ -194,6 +213,11 @@ Item {
         alertText = ""
     }
 
+    function setAutoSync(value) {
+        autoSync = value === true
+        settingWrite("time/sync-auto", autoSync ? "1" : "0")
+    }
+
     // ------------------------------------------------------------ 校时
 
     function buildProviderQueue() {
@@ -222,8 +246,15 @@ Item {
         providerState = next
     }
 
-    function syncTime() {
+    // 手动校时（会弹失败提示）与自动校时（静默）分成两个入口：
+    // QML 函数一旦带参数，QMetaObject::invokeMethod 就不能无参调用，测试与调用方都会踩。
+    function syncTime() { doSync(false) }
+
+    function syncTimeSilently() { doSync(true) }
+
+    function doSync(silent) {
         if (syncing) return
+        silentSync = silent === true
         if (cities.length === 0) {
             alertText = I18n.t("先在时钟页添加至少一个城市再校时。")
             return
@@ -356,17 +387,20 @@ Item {
             syncedOffsets = ({})
             syncedCount = 0
             error = label + " · " + reason
-            // 每条线路失效都要有明确提示（弹窗），不能只在状态行里悄悄换线。
-            alertText = label + " · " + reason + "\n" + I18n.t("已切换到下一个校时接口。")
+            // 手动校时时，每条线路失效都要弹出来；自动校时保持无感，只记结果。
+            if (!silentSync)
+                alertText = label + " · " + reason + "\n" + I18n.t("已切换到下一个校时接口。")
             requestNextProvider()
             return
         }
         syncedCount = 0
         error = I18n.t("网络校时失败：") + reason
         syncing = false
-        alertText = label + " · " + reason + "\n" +
-            (apiMode === "custom" ? I18n.t("自定义模式不会自动改用公共接口，可切回自动后重试。")
-                                  : I18n.t("所有校时接口均不可用，仍显示内置时区。"))
+        lastAttemptOk = false
+        if (!silentSync)
+            alertText = label + " · " + reason + "\n" +
+                (apiMode === "custom" ? I18n.t("自定义模式不会自动改用公共接口，可切回自动后重试。")
+                                      : I18n.t("所有校时接口均不可用，仍显示内置时区。"))
     }
 
     function finishSync() {
@@ -383,5 +417,7 @@ Item {
         syncedAt = TimeMath.formatHm(TimeMath.localParts(Date.now()))
         error = ""
         alertText = ""
+        lastAttemptOk = true
+        lastAttempt = syncedAt
     }
 }

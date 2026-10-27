@@ -23,6 +23,9 @@ Item {
     property real uiScale: 1
     // 表盘配色偏好（设置页「时间与报时」里选）：auto / light / dark。
     property string clockFace: "auto"
+    // 时间格式：24 = 24 小时制，12 = 上午/下午。
+    property string timeFormat: "24"
+    readonly property bool clockAfternoon: TimeMath.isAfternoon(root.clockHour)
 
     // 接到宿主的既有通知横幅与语音播报（由 Main.qml 连接）。
     signal notifyRequested(string title, string message, bool important)
@@ -546,7 +549,10 @@ Item {
                                     anchors.centerIn: parent
                                     fontPixelSize: root.clockFontPx
                                     maximumLineCount: 1
-                                    text: index === 0 ? root.clockTime.substring(0, 2)
+                                    text: index === 0
+                                          ? (root.timeFormat === "12"
+                                             ? String(TimeMath.hour12(root.clockHour))
+                                             : root.clockTime.substring(0, 2))
                                         : index === 1 ? root.clockTime.substring(3, 5)
                                         : root.clockTime.substring(6, 8)
                                     Accessible.name: index === 0 ? I18n.t("时")
@@ -566,7 +572,10 @@ Item {
                 CarText {
                     Layout.alignment: Qt.AlignHCenter
                     maximumLineCount: 1
-                    text: root.clockDate + "  " + root.clockWeekday
+                    // 12 小时制时把 上午/下午 放在日期行前面，不挤数字钟的宽度。
+                    text: (root.timeFormat === "12"
+                           ? (root.clockAfternoon ? I18n.t("下午") : I18n.t("上午")) + "  " : "")
+                          + root.clockDate + "  " + root.clockWeekday
                 }
                 // 报时按钮：原来整卡可点，但热区压在样式按钮上面，点一下只会播报。
                 // 现在是表盘旁的 48px 小喇叭按钮。
@@ -661,7 +670,11 @@ Item {
                                 maximumLineCount: 1
                                 subdued: true
                                 fontPixelSize: Theme.fontCaption
-                                text: TimeMath.formatHm(cityTile.parts)
+                                text: root.timeFormat === "12"
+                                      ? TimeMath.formatHm12(cityTile.parts) + " " +
+                                        (TimeMath.isAfternoon(cityTile.parts.hour)
+                                         ? I18n.t("下午") : I18n.t("上午"))
+                                      : TimeMath.formatHm(cityTile.parts)
                             }
                         }
                     }
