@@ -1,5 +1,6 @@
 #include "PogoControlTransport.h"
 #include "../protocol/pibridge_protocol.h"
+#include "../protocol/control_event.h"
 #include <QJsonDocument>
 
 PogoControlTransport::PogoControlTransport(QObject *parent) : TransportBase(parent) {
@@ -78,6 +79,12 @@ void PogoControlTransport::readAvailable() {
         }
         lastReceiveSequence_ = sequence; haveReceiveSequence_ = true;
         if (kind == PiBridge::ControlEvent) {
+            // Reject duplicate keys and over-deep nesting before Qt's parser
+            // silently normalises them (f-day1 §4.2). Only plaintext payloads
+            // are scanned here: T-07 must unwrap the AEAD envelope before this
+            // point, since a sealed payload is binary and would never pass a
+            // JSON scanner.
+            if (!PbrControl::payloadAcceptable(payload)) continue;
             auto event = PiBridge::event(payload);
             event["_bridge_sequence"] = double(sequence);
             emit controlEvent(event);
