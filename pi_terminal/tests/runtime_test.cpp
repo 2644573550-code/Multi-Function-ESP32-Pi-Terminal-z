@@ -378,6 +378,23 @@ private slots:
         QVERIFY(tools.rename(name + "/a.txt", name + "/b.txt"));
         QVERIFY(tools.remove(name + "/b.txt")); QVERIFY(tools.remove(name));
     }
+    void pageSettingsArePrefixScoped() {
+        QStandardPaths::setTestModeEnabled(true);
+        SystemTools tools;
+        const QString key = "time/test-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+        QVERIFY(tools.settingsWrite(key, "{\"hour\":7}"));
+        QCOMPARE(tools.settingsRead(key, "fallback"), QStringLiteral("{\"hour\":7}"));
+        QCOMPARE(tools.settingsRead(key + "-missing", "fallback"), QStringLiteral("fallback"));
+        // 页面脚本拿不到信任记录与宿主偏好，也不能写空键或超长内容
+        QVERIFY(!tools.settingsWrite("trusted/" + QUuid::createUuid().toString(QUuid::WithoutBraces), "true"));
+        QVERIFY(!tools.settingsWrite("uiLanguage", "en"));
+        QVERIFY(!tools.settingsWrite("time/", "x"));
+        QCOMPARE(tools.settingsRead("trusted/whatever", "none"), QStringLiteral("none"));
+        QVERIFY(!tools.settingsWrite(key, QString(17000, QLatin1Char('x'))));
+        QVERIFY(tools.settingsWrite(key, QString(16000, QLatin1Char('x'))));
+        QVERIFY(tools.settingsWrite(key, QString()));
+        QCOMPARE(tools.settingsRead(key, "unset"), QString());
+    }
     void fileCreationAndLocations() {
         SystemTools tools;
         const QString name = "create-test-" + QUuid::createUuid().toString(QUuid::WithoutBraces) + ".txt";

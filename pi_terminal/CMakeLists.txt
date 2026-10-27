@@ -180,6 +180,12 @@ list(APPEND UI_QML_FILES qml/KeyboardKey.qml)
 list(APPEND UI_QML_FILES qml/BlurCache.qml)
 list(APPEND UI_QML_FILES qml/CachedBlur.qml)
 list(APPEND UI_QML_FILES qml/StartupSplash.qml)
+list(APPEND UI_QML_FILES qml/TimeTools.qml)
+list(APPEND UI_QML_FILES qml/AlarmEngine.qml)
+list(APPEND UI_QML_FILES qml/TimePane.qml)
+list(APPEND UI_QML_FILES qml/TimeSync.qml)
+list(APPEND UI_QML_FILES qml/TimeSyncSettings.qml)
+set_source_files_properties(qml/TimeMath.js PROPERTIES QT_RESOURCE_ALIAS TimeMath.js)
 list(APPEND UI_QML_FILES qml/DesktopPet.qml)
 list(APPEND UI_QML_FILES qml/PetManager.qml)
 list(APPEND UI_QML_FILES qml/TvPlayer.qml)
@@ -192,7 +198,7 @@ set_source_files_properties(qml/I18n.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(terminal_ui URI OrangePiTerminal NO_PLUGIN
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/OrangePiTerminal"
     RESOURCE_PREFIX /qt/qml VERSION 1.0 QML_FILES ${UI_QML_FILES}
-        qml/BrowserScroll.js qml/ContextScroll.js qml/WheelStrings.js)
+        qml/BrowserScroll.js qml/ContextScroll.js qml/WheelStrings.js qml/TimeMath.js)
 file(GLOB MATERIAL_ICONS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/qml/icons/material/dark/*.svg" "${CMAKE_CURRENT_SOURCE_DIR}/qml/icons/material/light/*.svg")
 set_source_files_properties(assets/fonts/GoogleSans.ttf PROPERTIES QT_RESOURCE_ALIAS GoogleSans.ttf)
 set_source_files_properties(assets/fonts/OFL.txt PROPERTIES QT_RESOURCE_ALIAS OFL.txt)
@@ -204,6 +210,8 @@ qt_add_resources(terminal_system pinyin_frequency PREFIX /pinyin BASE assets/pin
 set_source_files_properties(assets/orange_pi_terminal.svg PROPERTIES QT_RESOURCE_ALIAS orange_pi_terminal.svg)
 qt_add_resources(terminal_ui app_icon PREFIX /icons FILES assets/orange_pi_terminal.svg)
 qt_add_resources(terminal_ui tv_channels PREFIX /tv BASE assets/tv FILES assets/tv/china.json assets/tv/SOURCE.md)
+qt_add_resources(terminal_ui ringtones PREFIX /ringtones BASE assets/ringtones
+    FILES assets/ringtones/default-ringtone.mp3)
 qt_add_resources(terminal_ui arkpets_sprites PREFIX /arkpets BASE assets/arkpets
     FILES assets/arkpets/amiya/idle.png assets/arkpets/amiya/walk.png
           assets/arkpets/amiya/interact.png assets/arkpets/amiya/sit.png
@@ -268,6 +276,11 @@ if(BUILD_TESTING)
     add_executable(startup_splash_test tests/startup_splash_test.cpp)
     target_link_libraries(startup_splash_test PRIVATE terminal_ui Qt6::Test Qt6::QuickControls2 Qt6::Widgets)
     add_test(NAME startup_splash_lifecycle COMMAND startup_splash_test)
+    add_executable(time_tools_test tests/time_tools_test.cpp)
+    target_link_libraries(time_tools_test PRIVATE terminal_ui Qt6::Test Qt6::QuickControls2 Qt6::Network)
+    add_test(NAME time_tools_page COMMAND time_tools_test)
+    set_tests_properties(time_tools_page PROPERTIES LABELS "interface"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software" TIMEOUT 60)
     add_executable(video_player_ui_test tests/video_player_ui_test.cpp)
     target_link_libraries(video_player_ui_test PRIVATE terminal_ui Qt6::Test Qt6::QuickControls2)
     add_test(NAME media_video_player_interface COMMAND video_player_ui_test)
@@ -331,6 +344,7 @@ install(DIRECTORY ../third_party/sqlite-amalgamation/
     DESTINATION share/orange-pi-terminal/third-party/sqlite-amalgamation
     COMPONENT TerminalRuntime FILES_MATCHING PATTERN "sqlite3.c" PATTERN "sqlite3.h")
 install(FILES qml/icons/material/NOTICE qml/icons/material/SOURCES.json DESTINATION share/orange-pi-terminal/licenses/material-icons/round)
+install(FILES assets/ringtones/NOTICE.md DESTINATION share/orange-pi-terminal/licenses/ringtones)
 install(FILES assets/fonts/OFL.txt assets/fonts/TRADEMARKS.md DESTINATION share/orange-pi-terminal/licenses/google-sans)
 install(FILES assets/pinyin/LICENSE assets/pinyin/AUTHORS assets/pinyin/PYPINYIN-LICENSE assets/pinyin/SOURCES.md DESTINATION share/orange-pi-terminal/licenses/pinyin)
 install(TARGETS pi_module_sdk EXPORT OrangePiModuleSDKTargets)

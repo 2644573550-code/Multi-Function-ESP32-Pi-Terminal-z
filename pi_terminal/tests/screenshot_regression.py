@@ -129,7 +129,7 @@ def run(binary, output, host_test=False, selected=None, quit_after_ms=6500, sett
         ('wallpaper-restored-default-blur', dict(energy=True, language='zh', resetWallpaper=True)),
     ]
     for language in ('zh', 'en'):
-        for page in (0, 1, 2, 3, 4, 6, 7, 8, 9, 10):
+        for page in (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 12):
             cases.append((f'language-{language}-{page}', dict(energy=True, language=language, page=page)))
     cases += [('wallpaper-picker', dict(energy=False, language='en', page=4, picker=True)),
               ('paint-input-stress', dict(energy=True, language='zh', page=7, paint=True))]

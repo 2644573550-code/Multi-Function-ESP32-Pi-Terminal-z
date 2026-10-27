@@ -104,6 +104,10 @@ public:
     QString uiLanguage() const { return settings_.value("uiLanguage", QStringLiteral("zh")).toString(); }
     Q_INVOKABLE void setEnergySaving(bool value);
     Q_INVOKABLE void setUiLanguage(const QString &language);
+    // QML 页面持久化少量自有状态。键名必须落在允许的前缀里（当前只有 "time/"），
+    // 以免页面脚本改写 trusted/* 等宿主信任记录；写入有大小上限。
+    Q_INVOKABLE QString settingsRead(const QString &key, const QString &fallback = QString()) const;
+    Q_INVOKABLE bool settingsWrite(const QString &key, const QString &value);
     explicit SystemTools(QObject *parent = nullptr);
     ~SystemTools() override;
     QStringList logs() const { return logs_; }
