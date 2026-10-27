@@ -76,7 +76,10 @@ Rectangle {
                     text: card.subtitle
                     subdued: true
                     width: parent.width
-                    wrapMode: Text.Wrap
+                    // 窄卡片里副标题必须单行省略：换行会把标题区撑到 90px 以上，双栏短屏
+                    // 时正文被挤得只剩一百多像素（真机视口下时钟卡就放不下了）。
+                    maximumLineCount: 1
+                    elide: Text.ElideRight
                 }
             }
         }

@@ -16,6 +16,9 @@ SettingsGroup {
     property var timeSync: null
     property var alarmEngine: null
 
+    // 供页面/测试观察：线路失效弹窗是否在屏上。
+    readonly property bool alertPopupOpen: syncAlert.visible
+
     iconName: "schedule"
     accentColor: "#8f7bff"
     title: I18n.t("时间与报时")
@@ -198,6 +201,64 @@ SettingsGroup {
         text: I18n.t("闹钟引擎未连接，整点报时暂不可用。")
     }
 
+    // 线路失效/校时失败必须弹出来看清：与闹钟响铃弹窗同一套 Popup 机制（挂在
+    // Overlay.overlay 上，不新建 Window），换线路时也会弹，不会只在状态行里悄悄换。
+    Popup {
+        id: syncAlert
+        objectName: "timeSyncAlert"
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        dim: true
+        closePolicy: Popup.CloseOnEscape
+        // 声明式：有 alertText 就弹，清了就收（不再靠信号里手动 open/close）。
+        visible: settings.timeSync ? settings.timeSync.alertText !== "" : false
+        padding: Theme.gap
+        width: Math.min(520 * Theme.scaleFactor, (parent ? parent.width : 800) - Theme.gap * 4)
+        background: Rectangle {
+            radius: Theme.shapeLarge
+            color: Theme.surface
+            border.color: Theme.outline
+            border.width: 1
+        }
+        contentItem: ColumnLayout {
+            spacing: Theme.gap / 2
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.gap
+                MaterialIcon {
+                    name: "link_off"
+                    Layout.preferredWidth: 28 * Theme.scaleFactor
+                    Layout.preferredHeight: 28 * Theme.scaleFactor
+                }
+                CarText {
+                    heading: true
+                    Layout.fillWidth: true
+                    maximumLineCount: 1
+                    text: I18n.t("校时接口不可用")
+                }
+            }
+            CarText {
+                objectName: "timeSyncAlertText"
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: settings.timeSync ? settings.timeSync.alertText : ""
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                CarButton {
+                    objectName: "timeSyncAlertClose"
+                    accent: true
+                    text: I18n.t("知道了")
+                    onClicked: {
+                        if (settings.timeSync) settings.timeSync.clearAlert()
+                        syncAlert.close()
+                    }
+                }
+            }
+        }
+    }
     // 小时步进器：复用 IconButton 的 48px 热区，只调小时（报时本身只在 :00 触发）。
     component HourStepper: RowLayout {
         id: stepper

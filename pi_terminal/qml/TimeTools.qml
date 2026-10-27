@@ -39,16 +39,13 @@ Item {
     readonly property int tabAlarm: 3
     property int tab: 0
 
-    // 平板式双栏：宽且够高才左右分布，否则单栏（左栏在上）由页面整体滚动。
-    // 两个断点都乘 max(1, uiScale)，跟随作者的缩放边界（autoScale 0.65–1.4 ×
-    // 界面比例 1/1.25/1.5）：
-    // - 宽 760：1024×600 窗口下页面只拿到约 800×365（窗口的 78%×61%），按 900 断
-    //   会让 Pi 目标屏永远单栏；
-    // - 高 420：同样在这个真机视口下，双栏会把卡片压到 253px、正文只剩 129px，
-    //   而时钟卡正文要 165px——两栏各自滚动还不如单栏整页滚动。900px 高的窗口里
-    //   页面是 502px，420 的门槛放它进去。
-    readonly property bool twoPane: width >= 760 * Math.max(1, uiScale)
-                                    && height >= 420 * Math.max(1, uiScale)
+    // 默认就是双栏（类平板 UI）：只有真的窄到放不下才退回单栏（左栏在上、整页滚动）。
+    // 断点 = 760 * uiScale，严格按作者唯一的缩放边界换算（autoScale ∈ [0.65, 1.4] ×
+    // 界面比例 ∈ {1, 1.25, 1.5}，两者相乘就是 Theme.scaleFactor）：
+    // 760 是 1.0 倍下的设计宽度，缩放后按同一比例要求可用宽度——于是各档位的相对容量
+    // 一致，不会出现"缩小时反而更容易变单栏"。真机视口 ≈ 800 @ 0.75 需要 570，是双栏。
+    // 不看高度：短屏同样是两栏，正文放不下就在卡片内部滚动。
+    readonly property bool twoPane: width >= 760 * uiScale
     readonly property real leftPaneWidth: Math.max(340, Math.min(460, width * 0.42))
 
     // 城市选择、同步到的偏移与校时线路状态都归 TimeSync.qml（Main 实例化一次），
@@ -556,7 +553,10 @@ Item {
                             objectName: "analogClock"
                             visible: root.clockStyle === "analog"
                             anchors.horizontalCenter: parent.horizontalCenter
-                            height: 112 * root.uiScale
+                            // 短屏（真机 1024×600 视口只有 ~365px 高）给小表盘，
+                            // 否则数字/指针 + 表盘 + 日期放不进卡片，日期会被切掉。
+                            height: root.height < 420 ? Math.max(56 * root.uiScale, root.height * 0.16)
+                                                      : 112 * root.uiScale
                             hours: root.clockHour
                             minutes: root.clockMinute
                             seconds: root.clockSecond

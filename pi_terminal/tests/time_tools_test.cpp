@@ -740,11 +740,11 @@ private slots:
         QTest::newRow("1400x900@1.5-big-text") << 1400 << 900 << 1.5 << true;   // 1140/630 都过
         QTest::newRow("1400x900@1.0") << 1400 << 900 << 1.0 << true;
         QTest::newRow("app-viewport-1097x502@1.09") << 1097 << 502 << 1.09 << true;
-        QTest::newRow("pi-real-800x365@0.75") << 800 << 365 << 0.75 << false;   // 太矮，退回单栏
+        QTest::newRow("pi-real-800x365@0.75") << 800 << 365 << 0.75 << true;    // 真机视口也两栏
         QTest::newRow("800x460@0.75") << 800 << 460 << 0.75 << true;
         QTest::newRow("760x600@1.0") << 760 << 600 << 1.0 << true;
         QTest::newRow("700x600@1.0") << 700 << 600 << 1.0 << false;
-        QTest::newRow("900x600@0.65") << 900 << 600 << 0.65 << true;  // 低缩放仍按 760/420
+        QTest::newRow("900x600@0.65") << 900 << 600 << 0.65 << true;  // 低缩放仍按 760
     }
 
     void twoPaneBreakpointFollowsScale() {
@@ -907,6 +907,14 @@ private slots:
         auto *status = section->findChild<QQuickItem *>(QStringLiteral("timeSyncStatus"));
         QVERIFY(status);
         QCOMPARE(status->property("text").toString(), sync->property("status").toString());
+        // 线路失效/校时失败必须弹窗（曾经只有状态行文字，用户看不到）
+        QVERIFY(!section->property("alertPopupOpen").toBool());
+        sync->setProperty("alertText", QStringLiteral("线路二 · HTTP 503\n所有校时接口均不可用，仍显示内置时区。"));
+        QTRY_VERIFY_WITH_TIMEOUT(section->property("alertPopupOpen").toBool(), 2000);
+        // 清掉提示就收（「知道了」就是 clearAlert + 关闭）
+        QMetaObject::invokeMethod(sync.data(), "clearAlert");
+        QTRY_VERIFY_WITH_TIMEOUT(!section->property("alertPopupOpen").toBool(), 2000);
+
         // 整点报时开关写回 AlarmEngine
         auto *chime = section->findChild<QQuickItem *>(QStringLiteral("chimeSwitch"));
         QVERIFY(chime);
@@ -999,8 +1007,10 @@ private slots:
         QTest::addColumn<int>("width");
         QTest::addColumn<int>("height");
         QTest::addColumn<double>("uiScale");
-        // 真机视口退回单栏，由页面整体滚动（双栏会把正文压到 129px）
-        QTest::newRow("pi-real-800x365-single") << 800 << 365 << 0.75;
+        // 真机视口：宽度够就两栏（短屏靠卡片内部滚动）
+        QTest::newRow("pi-real-800x365") << 800 << 365 << 0.75;
+        // 窄屏兜底：单栏、整页滚动
+        QTest::newRow("narrow-700x600-single") << 700 << 600 << 1.0;
         QTest::newRow("pi-1024x600") << 1024 << 600 << 1.0;
         QTest::newRow("desktop-1400x900") << 1400 << 900 << 1.0;
     }
@@ -1068,8 +1078,10 @@ private slots:
                 QVERIFY2(right->mapToItem(page, QPointF(0, 0)).y() >
                              left->mapToItem(page, QPointF(0, 0)).y() + left->height() - 1,
                          row.name);
-                QVERIFY2(flick->property("contentHeight").toDouble() > flick->height() + 1,
-                         qPrintable(row.name + QStringLiteral(": single column must scroll as one page")));
+                // 单栏时两卡都在滚动范围内（放得下就不滚，放不下整页滚，绝不裁）
+                const qreal extent = flick->property("contentHeight").toDouble();
+                QVERIFY2(right->mapToItem(page, QPointF(0, right->height())).y() <= extent + 1,
+                         qPrintable(row.name + QStringLiteral(": second card must be inside the scroll extent")));
                 QVERIFY2(left->height() + 1 >= left->property("implicitHeight").toDouble(),
                          qPrintable(row.name + QStringLiteral(": single-column card keeps content height")));
                 continue;

@@ -356,6 +356,8 @@ Item {
             syncedOffsets = ({})
             syncedCount = 0
             error = label + " · " + reason
+            // 每条线路失效都要有明确提示（弹窗），不能只在状态行里悄悄换线。
+            alertText = label + " · " + reason + "\n" + I18n.t("已切换到下一个校时接口。")
             requestNextProvider()
             return
         }
