@@ -70,9 +70,14 @@ document: p0-test-plan
 
 ### IT-014：模块业务数据加密和认证
 
-P0固定LAN profile，抓取链路并注入无TLS TCP、错误设备key、过期会话和TLS协商失败；BLE profile（`fixed_ble`）须测试未配对 GATT 被拒绝（`pairingStatus!=Paired` → `TRANSPORT_SECURITY_REQUIRED`）以及配对后正常收发；不得出现明文降级。
+**LAN**：抓取链路，注入无TLS TCP、错误设备证书指纹、过期会话、TLS 协商失败。通过条件：自签证书 + `peerCertificate().digest(Sha256)` 与 TrustStore 登记值一致才算通过；指纹不符立即断开返回 `IDENTITY_REJECTED`；**无明文回退**。
 
-通过：P0 LAN业务lane必须TLS+设备认证；BLE若启用则强制加密和应用认证，否则连接被拒绝；抓包不能恢复传感器明文或凭证；任何错误均不回退旧明文协议。
+**BLE**（两层都要验）：
+1. 链路层——未配对（`pairingStatus!=Paired`）时 `writeCharacteristic` 被拒，返回 `TRANSPORT_SECURITY_REQUIRED`。
+2. 应用层——已配对但挑战-响应失败时，**业务数据不得交给模块**；连续 3 次失败断开。
+3. 抓包不得恢复传感器明文或凭证；不得出现「已配对即放行」的旁路。
+
+**通用**：任何错误均不回退旧明文协议；单条业务 payload 超 512 字节被拒（`INVALID_MESSAGE`）；lane 热切换后未经重新认证的数据被拒。
 
 ### IT-013：基础worker隔离
 

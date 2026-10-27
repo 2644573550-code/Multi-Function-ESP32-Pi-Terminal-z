@@ -64,6 +64,11 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_ter
 
 - **PBR/LinkIt 控制面**：桥板 attach/status/detach、RC522 `rfid_card`、桥板控制/诊断。PBR 当前无 AEAD；P0 增加 AEAD 后仍不在 PBR 传输业务传感器历史。盆栽BLE GATT未强制安全属性，LAN/TCP无TLS，P0需升级业务lane。
 - **模块业务数据面**：按模块合同使用固定 BLE 或 Pi hotspot LAN/TCP；盆栽全部传感器数据走此数据面。Pi `TransportPolicy` 将 BLE-only/LAN-only 作为互斥 profile。
+- **P0 必须同时实现 BLE 与 LAN 两条 lane（2026-10-28 定稿）**：
+  - LAN：模块当 TLS server（现状 `listen`），Pi 当 client；模块**自签证书**，Pi 以 **SHA-256 指纹固定**（首次登记，换模块须重登记）；无明文回退。已在本机实测跑通。
+  - BLE：**两层**——链路层 `pairingStatus==Paired`（Just Works 可接受）+ **应用层挑战-响应** `HMAC-SHA256(k, challenge‖module_id‖boot_id)`；32B 对称密钥由 T-03 配对时经 LAN 下发写模块 NVS；未通过前不发业务数据。
+  - 单条业务 payload ≤512B（BLE），分片由 `BleTransport` 内部完成；lane 可热切换但**必须重新认证**，单次 attach 最多 3 次。
+  - `fixed_ble` + `hotspot_lan` 包并存合法（业务走 BLE、插件包走 LAN），不属于「两类混用」。
 - **目标不变量**：控制/业务链路均执行身份/授权检查；控制事件绑定物理槽及绑定代次，业务绑定设备/业务session/task/原用户，slot仅为可空位置属性；RC522为桥板级事件，使用bridge/reader/boot/session上下文，不伪造slot/device。PBR CRC仅framing/error detection，不是MAC；当前token会话不等于该目标已实现。
 - **部署前置**：ESP 项目配置中 `CONFIG_APP_PI_DATA_ENABLE` 默认开启、LAN profile 默认选中、STA 密码默认空、session token 默认空；空 token 会使服务拒绝启动，空 Wi-Fi 密码允许 open authmode。P0 测试使用不入库的私有 `sdkconfig`/测试 token，拒绝开放网络配置，Pi hotspot 不做 WAN 转发。
 
@@ -181,7 +186,7 @@ T-17 F最终P0实机验收与PR合并
 
 | 时间 | 必须交付 | 失败处置 |
 |---|---|---|
-| 第1天 | F审定范围/边界并收集技术签认；D做串口/身份/AEAD设计及SDK来源检查，Z做SQLCipher C API与worker UID/sandbox预检，D/L验证ESP TLS及BLE配对门控；L核验双槽图并下单探头 | 任一安全基础不可行即由F当日记录blocker和修复路线；密码协议细节未审不得称完全冻结；不用SQLite/同进程伪装通过 |
+| 第1天 | F审定范围/边界并收集技术签认；D做串口/身份/AEAD设计及SDK来源检查，Z做SQLCipher C API与worker UID/sandbox预检，D/L验证ESP TLS（含指纹固定）及BLE两层（配对+应用层挑战-响应）；L核验双槽图并下单探头 | 任一安全基础不可行即由F当日记录blocker和修复路线；密码协议细节未审不得称完全冻结；不用SQLite/同进程伪装通过 |
 | 第2-3天 | D完成PBR reader/编码骨架；Z完成PIN/session和SQLCipher schema骨架；L探头到货、双槽电气实测、盆栽字段确认 | 第3天无探头或双槽不支持时升级为红色阻塞，F立即协调硬件改造和后续步骤 |
 | 第4-6天 | D测试AEAD/重放/ACK；Z完成每用户DB与worker最小隔离；L完成啸天两路固件和盆栽全量数据链 | 每日由PR/Issue异步更新；安全验收不得通过减少测试规避 |
 | 第7天 | 中期演示：RC522模拟/实卡PIN流程、SQLCipher跨用户拒绝、worker拒网、盆栽数据、啸天两路输入、双槽结论 | 未通过项指定责任人和截止时间；F判断是否仍有14天完成可能 |

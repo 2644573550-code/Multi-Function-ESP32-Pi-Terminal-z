@@ -26,7 +26,7 @@
 
 结论：**代码可以在这里写、编译、跑单测**；只有需要真 UID、真 systemd、真 BlueZ、真触摸的项必须上 Pi。上一版写「本机无编译器、无 cmake、无 Qt」是错的，会让人以为一行代码都写不了。
 
-**与审查文档的关系**：本文的七项冻结参数在 `docs/pbr-secure-v1/F-REVIEW-2.md` **§5.3.2** 有同一份表述（与 D 的 §5.3.1 对称）。两份若不一致，以 F-REVIEW-2 为准并提 PR 修本文。
+**与审查文档的关系**：本文的七项冻结参数与 BLE/LAN 规格在 `docs/pbr-secure-v1/F-REVIEW-2.md` **§5.3.2**（含 D2 节）有同一份表述（与 D 的 §5.3.1 对称）。两份若不一致，以 F-REVIEW-2 为准并提 PR 修本文。
 
 **现状标注**
 
@@ -138,28 +138,13 @@ RestrictAddressFamilies=AF_UNIX
 
 `QProcess` 本身**不是**沙箱，只起进程不加这些声明一律判 FAIL。
 
-### 0.5 BLE：保留，用 BlueZ 配对做状态门控
+### 0.5 BLE：保留（规格见 §0.8.2）
 
-Qt 6.5.3 的 `QLowEnergyController` **没有任何 pair/encrypt 接口**（逐行查过头文件）。Qt 唯一能触到加密的地方是 `QBluetoothLocalDevice::requestPairing()`，它把配对交给 BlueZ，成功后由内核强制链路加密。
+Qt 6.5.3 的 `QLowEnergyController` **没有任何 pair/encrypt 接口**（逐行查过头文件）。Qt 唯一能触到加密的地方是 `QBluetoothLocalDevice::requestPairing()`，它把配对交给 BlueZ。
 
-**T-12 的 BLE 验收标准据此改写**：
+**但这不够**：Just Works 配对的链路密钥可能被中间人获知。所以 P0 要求**链路层配对 + 应用层挑战-响应**两层。完整参数、密钥来源、失败处理全部在 **§0.8.2**，本节不重复。
 
-**实现归属**：`BleTransport`/`HotspotLanTransport` 在任务卡里是 **D 的文件范围**（T-12 主责 D）。下面这张表是给 D 的实现要求，Z 只做传输层之上的会话门控。
-
-| 要求 | 做法 |
-|---|---|
-| 发数据前必须已配对 | `QBluetoothLocalDevice::pairingStatus(addr) != Paired` → 拒绝 `writeCharacteristic`，返回 `TRANSPORT_SECURITY_REQUIRED` |
-| 未配对不降级 | 不得 fallback 到明文 GATT；不得"先发再补配对" |
-| 配对失败 | 断开并记录，不重试超过 3 次 |
-| 适用范围 | **仅 `transport_mode == "fixed_ble"` 的模块**走 BLE |
-| 与 LAN 并存 | `fixed_hotspot_lan` 模块仍强制 LAN TLS；两类不混用 |
-| Pi 侧实现 | **归 D**（`BleTransport` 在 T-12 的 D 文件范围内）。Z 只做传输层之上的会话门控 |
-| ESP 侧 | **归 L**，等 Pi 软件完成后再对 |
-| 实机验收 | 需真 BlueZ + 真模块，标 ❓ |
-
-`QBluetoothLocalDevice::requestPairing()` 在部分 BlueZ 配置下需要 PolicyKit 授权。若 Pi 上实测失败，**提 PR 说明并附 `journalctl` 输出**，不要改成明文放行。
-
-**现状提醒**：仓库里目前**没有任何 `fixed_ble` 的真实模块 manifest**（盆栽是 `fixed_hotspot_lan`）。所以这段代码写完只有单测能跑，实机验收推到有 BLE 模块时。
+**归属**：`BleTransport` 在 T-12 的 **D 文件范围**内，实现归 D；Z 只做传输层之上的会话门控。
 
 ### 0.6 `uidIndexKey`：整机单钥，0600 文件
 
@@ -198,26 +183,113 @@ bool uidIndexKey(QByteArray *out32);   // 成功 true；不可用 false
 
 ---
 
-### 0.8 上游范围变更（影响排期）
+### 0.8 BLE 与 LAN 通信（2026-10-28 定稿，P0 必须实现）
 
-1. **分工边界（2026-10-28 修订）**：**D 和 Z 只做 Pi 终端软件，不改 ESP 固件仓库。L 负责 ESP 固件，等 Pi 软件完成后再开工。** 采购/接线/电气核验不受限。
-2. **D 现在被卡在你身上**：`uidIndexKey()` 归 Z 实现，T-08 后半段与 T-12 都等 Z。你的 T-04 是全队关键路径。
-3. **`deriveUidIndex` 签名已冻结**（DR-14）：D 实现并调用，**密钥生成/存储/轮换归你**。
-4. **B-01 密码协议已由 F 交付**（规范修订 2 + 向量 + mbedtls 2.28/3.6.5 各 7/7），**等 D 签认，未冻结**。
+你在 P0 要同时实现 **BLE 和 LAN** 两条业务 lane。下面七条是已定参数，不要再自行取舍。
 
----
+#### 0.8.1 LAN：模块当 TLS server，Pi 当 client，指纹固定
+
+实测确认（2026-10-28，本机 x86_64 / Qt 6.5.3 / OpenSSL 3.0.2）：`QSslServer` + 自签证书 + 客户端 `VerifyNone` + 握手后比对 SHA-256 指纹，**可以跑通**（`handshake OK, pinned_match=1`，`isSelfSigned=1`）。
+
+| 项 | 定值 |
+|---|---|
+| 方向 | **模块监听、Pi 主动连**（现状：`module_data_service.c:279-292` 是 `listen`，Pi `ConnectionManager.cpp:238` 调 `connectToModule`）。**不改方向** |
+| 模块证书 | **自签**，模块侧生成，含 `CN=<module_id>` 与设备序列 |
+| Pi 校验 | 首次连接用 `VerifyNone` 完成握手，**随后立刻**比对 `peerCertificate().digest(Sha256)` 与 TrustStore 里登记值；不一致立即断开，返回 `IDENTITY_REJECTED` |
+| 登记 | 首次配对时由管理员确认后写入 TrustStore（D 的 T-03）；**换模块必须重新登记** |
+| 协议 | `QSsl::TlsV1_2OrLater`；实测支持 TLS 1.2 与 1.3 |
+| 失败 | 无 fallback。握手失败 = 连接失败，**不得**退回明文 TCP |
+| 抓包 | 不得见到传感器明文或 session credential |
+
+**为什么不用 CA**：P0 是逐设备信任，`f-day1:136` 已允许「明确登记的逐设备信任」。项目 CA 属 P1。
+
+**为什么先 `VerifyNone` 再比指纹**：自签证书不在任何 CA 链上，`VerifyPeer` 必然失败。指纹比较必须在握手后单独做，**不能省略**——省略就等于不校验。
+
+#### 0.8.2 BLE：BlueZ 配对（Just Works）+ **应用层挑战-响应**
+
+两层都要，缺一不可。链路层用 BlueZ 配对（Just Works 可接受），应用层再用对称密钥做一次挑战-响应。
+
+| 层 | 要求 |
+|---|---|
+| 链路层 | `pairingStatus(addr) == Paired` 才能 `writeCharacteristic`；不要求 MITM/数字比较（应用层会兜底） |
+| 应用层 | 连接后先做挑战-响应，**通过前不发送任何业务数据** |
+| 算法 | **HMAC-SHA256，对称密钥 32 字节**，与 `pbr-secure-v1` 已有 HMAC 结论一致，不引入新算法 |
+| 消息 | `challenge`(32B 随机) → `response = HMAC-SHA256(k, challenge ‖ module_id ‖ boot_id)` → Pi 比对 |
+| 密钥来源 | **T-03 配对时经 LAN 下发，模块写 NVS**（见 0.8.3） |
+| 失败 | 3 次失败断开，返回 `TRANSPORT_SECURITY_REQUIRED`；不降级明文 |
+| 重放 | challenge 每次新生成，不接受重复；会话内不复用 |
+
+**必须做应用层认证的理由**：Just Works 配对的链路密钥可能被中间人获知；只有应用层密钥能证明「对面是这台特定模块」。
+
+#### 0.8.3 模块密钥下发（新增步骤，归 T-03）
+
+原 T-03 只有「登记指纹」，没有下发对称密钥。新增：
+
+| 项 | 定值 |
+|---|---|
+| 时机 | 首次配对，管理员在 Pi 上确认后 |
+| 通道 | **一次性的 LAN 连接**（此连接仍需先完成 0.8.1 的握手） |
+| 内容 | 32 字节随机密钥，`QRandomGenerator::system()` 生成 |
+| 模块侧 | 写入 NVS，**不得**写入固件镜像或 `sdkconfig` |
+| 幂等 | 已下发过则拒绝重复下发，须先显式撤销 |
+| 日志 | 任何一侧都不得打印密钥 |
+
+**这条需要 L 配合**：ESP 固件现在**完全没有 NVS 密钥存储**（`module_data_service/` 零处）。L 实现前，BLE 应用层认证无法实机验证。
+
+#### 0.8.4 单条业务消息上限：512 字节
+
+| 项 | 定值 |
+|---|---|
+| BLE 单条业务 payload | **≤512 字节**，超出返回 `INVALID_MESSAGE` |
+| 分片 | 由 `BleTransport` 内部按 20 字节切，**对上层透明** |
+| 原因 | `BleTransport.h` 现有实现就按 20 字节分片；512 与 PBR payload 上限一致 |
+
+#### 0.8.5 lane 热切换：允许，但必须重新认证
+
+现有代码只有 `initialTransport()` 固定一条 lane，**没有任何切换状态机**，需要你新写。
+
+| 规则 | 内容 |
+|---|---|
+| 触发 | LAN 断开后允许 BLE 接手；反之亦然 |
+| 会话 | **必须重新做一次认证**（0.8.1 的指纹 / 0.8.2 的挑战-响应），**不得搬用旧会话密钥** |
+| 未完成分片 | 切换时丢弃，不重传 |
+| 次数 | 单次 attach 内最多切换 3 次，超出则 attach 失败 |
+| 记录 | 切换事件记入日志（不含密钥） |
+
+#### 0.8.6 `fixed_ble` + `hotspot_lan` 包并存：允许
+
+`TransportPolicy` 现在允许这个组合（`runtime_test.cpp:154` 已断言 `valid()`），**保持现状不改**。
+
+| 组合 | 含义 |
+|---|---|
+| `fixed_ble` + `data` | 业务数据走 BLE |
+| `fixed_ble` + `hotspot_lan` | **业务数据走 BLE，插件包走 LAN 热点**（BLE 带宽不够传 .so） |
+| `fixed_hotspot_lan` + `data` | 全部走 LAN |
+
+文档此前写的「两类不混用」**作废**：指的是业务数据 lane，不是包传输。
+
+#### 0.8.7 T-12 验收拆两组证据
+
+| 组 | 谁交 | 内容 |
+|---|---|---|
+| **Pi 侧三组** | **Z（会话部分）/ D（传输部分）** | ① 未配对 BLE 拒发；② 挑战-响应失败拒发；③ TLS 指纹不匹配拒绝、无明文回退 |
+| **ESP 侧三组** | **L** | ① BLE `sm_io_cap` 配置与加密属性；② TLS server 与自签证书；③ NVS 密钥存储 |
+
+**Pi 侧现在就能验**（用本机的假模块 + 自签证书），**不需要等 L**。ESP 侧等 L 实现后补。
 
 ### 0.9 卡点速览：谁在等谁
 
 | 组 | 任务 | 能不能现在开工 |
 |---|---|---|
-| **A. 今天就能做，无外部前置** | D1 `uidIndexKey()`、D4（T-04）、D8（T-10）、D9a（T-09a）、D11（T-11） | **能。** 本机有 gcc/cmake/Qt 6.5.3，SQLCipher 可解包用，§0 已定全部参数 |
-| **B. 前置是你自己** | D9b 绑卡/挂失（等 T-07/T-08）、D12 BLE（自己写完再等 L 对 ESP 侧） | 顺序做，不必问人 |
-| **C. 等 D** | D8b 的 UID 匹配回调（等你交密钥后 D 切真实现）、D12 的 TLS 对端联调 | 只等接口，不等设计 |
+| **A. 今天就能做，无外部前置** | D1 `uidIndexKey()`、D4（T-04）、D8（T-10）、D9a（T-09a）、D11（T-11）、**D12 的 Pi 侧会话与授权** | **能。** 本机有 gcc/cmake/Qt 6.5.3 + OpenSSL，SQLCipher 可解包用，§0 已定全部参数 |
+| **B. 前置是你自己** | D9b 绑卡/挂失（等 T-07/T-08）；lane 热切换状态机（§0.8.5，自己新写） | 顺序做，不必问人 |
+| **C. 等 D** | D8b 的 UID 匹配回调、T-12 的**传输层**（`BleTransport`/`HotspotLanTransport` 归 D）、模块密钥下发（归 T-03/D） | 只等接口，不等设计 |
 | **D. 等实机** | 全部 ❓ 项：真 UID、systemd 生效、BlueZ 配对、Wayland 触摸、Pi 3B 性能 | 写代码+单测先行，实机补证 |
-| **E. 等 L** | ESP 侧 BLE 配对与 TLS、`hello_ok.uptime_ms` | 与你无关，别替固件做假设 |
+| **E. 等 L** | ESP 侧 BLE `sm_io_cap`、TLS server 与自签证书、**NVS 密钥存储**、`hello_ok.uptime_ms` | 与你无关，别替固件做假设 |
 
-**一句话**：**A 组五件事现在全部可以做完**，做完后你就能解除对 D 的全部阻塞（`uidIndexKey` + T-04），P0 关键路径就在你手上。
+**一句话**：**A 组六件事现在全部可以做完**，做完后你就能解除对 D 的全部阻塞（`uidIndexKey` + T-04），P0 关键路径就在你手上。
+
+**BLE/LAN 的边界**（§0.8）：传输层代码归 **D**，你只做传输层之上的**会话门控与授权**；模块密钥下发归 **T-03（D）**；你负责验证「未授权/未认证时业务数据进不来」。
 
 ---
 
@@ -239,6 +311,15 @@ bool uidIndexKey(QByteArray *out32);   // 成功 true；不可用 false
 
 ---
 
+
+### 0.10 上游范围变更（影响排期）
+
+1. **分工边界（2026-10-28 修订）**：**D 和 Z 只做 Pi 终端软件，不改 ESP 固件仓库。L 负责 ESP 固件，等 Pi 软件完成后再开工。** 采购/接线/电气核验不受限。
+2. **D 现在被卡在你身上**：`uidIndexKey()` 归 Z 实现，T-08 后半段与 T-12 都等 Z。你的 T-04 是全队关键路径。
+3. **`deriveUidIndex` 签名已冻结**（DR-14）：D 实现并调用，**密钥生成/存储/轮换归你**。
+4. **B-01 密码协议已由 F 交付**（规范修订 2 + 向量 + mbedtls 2.28/3.6.5 各 7/7），**等 D 签认，未冻结**。
+
+---
 
 ## 1. 第 1 天预检回执
 
@@ -432,6 +513,7 @@ bool uidIndexKey(QByteArray *out32);   // 成功 true；不可用 false
 ### D8b — T-08 RC522 事件闭环（Z 部分：密钥与匹配）
 
 > 主责 D（PBR/事件链路）· 依赖 T-04（D4）、T-07（D 的）· **D 在等你的 `uidIndexKey`**
+> **文件边界**：`PogoControlTransport.cpp`、`HostEventDetector.h`、`ConnectionManager.cpp` 都是 **D 的**，你不改；你只新增用户匹配逻辑与 `uidIndexKey()` 调用点。
 
 - [ ] ❌ **`uidIndexKey()` 已在 §2 D1 列出，优先交付**
 - [ ] ❌ **UID 匹配回调**：用 `deriveUidIndex()` 结果选用户（D 实现并调用，你提供密钥）
@@ -442,20 +524,36 @@ bool uidIndexKey(QByteArray *out32);   // 成功 true；不可用 false
 
 ### D12 — T-12 业务数据 TLS/BLE（Z 部分：**只是会话与授权**）
 
-> **主责是 D，不是你。** 任务卡把 `HotspotLanTransport.{h,cpp}`、`BleTransport.{h,cpp}` 都划在 D 的文件范围内——传输层代码你不改。
-> 你在 T-12 里只负责**传输层之上的会话与用户授权**，以及给 D 提供 profile 判定结果。
-> **D 在等你的 T-04（D4）**；ESP 侧 TLS 归 L。
+> **主责是 D，不是你。** 传输层（`BleTransport`、`HotspotLanTransport`）在 T-12 的 D 文件范围内。
+> P0 要**同时实现 BLE 和 LAN**，参数见 **§0.8**。你在 T-12 里负责传输层之上的会话、授权与门控验证。
+> ESP 侧（`sm_io_cap`、TLS server、NVS 密钥）归 **L**。
 
-- [ ] ❌ **会话绑定用户与能力**：TLS/BLE 连接建立后，业务数据必须挂到当前会话的用户与已授权能力上
+#### Z 负责的部分（现在就能写）
+
+- [ ] ❌ **会话绑定用户与能力**：LAN/BLE 连接建立后，业务数据必须挂在当前会话的用户与已授权能力上
   - 没有会话就不接受业务数据；`activeUserId` 变更时旧连接降级为不可用
-- [ ] ❌ **撤销立即断连**：撤权/停用用户/切用户时，由你发出「该会话已失效」信号
-  - 断连动作与密钥销毁的传输层实现归 **D**，你只提供信号和状态
-- [ ] ❌ **向 D 提供 profile 判定**：哪个模块走 `fixed_ble`、哪个走 `fixed_hotspot_lan`
-  - 复用现有 `TransportPolicy`（`src/core/TransportPolicy.h`），不要另写一套
-- [ ] ❌ **BLE 的会话侧前置**：未登录/锁屏时，即使 GATT 已配对也不得把业务数据交给模块
-  - 配对门控（`pairingStatus == Paired`）由 **D** 在 `BleTransport` 实现（§0.5）
-- [ ] ❓ **断线 / 切用户 / 撤权后旧 session 不可继续发数据**（与 D 联调验证）
-- [ ] 📋 **`TLS 会话 ≠ 设备已认证` 写进你负责的会话代码注释**
+- [ ] ❌ **未认证/未授权时业务数据必须进不来**（§0.8.2）
+  - BLE：`pairingStatus != Paired` 拒绝（传输层由 D 实现，你负责断言与集成测试）
+  - BLE：挑战-响应未通过前，**不得**把任何业务 payload 交给模块
+  - LAN：指纹不匹配即拒绝（§0.8.1）
+- [ ] ❌ **撤权立即失效**：撤权/停用/切用户时由你发出「该会话已失效」信号；断连与密钥销毁由 D 执行
+- [ ] ❌ **lane 热切换的会话规则**（§0.8.5）：切换**必须重新认证**，不得搬用旧会话密钥
+  - 状态机由你新写（现有代码只有 `initialTransport()`，无切换逻辑）
+  - 单次 attach 最多 3 次切换，超出 attach 失败；切换时丢弃未完成分片
+- [ ] ❌ **profile 判定**：直接复用 `TransportPolicy`（`src/core/TransportPolicy.h`），不要另写一套
+  - `fixed_ble` + `hotspot_lan` 包并存是**合法**组合（§0.8.6），不要按「两类不混用」拒绝
+- [ ] ❌ **单条消息上限 512 字节**（§0.8.4）：超出返回 `INVALID_MESSAGE`；分片由 `BleTransport` 内部处理
+- [ ] ❓ **断线 / 切用户 / 撤权后旧 session 不可继续发数据**（与 D 联调）
+- [ ] 📋 **`TLS 会话 ≠ 设备已认证`、`BLE 配对 ≠ 模块已授权`** 写进你负责的会话代码注释
+
+#### 交给 D 的部分（不要自己改这些文件）
+
+- `BleTransport.{h,cpp}`：BlueZ 配对门控、挑战-响应、20 字节分片
+- `HotspotLanTransport.{h,cpp}`：`QSslSocket` + 指纹比对 + 无明文回退
+
+#### 交给 L 的部分
+
+- ESP 侧 `sm_io_cap`/`BLE_SM_*`/加密属性、TLS server 与自签证书、**NVS 密钥存储**
 
 ### D13-D16 — 页面与会话权限（Z 部分）
 

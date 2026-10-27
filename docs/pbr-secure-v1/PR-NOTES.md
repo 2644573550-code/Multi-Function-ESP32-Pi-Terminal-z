@@ -112,7 +112,9 @@ Z 的 Pi 侧软件有七个原本悬空、会各自分叉的决定，本轮一�
 | PIN 的 KDF | PBKDF2-HMAC-SHA256，**迭代 ≥600,000 硬编码**，salt 16B，`QPasswordDigestor`，零新依赖 |
 | 依赖死锁 | **T-04 不再依赖 T-03**；**T-09 拆 a/b**（PIN/锁屏/切用户 vs 绑卡/挂失）。D 和 Z 原本互相堵死，已解开 |
 | worker 隔离 | `DynamicUser=yes` + `PrivateNetwork=yes`，不建持久账号；判 UID ≠ 宿主即可 |
-| BLE | 保留。Qt 无 pair/encrypt API，唯一入口 `QBluetoothLocalDevice::requestPairing()`；未 Paired 拒发，不降级。实现归 D（T-12 主责），Z 只做会话门控 |
+| BLE | **两层都要**：链路层 `pairingStatus==Paired`（Just Works 可接受）+ **应用层挑战-响应**（HMAC-SHA256，32B 对称密钥）。未通过前不发业务数据。单帧 ≤512B。实现归 D，Z 只做会话门控 |
+| LAN | 模块当 TLS server + **自签证书**，Pi 固定 **SHA-256 指纹**（首次登记）。无明文回退。已在本机实测跑通 |
+| 模块密钥 | 32B 对称密钥**配对时经 LAN 下发写 NVS**；ESP 现有零处 NVS 密钥存储，需 L 实现 |
 | `uidIndexKey` | **整机单钥**，`AppConfigLocation` 下 0600（放每用户 DB 会鸡生蛋；放 `AppLocalDataLocation` 会暴露给模块） |
 | 模块 QML | 改**独立 QQmlEngine**，否则模块页能直读 `connectionManager`，T-13 的隔离要求无法验收 |
 
