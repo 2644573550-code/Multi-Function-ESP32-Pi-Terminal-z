@@ -30,7 +30,8 @@
 
 **现状标注**
 
-- ❌ 代码中不存在，需从零实现（上一版用 ✅，与「已完成」的直觉相反，已换掉）
+- ❌ 代码中不存在，需从零实现（上一版用 ✅ 表示这个意思，与「已完成」的直觉相反，已换掉）
+- ✅（配 `[x]`）**已由 F 裁决或已核实**，不用你做，只需按此实现
 - ⚠️ 文档与代码不一致
 - ❓ 需实机确认（真 UID / systemd / BlueZ / Wayland / Pi 硬件）
 - 📋 仅文档描述，本轮未核查
@@ -143,6 +144,8 @@ Qt 6.5.3 的 `QLowEnergyController` **没有任何 pair/encrypt 接口**（逐�
 
 **T-12 的 BLE 验收标准据此改写**：
 
+**实现归属**：`BleTransport`/`HotspotLanTransport` 在任务卡里是 **D 的文件范围**（T-12 主责 D）。下面这张表是给 D 的实现要求，Z 只做传输层之上的会话门控。
+
 | 要求 | 做法 |
 |---|---|
 | 发数据前必须已配对 | `QBluetoothLocalDevice::pairingStatus(addr) != Paired` → 拒绝 `writeCharacteristic`，返回 `TRANSPORT_SECURITY_REQUIRED` |
@@ -150,7 +153,8 @@ Qt 6.5.3 的 `QLowEnergyController` **没有任何 pair/encrypt 接口**（逐�
 | 配对失败 | 断开并记录，不重试超过 3 次 |
 | 适用范围 | **仅 `transport_mode == "fixed_ble"` 的模块**走 BLE |
 | 与 LAN 并存 | `fixed_hotspot_lan` 模块仍强制 LAN TLS；两类不混用 |
-| ESP 侧 | **归 L**，等 Pi 软件完成后再对。你只做 Pi 侧门控与接口约定 |
+| Pi 侧实现 | **归 D**（`BleTransport` 在 T-12 的 D 文件范围内）。Z 只做传输层之上的会话门控 |
+| ESP 侧 | **归 L**，等 Pi 软件完成后再对 |
 | 实机验收 | 需真 BlueZ + 真模块，标 ❓ |
 
 `QBluetoothLocalDevice::requestPairing()` 在部分 BlueZ 配置下需要 PolicyKit 授权。若 Pi 上实测失败，**提 PR 说明并附 `journalctl` 输出**，不要改成明文放行。
@@ -242,14 +246,15 @@ bool uidIndexKey(QByteArray *out32);   // 成功 true；不可用 false
 > `B编号 / owner / commit / 目标硬件与版本 / 命令与脱敏结果 / PASS或FAIL或NOT_RUN / 风险 / 修复动作 / 截止日 / PR链接`
 > 没有执行日期和实际结果的模板不算证据。
 
-### B-02 Z 部分：SQLCipher 驱动与 Qt 构建环境
+### B-02 Z 部分：SQLCipher 接入与 Qt 构建环境
 
 - [x] ✅ **「Qt 6.5.3 能否加载 SQLCipher driver」已有确定答案：不需要也不可行**（§0.1）
   - 事实：SDK 的 `plugins/sqldrivers/` 只有 `libqsqlite.so`；无 Qt 源码、无 `qsql_sqlite_p.h`；本机无 autoconf/automake/libtool。重编 `QSQLITE` 插件这条路不通。
   - **裁决：改用 SQLCipher C API**，不再依赖 Qt SQL 插件。
   - 因此「driver 加载失败即 T-10 阻塞」这条作废，T-10 不再被它阻塞。
-- [ ] ❌ **记录实际链接库与 `PRAGMA cipher_version`**（应报 `3.4.1`，见 §0.1 实测）
-- [ ] ❌ **验证错误 key 被拒绝**（应返回 `SQLITE_NOTADB`=26），记录打开耗时
+- [x] ✅ **本机已实测（2026-10-28）**：`PRAGMA cipher_version` = `3.4.1`；错误 key 返回 `SQLITE_NOTADB`(26)；DB 文件头非 `SQLite format`
+  - 你只需在 **Pi 上复测一次**并记入回执，不必重新摸索方法（§0.1 有完整命令）
+- [ ] ❌ **Pi 上的打开耗时与 DB 大小**（本机 x86_64 数据不代入 Pi 3B）
 - [ ] ❌ **记录 Pi OS / Qt / plugin path**
   - 目标 **6.5.3**，历史实机 **6.4.2**，CMake 最低 **6.4**；三者须在回执里分清
 - [ ] 📋 **验证 Pi 侧 SDK 来源/哈希清单可构建**（D 交清单，Z 验证）
@@ -390,6 +395,9 @@ bool uidIndexKey(QByteArray *out32);   // 成功 true；不可用 false
 - [ ] ❌ **锁屏**：无交互 5 分钟自动锁定；隐藏敏感内容；提示/语音不含姓名、读数、精确位置
   - 锁屏后必须重输 PIN，**不得刷卡解锁**
 - [ ] ❌ **切用户前显示任务完成/取消/明确停止流程**
+- [ ] ❌ **模块页改用独立 `QQmlEngine`**（§0.7；不做这步 T-13 的隔离验收无法成立）
+  - 现为 `Main.qml:667` 的 `Loader.setSource()`，与宿主同引擎
+  - 只注入 `sessionModel` / 只读 `userContext` / 主题；**禁止**注入 `connectionManager` 等宿主对象
 - [ ] ❌ **管理员配对/撤销页面**（F 裁决：页面归你，后端归 D 的 TrustStore）
   - 需要重验管理员 PIN；列出已配对桥板与模块；撤销后立即断连的视觉反馈
   - 只调接口，**不自己实现 TrustStore**
@@ -432,33 +440,29 @@ bool uidIndexKey(QByteArray *out32);   // 成功 true；不可用 false
 - [ ] ❓ **验证未配对/篡改/重复/过期事件全部拒绝**
 - [ ] ❓ **确认 UID hex 大小写都接受**（校验时折叠，`deriveUidIndex` 收原始字节）
 
-### D12 — T-12 业务数据 TLS/BLE（Z 部分：会话与授权）
+### D12 — T-12 业务数据 TLS/BLE（Z 部分：**只是会话与授权**）
 
-> 主责 D（**Pi 侧对端**）· **D 在等你的 T-04（D4）** · ESP 侧 TLS 归 L
-> **Day 8-10 闸门要求「TLS/BLE 业务 lane」**
+> **主责是 D，不是你。** 任务卡把 `HotspotLanTransport.{h,cpp}`、`BleTransport.{h,cpp}` 都划在 D 的文件范围内——传输层代码你不改。
+> 你在 T-12 里只负责**传输层之上的会话与用户授权**，以及给 D 提供 profile 判定结果。
+> **D 在等你的 T-04（D4）**；ESP 侧 TLS 归 L。
 
-- [ ] ❌ **Pi 端 TLS 校验**（`HotspotLanTransport.cpp` 当前 SSL/TLS 代码行数 = **0**）
-  - TLS ≥ 1.2；指纹白名单以 profile 为准、QSettings 为缓存
-- [ ] ❌ **撤销立即断连并销毁派生密钥**
-- [ ] ❌ **Pi 端 BLE 门控**（`BleTransport.cpp` 当前无认证/加密）—— 按 §0.5
-  - Qt 6.5.3 的 `QLowEnergyController` **没有任何 pair/encrypt 接口**，唯一入口是 `QBluetoothLocalDevice::requestPairing()`
-  - 发数据前检查 `pairingStatus(addr) == Paired`，否则拒发并返回 `TRANSPORT_SECURITY_REQUIRED`
-  - 未配对**不得**降级为明文 GATT，也不得"先发再补配对"
-  - 只对 `transport_mode == "fixed_ble"` 的模块生效；`fixed_hotspot_lan` 仍走 LAN TLS
-  - ESP 侧配对归 L，你只做 Pi 侧门控
-- [ ] ❓ **断线 / 切用户 / 撤权后旧 session 不可继续发数据**
-- [ ] ❓ **传输密钥与身份密钥分离**，不复用 `CONFIG_APP_PI_DATA_TOKEN`
-- [ ] 📋 **`TLS 会话 ≠ 设备已认证` 写进代码注释与文档**
+- [ ] ❌ **会话绑定用户与能力**：TLS/BLE 连接建立后，业务数据必须挂到当前会话的用户与已授权能力上
+  - 没有会话就不接受业务数据；`activeUserId` 变更时旧连接降级为不可用
+- [ ] ❌ **撤销立即断连**：撤权/停用用户/切用户时，由你发出「该会话已失效」信号
+  - 断连动作与密钥销毁的传输层实现归 **D**，你只提供信号和状态
+- [ ] ❌ **向 D 提供 profile 判定**：哪个模块走 `fixed_ble`、哪个走 `fixed_hotspot_lan`
+  - 复用现有 `TransportPolicy`（`src/core/TransportPolicy.h`），不要另写一套
+- [ ] ❌ **BLE 的会话侧前置**：未登录/锁屏时，即使 GATT 已配对也不得把业务数据交给模块
+  - 配对门控（`pairingStatus == Paired`）由 **D** 在 `BleTransport` 实现（§0.5）
+- [ ] ❓ **断线 / 切用户 / 撤权后旧 session 不可继续发数据**（与 D 联调验证）
+- [ ] 📋 **`TLS 会话 ≠ 设备已认证` 写进你负责的会话代码注释**
 
 ### D13-D16 — 页面与会话权限（Z 部分）
 
 > 修订后这几项主责明确拆为：L 固件、D Pi 侧接口/字段/路由、Z 页面/UI。**你不碰固件。**
 
-- [ ] ❌ **T-13 模块页隔离**（前置，按 §0.7）：模块页改独立 `QQmlEngine` + 独立 `QQmlContext`
-  - 现在 `Main.qml:667` 用 `Loader.setSource()` 加载进**宿主同一个引擎**，模块页能直接读 `connectionManager`/`systemTools`
-  - 只注入 `sessionModel`、只读 `userContext`、主题/i18n；**禁止**注入宿主服务对象
-  - 不做这步，下面「旧用户上下文不能读取」无法验收
 - [ ] ❌ **T-13 用户归属/UI**：盆栽全部传感器数据按用户归属显示；退出后旧用户上下文不能读取
+  - **前置**：D9a 里的模块页独立引擎（§0.7）。那一步不做，这条无法验收——不要在这条里再做一遍引擎改造
 - [ ] ❌ **T-14 页面/会话权限**：啸天受控状态 UI 复用安全业务 lane，不当作已有插件
   - 啸天 `firmware/` 尚无实现（L 负责），你只做页面
 - [ ] ❌ **T-15 两模块分别运行**：用户/device_id/slot_id 不丢失

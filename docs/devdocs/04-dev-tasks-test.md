@@ -1,8 +1,5 @@
 ---
-generated_by: test-cases
 document: p0-test-plan
-spec_version: 1.2
-generated_at: 2026-10-26
 ---
 # P0 测试和验收任务
 
