@@ -41,6 +41,18 @@ target_include_directories(terminal_transports PUBLIC src)
 target_link_libraries(terminal_transports PUBLIC terminal_protocol Qt6::Core Qt6::Network Qt6::Bluetooth Qt6::SerialPort)
 target_compile_options(terminal_transports PRIVATE -Wall -Wextra -Wpedantic)
 
+add_library(terminal_security STATIC
+    src/security/uid_index_key.cpp src/security/uid_index_key.h
+    src/security/PinPolicy.cpp src/security/PinPolicy.h
+    src/security/KeyWrap.cpp src/security/KeyWrap.h
+    src/security/UserService.cpp src/security/UserService.h
+    src/security/AuthService.cpp src/security/AuthService.h
+    src/security/SessionManager.cpp src/security/SessionManager.h)
+target_include_directories(terminal_security PUBLIC src)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+target_link_libraries(terminal_security PUBLIC Qt6::Core Qt6::Network OpenSSL::Crypto)
+target_compile_options(terminal_security PRIVATE -Wall -Wextra -Wpedantic)
+
 add_library(terminal_core STATIC
     src/core/ModuleManager.cpp src/core/ModuleManager.h
     src/core/ConnectionManager.cpp src/core/ConnectionManager.h
@@ -253,6 +265,12 @@ if(BUILD_TESTING)
     add_executable(protocol_test tests/protocol_test.cpp)
     target_link_libraries(protocol_test PRIVATE terminal_protocol)
     add_test(NAME pibridge_protocol COMMAND protocol_test)
+    add_executable(uid_index_key_test tests/uid_index_key_test.cpp)
+    target_link_libraries(uid_index_key_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME uid_index_key_lifecycle COMMAND uid_index_key_test)
+    add_executable(auth_service_test tests/auth_service_test.cpp)
+    target_link_libraries(auth_service_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME user_pin_session COMMAND auth_service_test)
     add_executable(session_test tests/session_test.cpp)
     add_dependencies(session_test example_module)
     target_link_libraries(session_test PRIVATE terminal_core Qt6::Test)
