@@ -725,8 +725,8 @@ Item {
                         delegate: CarButton {
                             required property int modelData
                             Layout.fillWidth: true
-                            implicitHeight: Math.max(36 * root.uiScale, 36)
-                            fontPixelSize: Theme.fontCaption
+                            implicitHeight: Math.max(38 * root.uiScale, 38)
+                            fontPixelSize: Theme.fontLabel
                             topPadding: 0
                             bottomPadding: 0
                             leftPadding: Theme.gap * 0.4
@@ -750,7 +750,7 @@ Item {
                             horizontalAlignment: Text.AlignHCenter
                             maximumLineCount: 1
                             subdued: true
-                            fontPixelSize: Theme.fontCaption
+                            fontPixelSize: Theme.fontLabel
                             text: I18n.t("时")
                         }
                         Wheel {
@@ -770,7 +770,7 @@ Item {
                             horizontalAlignment: Text.AlignHCenter
                             maximumLineCount: 1
                             subdued: true
-                            fontPixelSize: Theme.fontCaption
+                            fontPixelSize: Theme.fontLabel
                             text: I18n.t("分")
                         }
                         Wheel {
@@ -790,7 +790,7 @@ Item {
                             horizontalAlignment: Text.AlignHCenter
                             maximumLineCount: 1
                             subdued: true
-                            fontPixelSize: Theme.fontCaption
+                            fontPixelSize: Theme.fontLabel
                             text: I18n.t("秒")
                         }
                         Wheel {
@@ -830,7 +830,7 @@ Item {
                         objectName: "timerRemaining"
                         anchors.centerIn: parent
                         maximumLineCount: 1
-                        fontPixelSize: Math.max(30, Math.min(56 * root.uiScale, root.width / 9))
+                        fontPixelSize: Math.max(40, Math.min(64 * root.uiScale, root.width / 8))
                         text: root.timerLabel
                     }
                 }
@@ -1548,7 +1548,7 @@ Item {
         property int value: 0
         property string caption: ""
         signal scrolled(int value)
-        readonly property real itemHeight: Math.max(30 * root.uiScale, 30)
+        readonly property real itemHeight: Math.max(40 * root.uiScale, 40)
         Layout.preferredHeight: 3 * itemHeight
         visibleItemCount: 3
         wrap: true
@@ -1582,7 +1582,7 @@ Item {
             width: wheel.width
             height: wheel.itemHeight
             text: (index < 10 ? "0" : "") + index
-            fontPixelSize: Theme.fontDisplay
+            fontPixelSize: Theme.fontWheel
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             // 距离中心越远越淡，模拟轮盘的纵深感。

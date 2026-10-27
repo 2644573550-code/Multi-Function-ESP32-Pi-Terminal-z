@@ -20,9 +20,11 @@ QtObject {
     // （内部换算成 pt），与上面 pt 语义的 body/title/hero 是两条通道，不要混着写。
     // 时间页的说明文字、城市时间与读数都走这条通道，数值与原字号一一对应。
     readonly property real fontCaption: 12 * scaleFactor
-    readonly property real fontLabel: 13 * scaleFactor
+    readonly property real fontLabel: 14 * scaleFactor
     readonly property real fontStrong: 22 * scaleFactor
     readonly property real fontDisplay: 24 * scaleFactor
+    // 轮盘数字：比正文数字再大一档，手指滚动时看得清。
+    readonly property real fontWheel: 34 * scaleFactor
     readonly property real icon: 24 * scaleFactor
     readonly property real shapeSmall: 8 * scaleFactor
     readonly property real shapeMedium: 12 * scaleFactor
