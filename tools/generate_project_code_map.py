@@ -11,8 +11,14 @@ CODE_SUFFIXES = {
     ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".qml", ".py", ".sh", ".bash",
     ".cmake", ".html", ".css", ".rs",
 }
-ROOTS = ("build_scripts", "docs", "esp", "pi_terminal", "third_party", "tools")
+ROOTS = (
+    "build_scripts", "docs", "hardware", "module-devkit", "pi_terminal",
+    "projects", "third_party", "tools", "esp",
+)
 SKIP_PARTS = {".git", "node_modules", "__pycache__"}
+# Vendored trees are cited by subtree instead of file by file: a 1000-line dump
+# is not navigation. Everything else is listed in full.
+SUMMARY_ROOTS = {"third_party"}
 
 
 def source_files() -> list[str]:
@@ -32,7 +38,9 @@ def main() -> None:
         "# 项目代码结构图（QML / 源码总览）",
         "",
         "> 自动生成。重新盘点并更新本文：`python3 tools/generate_project_code_map.py`。",
-        "> 文件清单包含仓库内维护的代码/构建脚本（含 `third_party/YesPlayMusic`），排除 `.git`、`node_modules`、`__pycache__`、构建输出及非代码素材/配置。",
+        "> 文件清单包含仓库内维护的代码/构建脚本，排除 `.git`、`node_modules`、`__pycache__`、构建输出及非代码素材/配置。",
+        "> `third_party/` 按子目录汇总；其余目录逐文件列出。",
+        "> **ESP32 固件（`esp/`）不在本仓库**，位于独立仓库 `gggitj/ESP-Modular-Terminal-Service`；本文只在维护者本地并存时才会列出该目录。",
         "",
         "## 架构简图",
         "",
@@ -68,21 +76,43 @@ def main() -> None:
         "    Pages --> MusicCpp[MusicPlayer → MusicService → Qt Network / MediaPlayer]",
         "    AppCpp --> CoreCpp[src/core：连接 / 状态机 / 模块 / 包接收]",
         "    CoreCpp --> Wire[src/transport + src/protocol]",
-        "    Wire --> Esp[esp：桥接器 / Pi 模块 / 共享组件]",
+        "    Wire --> Esp[esp：桥接器 / Pi 模块 / 共享组件<br/>（独立 ESP 仓库）]",
         "    MusicCpp --> Node[music_api：第三方 API adapter]",
         "```",
         "",
         "## 所有代码文件",
         "",
-        f"共 **{len(files)} 个**代码/构建脚本文件（不含依赖目录 `node_modules`）。下列清单按仓库目录完整列出：",
+        f"共 **{len(files)} 个**代码/构建脚本文件（不含依赖目录 `node_modules`）。下列清单按仓库目录列出，`third_party/` 按子目录汇总：",
         "",
     ]
     for root, paths in grouped.items():
         if not paths:
             continue
+        if root in SUMMARY_ROOTS:
+            lines.extend(summary_section(root, paths))
+            continue
         lines.extend((f"### `{root}/`（{len(paths)} 个）", "", "```text", *paths, "```", ""))
     OUTPUT.write_text("\n".join(lines), encoding="utf-8")
     print(f"Wrote {OUTPUT.relative_to(ROOT)}: {len(files)} source/code files")
+
+
+def summary_section(root: str, paths: list[str]) -> list[str]:
+    """Collapse a vendored tree to one line per subdirectory."""
+    counts: dict[str, int] = {}
+    for path in paths:
+        parts = path.split("/")
+        key = parts[1] + "/" if len(parts) > 2 else "(顶层文件)"
+        counts[key] = counts.get(key, 0) + 1
+    width = max(len(name) for name in counts)
+    body = [f"{name.ljust(width)}  {count:>5} 个" for name, count in sorted(counts.items())]
+    return [
+        f"### `{root}/`（{len(paths)} 个，按子目录汇总）",
+        "",
+        "```text",
+        *body,
+        "```",
+        "",
+    ]
 
 
 if __name__ == "__main__":
