@@ -175,6 +175,7 @@ f-day1 §4.2 要求"用握手建立并验证的对端单调时间偏移校验 TT
   | 算法 | `HMAC-SHA256(key, ASCII("p0-rfid-index-v1") + u8(uid_len) + rawUid)`（f-day1 §3 原文） |
   | 密钥 | Z 持有与轮换；D 不接触、不缓存、不落盘 |
   | 失败 | 长度非法返回**空** `QByteArray`，调用方按 `INVALID_MESSAGE` 处理；不得返回全零或截断值 |
+  | 密钥入口 | **只有一处**：`deriveUidIndex()` 内部调 `uidIndexKey()` 取密钥，Z 不实现任何 HMAC，D 不接触密钥字节。`uidIndexKey()` 返回 false 时 `deriveUidIndex()` 直接返回空 |
 
   **密钥接口由 Z 提供**，签名冻结如下（Z 实现，D 只调用）：
   ```cpp
@@ -271,6 +272,78 @@ f-day1 §4.2 要求"用握手建立并验证的对端单调时间偏移校验 TT
 **接着做：T-07（依赖 T-03）、T-08 前半段（依赖 T-07）。**
 **等 Z：T-08 后半段、T-12。**
 **等 L：T-13/T-14/T-15/T-16 的实机部分——这几项你现在只做 Pi 侧接口与字段，不要等固件，也不要替固件做假设。**
+
+### 5.3.2 Z 的任务书与卡点（2026-10-28 核定）
+
+与 §5.3.1 对称。Z 拿到本节即可开工，不必回问。详细清单见 `docs/devdocs/05-mr-z-todo.md`，本节只定**接口与参数**。
+
+#### A. 七项冻结参数（Z 按此实现，不得自行改）
+
+| 编号 | 项 | 冻结值 |
+|---|---|---|
+| Z-1 | T-10 存储 | **直接调 SQLCipher C API**（`sqlite3_open` + `sqlite3_key`），**不用 `QSqlDatabase`**。理由：Qt 6.5.3 SDK 无 SQLCipher 驱动、无 `qsql_sqlite_p.h`、本机无 autoconf，重编 QSQLITE 不可行 |
+| Z-2 | PIN 的 KDF | **PBKDF2-HMAC-SHA256，迭代 ≥600,000**，salt 16B 随机，输出 32B，用 `QPasswordDigestor::deriveKeyPbkdf2`。硬编码下限，不得由配置降低 |
+| Z-3 | 依赖解耦 | **T-04 不再依赖 T-03**（PIN 认证与桥板身份无代码交集）；**T-09 拆 a/b**：`T-09a` PIN/锁屏/切用户 = T-04+T-10，`T-09b` 绑卡/挂失 = T-07+T-08+T-09a。仍是一张卡，不新增编号 |
+| Z-4 | worker 隔离 | systemd `DynamicUser=yes` + `PrivateNetwork=yes`，不建持久账号；IT-013 按 **worker PID 的 UID ≠ 宿主 UID** 判定，不要求固定值 |
+| Z-5 | BLE | **保留，两层都要**（2026-10-28 定稿）：① 链路层 `pairingStatus==Paired`（Just Works 可接受）；② **应用层挑战-响应** `HMAC-SHA256(k, challenge‖module_id‖boot_id)`，对称密钥 32B。未通过前不接受业务数据。单条业务 payload ≤512B，分片由 `BleTransport` 内部做。实现归 **D**，Z 只做会话门控 |
+| Z-6 | `uidIndexKey` 位置 | **整机单钥**，`AppConfigLocation/uid_index.key`，0600（**不是** `AppLocalDataLocation`——那是 `ModuleManager::dataDirectory()` 交给模块的目录）。理由：刷卡的用途是选用户，发生在登录之前；放每用户 DB 会鸡生蛋 |
+| Z-7 | 模块 QML 隔离 | 模块页改**独立 `QQmlEngine` + 独立 `QQmlContext`**，只注入 `sessionModel`/只读 `userContext`/主题。理由：现在 `Main.qml:667` 用同一引擎，模块页能直读 `connectionManager`，T-13 的"QML 只见选择结果"无法验收 |
+
+#### B. 现在就能做完（无外部前置）
+
+| 任务 | 你能独立完成的部分 | 卡点 |
+|---|---|---|
+| **D1** `uidIndexKey()` | 生成/存储/轮换/失败关闭 + 单测 | **无。** 位置已定（Z-6）。**这是 D 的唯一硬阻塞，优先交付** |
+| **T-04** 用户/PIN/会话 | 全部服务 + UT-002 | **无。** 已解耦（Z-3），不必等 D 的 T-03 |
+| **T-10** 每用户 SQLCipher | `SqlCipherStore`/`UserDatabase` + UT-005 | **无。** 本机可跑（Z-1，已验证解包方式） |
+| **T-11** worker 隔离 | `ModuleWorkerLauncher` + IPC + unit 文件 | 本机可写；真 UID/拒网需 Pi |
+| **T-09a** PIN/锁屏/切用户 + 配对页面 | 全部 QML + 接口 | **无。** 已解耦（Z-3）。配对页面归 Z、后端归 D 的 `TrustStore` |
+
+#### C. 有前置
+
+| 任务 | 阻塞于 | 现在能做的 |
+|---|---|---|
+| **T-09b** 绑卡/挂失 | D 的 T-07/T-08 | 先写 UI 与错误分支，用 stub |
+| **T-12** TLS/BLE | T-04（已完成则无阻塞）；BLE 实机需真模块 | Pi 侧 TLS + BLE 门控全部可写 |
+| **T-13** 用户归属 | Z-7 的引擎隔离（自己做） | 先做引擎隔离，再做归属 |
+| **T-14/T-15/T-16** | L 的固件、实机 | 只做 Pi 侧页面与路由 |
+
+#### D. 需要别人给的东西
+
+| 需要什么 | 谁给 | 影响 |
+|---|---|---|
+| `TrustStore` 后端接口 | **D**（T-03） | T-09a 的配对页面；先按 §5.3.1 的签名写 UI |
+| `deriveUidIndex()` 实现 | **D**（T-08） | T-09b；你只提供密钥 |
+| ESP 侧 BLE 配对 / TLS | **L**（等软件完成） | 实机联调，不是设计前置 |
+| 真 RC522、真 BLE 模块、Pi 3B | **L / 硬件** | 全部 ❓ 项 |
+
+#### D2. BLE 与 LAN 的实现分工（2026-10-28 定稿）
+
+P0 要**同时实现**两条业务 lane。参数已冻结，见 `05-mr-z-todo.md` §0.8。
+
+> **依据**：`TECHNICAL-ADVISORY-REPORT.docx` v4.1 已同步修订（原第 9.3 节写「BLE profile 禁用并测拒绝」，与第 558 行「BLE 安全配对与应用认证」矛盾；2026-10-28 按 F 裁决统一为「BLE 要做」，第 558 行为准）。
+
+| 项 | 定值 | 归属 |
+|---|---|---|
+| LAN 方向 | 模块 `listen`、Pi `connect`（现状，不改） | L（server）/ D（client） |
+| LAN 证书 | 模块**自签**，Pi 固定证书 **SHA-256 指纹**，首次登记 | L 生成 / D 校验 / Z 会话 |
+| LAN 失败 | 无明文回退 | D |
+| BLE 链路层 | `pairingStatus==Paired`，Just Works 可接受 | D |
+| BLE 应用层 | 挑战-响应 `HMAC-SHA256(k, challenge‖module_id‖boot_id)` | D 协议 / L 固件 / Z 门控 |
+| 模块密钥 | 32B，**配对时经 LAN 下发写 NVS** | **T-03（D）** + L 实现 NVS |
+| BLE 单帧 | ≤512B，超出 `INVALID_MESSAGE` | D |
+| lane 热切换 | 允许，**必须重新认证**，最多 3 次 | Z 状态机 / D 传输 |
+| `fixed_ble`+`hotspot_lan` | **合法**（业务走 BLE、包走 LAN） | 保持现状不改 |
+
+**已验证（2026-10-28，本机）**：`QSslServer` + 自签证书 + 客户端 `VerifyNone` + 握手后比指纹可跑通（`pinned_match=1`、`isSelfSigned=1`）；`QSslSocket::supportsSsl()=1`，`OpenSSL 3.0.2`，TLS 1.2/1.3 均支持。
+
+**关键约束**：ESP 固件现在**零处** NVS 密钥存储、BLE 无 `sm_io_cap`/`BLE_SM_*`、LAN 是裸明文 TCP。T-12 的 ESP 侧证据必须等 L，**Pi 侧证据不依赖 L**。
+
+#### E. 一句话版
+
+**Z 现在能做完 5 件事：`uidIndexKey`、T-04、T-10、T-11、T-09a。**
+**做完前三件，D 的 T-08 后半段和 T-12 就解除了阻塞。**
+**T-09b 和 T-13~T-16 的实机部分等 D 与 L，但 Pi 侧代码现在就能写。**
 
 ### 5.4 提 PR 的硬要求
 

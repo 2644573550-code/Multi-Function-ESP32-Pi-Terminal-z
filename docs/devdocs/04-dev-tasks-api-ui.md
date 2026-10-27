@@ -1,8 +1,3 @@
----
-generated_by: dev-tasks
-spec_version: 1.2
-generated_at: 2026-10-26
----
 # 接口与UI任务
 
 路径中的`pi_terminal/`属于Pi仓库，`esp/`属于独立ESP仓库；共享SDK与啸天资料现状见[事实复核](04-dev-tasks-f-review.md)。新增安全服务/接口均是目标，不是现有能力。
@@ -76,14 +71,14 @@ D/Z/L 对字段和依赖逐项签字确认；检查任务编号唯一、依赖�
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.D（PBR/事件链路）、Mr.Z（用户匹配回调） |
+| 主责 | **收口人 Mr.D**（事件链路验收）；分工：Mr.D PBR/事件链路、Mr.Z 用户匹配回调（只新增匹配逻辑，不改 D 的文件） |
 | 协作 | Mr.L |
 | 层级/审核 | 🟡 `guarded` |
 | TDD 模式 | 集成测试先行：伪造/有效RFID事件→Pi事件链路实现→真实桥板复测 |
 | review_profile | `audit` |
 | 依赖 | T-04、T-07 |
 | 追溯 | F-006 / AC-006 / IT-008、E2E-001 |
-| 文件范围 | 现有Pi：`src/transport/PogoControlTransport.cpp`、`src/core/HostEventDetector.h`、`src/core/ConnectionManager.cpp`；新增RFID事件router/auth callback；**依赖远端（不改动）**：`main/rfid_service.c` 的事件字段形状 |
+| 文件范围 | **D（事件链路）**：现有 `src/transport/PogoControlTransport.cpp`、`src/core/HostEventDetector.h`、`src/core/ConnectionManager.cpp`，新增 RFID 事件 router；**Z（用户匹配回调）**：只新增用户匹配与 `uidIndexKey()` 调用点，不改上述 D 的文件；**依赖远端（不改动）**：`main/rfid_service.c` 的事件字段形状 |
 
 ### 测试方法
 
@@ -106,7 +101,7 @@ D/Z/L 对字段和依赖逐项签字确认；检查任务编号唯一、依赖�
 | 层级/审核 | 🟢 `guarded` |
 | TDD 模式 | 实现→交互验证→补UI自动化/回归测试 |
 | review_profile | `guarded` |
-| 依赖 | T-04、T-08、T-10 |
+| 依赖 | T-09a（PIN/锁屏/切用户）：T-04、T-10；T-09b（绑卡/挂失）：T-07、T-08、T-09a。2026-10-28 拆分，同一张卡两段 |
 | 追溯 | F-003 / AC-003、F-006 / AC-006 / E2E-002 |
 | 环境 | Qt 6.5.3、Wayland、Pi 3B |
 | 文件范围 | 现有 `pi_terminal/qml/Main.qml`、`src/core/ModuleCardModel.*`、`src/core/PageProvider.*`；新增登录/锁屏/绑卡QML组件并在CMake资源表登记 |
@@ -132,7 +127,7 @@ QML不得读取SQLCipher文件、raw UID或持有数据库密钥；所有操作�
 | 属性 | 内容 |
 |---|---|
 | 主责 | Mr.D（**Pi 侧**协议/加密传输对端） |
-| 协作 | Mr.L（ESP 侧实现，等软件完成后开工）、Mr.Z（Pi TLS/BLE 会话及用户授权）、Mr.F（安全评审） |
+| 协作 | Mr.L（ESP 侧 TLS server/BLE `sm_io_cap`/NVS，等软件完成后开工）、Mr.Z（**仅**传输层之上的会话与用户授权，不改 `BleTransport`/`HotspotLanTransport`）、Mr.F（安全评审） |
 | 层级/审核 | 🔴 安全协议；`review_profile=audit` |
 | TDD 模式 | 安全集成测试先行：明文/未配对连接拒绝与证书校验失败测试→安全lane实现→网络抓包/降级复测 |
 | review_profile | `audit` |
@@ -143,25 +138,30 @@ QML不得读取SQLCipher文件、raw UID或持有数据库密钥；所有操作�
 
 ### 工作内容
 
-- P0把盆栽固定为 LAN-only profile，在模块服务端与Pi客户端实现TLS；Pi校验证书链/设备绑定/主机身份，桥板/模块身份密钥与传输密钥分离。
-- 若P0 profile仍保留BLE，必须强制加密和经过认证的配对/应用层挑战认证；不能只因GATT连接成功就接受业务payload。建议首轮固定LAN以控范围；未实现安全的BLE profile须显式禁用并验证拒绝。
+- **LAN（2026-10-28 定稿）**：模块当 TLS **server**（现状 `module_data_service.c:279-292` 已是 `listen`），Pi 当 **client**（`ConnectionManager.cpp:238`）。模块用**自签证书**；Pi 以 `VerifyNone` 完成握手后**立即比对 `peerCertificate().digest(Sha256)` 与 TrustStore 登记值**，不符断开返回 `IDENTITY_REJECTED`。首次配对登记，**换模块须重登记**。协议 `TlsV1_2OrLater`。已在本机实测跑通（`pinned_match=1`）。桥板/模块身份密钥与传输密钥分离。
+- **BLE 两层都要（2026-10-28 定稿）**：① 链路层——`QBluetoothLocalDevice::requestPairing()`，`pairingStatus(addr)==Paired` 才能 `writeCharacteristic`，否则返回 `TRANSPORT_SECURITY_REQUIRED`；Just Works 可接受。② **应用层挑战-响应**——连接后先验 `HMAC-SHA256(k, challenge‖module_id‖boot_id)`，**通过前不发送任何业务数据**；32B 对称密钥由 T-03 配对时经 LAN 下发并写入模块 NVS；3 次失败断开，不降级明文。仅 `transport_mode=fixed_ble` 的模块走 BLE。
+- **单条业务 payload ≤512 字节**（BLE），超出 `INVALID_MESSAGE`；20 字节分片由 `BleTransport` 内部完成，对上层透明。
+- **lane 热切换**：允许，但必须**重新认证**，不得搬用旧会话密钥；单次 attach 最多 3 次；切换时丢弃未完成分片。
+- **`fixed_ble` + `hotspot_lan` 包并存是合法组合**（业务走 BLE、插件包走 LAN），不属于「两类混用」。
 - 未加密、未认证、身份不匹配、过期会话或TLS/BLE安全协商失败均关闭；P0 profile 禁止回退现有明文TCP/未认证GATT。
 - 用逐设备测试凭据；密钥仅在设备/Pi，绝不提交仓库。
 - PBR只传attach/status/detach和RC522等控制事件；不将盆栽历史/测量payload塞进PBR。
 
 ### 测试方法
 
-对启用的P0业务profile做有效/错误证书或设备key、未配对连接、握手篡改、断线重连和降级测试；用抓包验证业务payload不能以明文识别；尝试连接任何被禁用的明文/BLE profile，确认拒绝；确认两模块使用不同凭据。
+**LAN**：有效/错误证书指纹、无 TLS 直连、握手篡改、断线重连、降级尝试。抓包不得识别业务 payload。**BLE**：① 未配对 GATT 被拒；② 已配对但挑战-响应失败时业务数据不外发；③ 连续 3 次失败断开。**lane**：LAN 断开后切 BLE 必须重新认证；切换超 3 次 attach 失败。**组合**：`fixed_ble`+`hotspot_lan` 包并存正常（业务走 BLE、包走 LAN）。确认两模块使用不同凭据。
 
 ### 验收标准
 
-- P0固定LAN业务profile要求TLS且设备认证；若启用BLE，同样必须加密并认证。
+- **LAN**：模块当 TLS server、Pi 当 client；Pi 用自签证书 **SHA-256 指纹固定**（首次登记，换模块须重登记）；握手失败无明文回退。
+- **BLE**：**两层都要**——① 链路层 `pairingStatus==Paired`（Just Works 可接受）；② **应用层挑战-响应**（`HMAC-SHA256(对称密钥, challenge‖module_id‖boot_id)`），未通过前不接受任何业务数据。
 - Pi能验证模块身份；错误/共享/撤销凭据拒绝。
-- BLE未建立安全配对/应用认证前不接受GATT业务数据。
-- LAN不接受明文TCP session；TLS失败无fallback。
+- **BLE 单条业务 payload ≤512 字节**，超出 `INVALID_MESSAGE`；分片对上层透明。
+- **lane 热切换必须重新认证**，不得搬用旧会话密钥；单次 attach 最多 3 次。
 - 抓包看不到传感器明文或session credential。
 - 断线/切用户/撤权后旧session不可继续发数据。
 - 测试密钥和设备凭据不进入Git、日志或PR。
+- **BLE 与 LAN 的关系**：一次 attach 只用一条业务 lane（可热切换）；`fixed_ble` + `hotspot_lan` 包并存是合法组合（业务走 BLE、插件包走 LAN），不算「混用」。
 
 ### Review 要点
 
@@ -171,7 +171,7 @@ D提交 Pi 侧协议/key separation 设计，F审核算法/证书验证/fail-clo
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（ESP 固件）、Mr.D（**Pi 侧接口与字段**）、Mr.Z（用户归属/UI） |
+| 主责 | **收口人 Mr.L**（整机验收签字）；分工：Mr.L ESP 固件、Mr.D **Pi 侧接口与字段**、Mr.Z 用户归属/UI |
 | 层级/审核 | 🟡 `guarded` |
 | TDD 模式 | 集成测试先行：模块会话/数据归属→业务数据接入→端到端复测 |
 | review_profile | `guarded` |
@@ -187,7 +187,7 @@ D提交 Pi 侧协议/key separation 设计，F审核算法/证书验证/fail-clo
 
 独立模块身份认证、真实 attach/status、所有已实现传感器值显示、时间/新鲜度/故障状态正确；退出用户后旧用户上下文不能继续读取；模块断开显示未知而非伪造正常。数据必须走经配置选择的BLE-only或LAN-only lane，不得把LinkIt/PBR控制帧冒充传感器业务数据。
 
-“全部”包括温度、湿度、气压、照度、battery_V/battery_pct及供电/保护状态；缺传感器或无可靠外部电源检测则显示不可用/unknown，charging当前为null，不伪造测量。P0固定LAN TLS、禁用BLE；现有Qt6.4.2/明文历史验证不代替Qt6.5.3/SQLCipher/worker新路径验收。
+“全部”包括温度、湿度、气压、照度、battery_V/battery_pct及供电/保护状态；缺传感器或无可靠外部电源检测则显示不可用/unknown，charging当前为null，不伪造测量。P0固定LAN TLS；BLE 保留但须已配对（`pairingStatus==Paired`）才接受业务数据，未配对拒绝、不降级明文（2026-10-28 修订）；现有Qt6.4.2/明文历史验证不代替Qt6.5.3/SQLCipher/worker新路径验收。
 
 ### Review 要点
 
@@ -197,7 +197,7 @@ D提交 Pi 侧协议/key separation 设计，F审核算法/证书验证/fail-clo
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（硬件/固件）、Mr.D（**Pi 侧事件字段与接入接口**）、Mr.Z（页面/会话权限） |
+| 主责 | **收口人 Mr.L**（整机验收签字）；分工：Mr.L 硬件/固件、Mr.D **Pi 侧事件字段与接入接口**、Mr.Z 页面/会话权限 |
 | 层级/审核 | 🟡 `guarded` |
 | TDD 模式 | 集成测试先行：两路遮挡/恢复输入→事件实现→探头实机验证 |
 | review_profile | `guarded` |
@@ -221,7 +221,7 @@ D提交 Pi 侧协议/key separation 设计，F审核算法/证书验证/fail-clo
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（实机）、Mr.D（**Pi 侧路由与状态机**）、Mr.Z（用户/页面） |
+| 主责 | **收口人 Mr.L**（实机验收签字）；分工：Mr.L 实机、Mr.D **Pi 侧路由与状态机**、Mr.Z 用户/页面。**F 只判是否满足 P0 门槛，不代签实现** |
 | 层级/审核 | 🔴 `audit` |
 | TDD 模式 | E2E先行：两模块独立运行/断开测试→闭环实现→回归 |
 | review_profile | `audit` |
@@ -244,7 +244,7 @@ D提交 Pi 侧协议/key separation 设计，F审核算法/证书验证/fail-clo
 
 | 属性 | 内容 |
 |---|---|
-| 主责 | Mr.L（实机）、Mr.D（**Pi 侧路由与状态机**）、Mr.Z（用户/页面）、Mr.F（裁决） |
+| 主责 | **收口人 Mr.L**（实机验收签字）；分工：Mr.L 实机、Mr.D **Pi 侧路由与状态机**、Mr.Z 用户/页面。**Mr.F 只做 P0 门槛裁决（通过/不通过），不代签实现** |
 | 层级/审核 | 🔴 `audit` |
 | TDD 模式 | 系统测试先行：双槽并发/拔槽测试→双路路由实现→压力复测 |
 | review_profile | `audit` |

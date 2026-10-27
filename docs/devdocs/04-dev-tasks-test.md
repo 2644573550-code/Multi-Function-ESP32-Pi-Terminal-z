@@ -1,8 +1,5 @@
 ---
-generated_by: test-cases
 document: p0-test-plan
-spec_version: 1.2
-generated_at: 2026-10-26
 ---
 # P0 测试和验收任务
 
@@ -37,7 +34,7 @@ generated_at: 2026-10-26
 | IT-011 | IT | 双槽同时运行、独立路由、单槽故障 | D/Z/L/F |
 | IT-012 | IT | SQLCipher运行时打开、用户间不可读 | Z |
 | IT-013 | IT | Worker隔离、DB/文件拒绝访问、无公网egress | Z/D/L/F |
-| IT-014 | IT | 模块业务数据LAN TLS（BLE若启用则安全认证）、明文降级拒绝和抓包检查 | D/L/Z |
+| IT-014 | IT | 模块业务数据LAN TLS（指纹固定）+ BLE 两层（配对+应用层挑战）、明文降级拒绝和抓包检查 | D/L/Z |
 | E2E-001 | E2E | 已绑定卡→PIN→用户会话 | D/Z |
 | E2E-002 | E2E | 登录后绑卡和管理员挂失 | Z |
 | E2E-003 | E2E | 盆栽全部数据展示 | L/D/Z |
@@ -73,9 +70,14 @@ generated_at: 2026-10-26
 
 ### IT-014：模块业务数据加密和认证
 
-P0固定LAN profile，抓取链路并注入无TLS TCP、错误设备key、过期会话和TLS协商失败；若P0启用BLE，再测试未配对GATT和错误应用认证；未启用的BLE profile必须确认被禁用。
+**LAN**：抓取链路，注入无TLS TCP、错误设备证书指纹、过期会话、TLS 协商失败。通过条件：自签证书 + `peerCertificate().digest(Sha256)` 与 TrustStore 登记值一致才算通过；指纹不符立即断开返回 `IDENTITY_REJECTED`；**无明文回退**。
 
-通过：P0 LAN业务lane必须TLS+设备认证；BLE若启用则强制加密和应用认证，否则连接被拒绝；抓包不能恢复传感器明文或凭证；任何错误均不回退旧明文协议。
+**BLE**（两层都要验）：
+1. 链路层——未配对（`pairingStatus!=Paired`）时 `writeCharacteristic` 被拒，返回 `TRANSPORT_SECURITY_REQUIRED`。
+2. 应用层——已配对但挑战-响应失败时，**业务数据不得交给模块**；连续 3 次失败断开。
+3. 抓包不得恢复传感器明文或凭证；不得出现「已配对即放行」的旁路。
+
+**通用**：任何错误均不回退旧明文协议；单条业务 payload 超 512 字节被拒（`INVALID_MESSAGE`）；lane 热切换后未经重新认证的数据被拒。
 
 ### IT-013：基础worker隔离
 
@@ -130,4 +132,4 @@ P0固定LAN profile，抓取链路并注入无TLS TCP、错误设备key、过期
 | F-010 双模块 | AC-010 同时运行/单槽故障 | IT-011、E2E-005/006、Journey-001 | 待执行 |
 | F-011 SQLCipher | AC-011 每用户隔离/错误key拒绝 | UT-005、IT-012 | 待执行 |
 | F-012 worker sandbox | AC-012 DB/文件/公网拒绝、崩溃隔离 | IT-013 | 待执行 |
-| F-013 业务数据安全传输 | AC-013 P0 LAN TLS/设备认证；BLE启用时安全认证；无明文降级 | IT-014、E2E-003/006 | 待执行 |
+| F-013 业务数据安全传输 | AC-013 P0 LAN TLS/设备认证（指纹固定）；BLE 配对+应用层挑战；无明文降级 | IT-014、E2E-003/006 | 待执行 |

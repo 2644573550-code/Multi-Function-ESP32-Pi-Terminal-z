@@ -1,8 +1,3 @@
----
-generated_by: dev-tasks
-spec_version: 1.2
-generated_at: 2026-10-26
----
 # 核心逻辑任务
 
 路径所属仓库、当前事实和目标实现的区别见[总计划](04-dev-tasks.md#0-项目基线与代码现状)；接口/权限以[F审核稿](04-dev-tasks-f-day1.md)为准。F文档审定不替代各任务的实现、技术签认或实机验收。
@@ -28,6 +23,7 @@ generated_at: 2026-10-26
 - 模块身份区分正式签发和 DIY 现场生成两条路线。
 - P0盆栽与啸天各使用一份现场生成的唯一DIY测试身份；首次配对由Pi登记。正式签发模块路线仍需保留，但不把项目CA私钥发给普通用户。
 - 身份撤销、重配、丢失设备处置。
+- **模块 BLE 对称密钥下发**（2026-10-28 新增，T-12 前置）：首次配对时经一次性 LAN 连接下发 32 字节密钥，模块写 NVS；已下发则拒绝重复，须先显式撤销。模块侧 NVS 实现归 L，Pi 侧下发流程归本任务。
 - 私钥只入设备和 Pi 的受控秘密存储；禁止提交仓库。
 - 现有 `CONFIG_APP_PI_DATA_TOKEN` 是业务session credential，不得复用为 bridge/module identity key、TLS key或BLE应用层密钥；私有 `sdkconfig` 不得提交。
 
@@ -41,6 +37,7 @@ generated_at: 2026-10-26
 - 桥板只接受项目签发的测试身份。
 - DIY 模块身份逐台唯一，第二台不能复用第一台的 key。
 - 撤销后拒绝 attach、status、RFID 和业务事件。
+- 模块 BLE 密钥：已下发后重复下发被拒；撤销后可重新配对；密钥不出现在日志、镜像或 `sdkconfig`。
 - 扫描 PR 和日志，不含私钥/共享 secret。
 
 ### Review 要点
@@ -56,7 +53,7 @@ generated_at: 2026-10-26
 | 层级/审核 | 🔴 核心逻辑；`review_profile=audit` |
 | TDD 模式 | 测试先行：PIN/session失败用例→服务实现→限速/撤销重构 |
 | review_profile | `audit` |
-| 依赖 | T-01、T-03 |
+| 依赖 | T-01（2026-10-28 解除对 T-03 的依赖：PIN 认证与桥板身份无代码交集） |
 | 追溯 | F-003 / AC-003 / UT-002、IT-004 |
 | 接口 | `UserService`、`AuthService`、`PinPolicy`、`SessionManager`；均待新增 |
 | 文件范围 | 新增 `pi_terminal/src/security/UserService.{h,cpp}`、`AuthService.{h,cpp}`、`PinPolicy.{h,cpp}`、`SessionManager.{h,cpp}`及最小任务能力上下文；接入 `pi_terminal/CMakeLists.txt` 和 `src/app/TerminalApplication.{h,cpp}` |
@@ -137,12 +134,12 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 | review_profile | `audit` |
 | 依赖 | T-04 |
 | 追溯 | F-011 / AC-011 / UT-005、IT-012 |
-| 文件范围 | Pi C++ trusted data service、Qt SQL driver/SQLCipher build config、DB schema/migration |
-| 代码路径 | 新增 `pi_terminal/src/security/SqlCipherStore.{h,cpp}`、`UserDatabase.{h,cpp}`；更新 `pi_terminal/CMakeLists.txt` 及DB/schema测试。Qt SQL plugin实际入口须在第1天确认后写入PR |
+| 文件范围 | Pi C++ trusted data service、SQLCipher C API 链接配置（**不用 Qt SQL 插件**）、DB schema/migration |
+| 代码路径 | 新增 `pi_terminal/src/security/SqlCipherStore.{h,cpp}`、`UserDatabase.{h,cpp}`；更新 `pi_terminal/CMakeLists.txt`（`find_library(SQLCIPHER_LIB sqlcipher)` + `-DSQLITE_HAS_CODEC`）及DB/schema测试。**不走 `QSqlDatabase`**：Qt 6.5.3 SDK 无 SQLCipher 驱动、无 `qsql_sqlite_p.h`，重编 QSQLITE 不可行（2026-10-28 F 裁决） |
 
 ### 工作内容
 
-- 第 1 天验证 Pi 目标 Qt 6.5.3 能否加载/构建 SQLCipher driver；形成通过日志。
+- 第 1 天验证 SQLCipher C API 可链接：`sqlite3_key` 打开、`PRAGMA cipher_version`、错误 key 返回 `SQLITE_NOTADB`(26)；形成通过日志。**不再验证 Qt driver 加载**——路线已改为 C API。
 - 每用户独立 SQLCipher DB，密钥只由可信 service 管理。
 - 每用户生成随机 DB key；用户 PIN 经成熟KDF派生KEK后只封装/解封DB key，PIN本身不作SQLCipher key。
 - 登录后key只在trusted service短期内存态；PIN修改在验证旧PIN后重新封装DB key，不重加密整库。
@@ -163,11 +160,11 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 - A context 无法查询、改写 B 的记录。
 - lock后旧前台session API不能继续访问DB；仅原有受限任务能力可由可信服务追加原用户记录；任务停止/退出后所有旧能力拒绝。
 - 原始 UID、PIN、明文健康值不得出现在应用日志。
-- Pi 3B 上驱动加载、DB 打开和关键 PIN/查询延迟测量记录在 PR。
+- Pi 3B 上 SQLCipher 链接（`cipher_version`）、DB 打开和关键 PIN/查询延迟测量记录在 PR。**不测 Qt 驱动加载**——路线已定为 C API（§0.1）。
 
 ### Review 要点
 
-若目标 Qt/SQLCipher 驱动不兼容，必须由 F 裁决正式替代集成方式；不得把普通 SQLite 标记成 SQLCipher 完成。
+存储路线已由 F 裁决（2026-10-28）：直接调 SQLCipher C API，不走 Qt SQL 插件。不得把普通 SQLite 标记成 SQLCipher 完成；CMake 找不到 `libsqlcipher` 时须 `FATAL_ERROR`，不得静默降级。
 
 ## T-11 基础worker进程隔离与默认拒网（P0）
 
@@ -187,7 +184,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 
 - P0 最小要求：模块代码不再在宿主进程内直接以 `QLibrary` 加载执行；至少独立低权限 worker + 有界版本 IPC。
 - 现有盆栽插件/历史及任意QML页面不能原样视作隔离完成；C ABI业务迁至worker/可信服务，宿主仅运行受控UI，T-13同步改造并补锁屏任务能力测试。
-- worker 使用非特权 UID；无数据库/任意文件读权限；仅访问专用运行目录和必要设备句柄。
+- worker 使用非特权 UID（**`DynamicUser=yes`**，不建持久账号；判定为「worker UID ≠ 宿主 UID」，不要求固定值）；无数据库/任意文件读权限；仅访问专用运行目录和必要设备句柄。
 - Pi 热点/WAN forwarding 默认拒绝；worker 默认无公网 egress；ESP 产品默认配置不启用任意外网 STA。
 - 只做默认拒绝和策略验证；域名代理、复杂动态授权、完整 syscall/seccomp hardening 列 P1。
 
@@ -197,7 +194,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 
 ### 验收标准
 
-- worker PID 与宿主不同、运行 UID 非特权。
+- worker PID 与宿主不同，且运行 UID ≠ 宿主 UID（`systemctl show` 确认 `DynamicUser=yes`）。
 - worker 无法读取 SQLCipher 文件、密钥、Pi 主用户目录。
 - worker 默认无法访问公网；Pi 默认不转发热点流量到 WAN。
 - worker 崩溃不导致 Qt 主程序崩溃，且 session/资源可回收。

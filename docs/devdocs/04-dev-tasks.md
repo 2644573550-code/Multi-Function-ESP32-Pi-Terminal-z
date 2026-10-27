@@ -1,8 +1,5 @@
 ---
-generated_by: dev-tasks
 document: team-development-plan
-spec_version: 1.2
-generated_at: 2026-10-26
 source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_terminal code unchanged from 8349ce8); ESP service main 16aebdd
 ---
 
@@ -20,7 +17,7 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_ter
 | Pi | Raspberry Pi 3B，64 位 Raspberry Pi OS Bookworm，Qt 6.5.3，Wayland |
 | 桥板 | ESP32-S3、RC522、USB-UART；Pi 当前测试路径 `/dev/ttyUSB0`，验收需同时记 `/dev/serial/by-id/` |
 | 模块 | 智能盆栽已有实机模块；啸天探头未采购，L 负责采购，目标第 3 天前到货 |
-| P0 演示 | 真实 RC522→Pi/PIN→盆栽全部已实现传感器数据（业务LAN必须TLS；BLE若启用须加密认证）；啸天两路真实输入→事件→页面；分别通过后两模块同时运行 |
+| P0 演示 | 真实 RC522→Pi/PIN→盆栽全部已实现传感器数据（业务LAN必须TLS+指纹固定；BLE须配对+应用层挑战）；啸天两路真实输入→事件→页面；分别通过后两模块同时运行 |
 | 身份 | `bridge_id`、各 `device_id` 独立；桥板统一项目签发；模块支持正式签发与 DIY 逐模块现场生成。P0两个原型模块使用不同的 DIY 测试身份 |
 | 密钥 | 私钥只保存在设备和 Pi；公开仓库只提交生成工具、格式、非秘密公钥/指纹或已失效样例，绝不提交真实私钥 |
 | 代码基线 | 代码审查时 Pi main 为 `d6ee9ac`（相对 `8349ce8` 仅增加报告）；F第1天 fetch 后 Pi `origin/main=20013b2`，新增报告/计划文档，`pi_terminal/` 代码树未变；ESP 服务远端 `main=16aebdd` |
@@ -36,7 +33,7 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_ter
 
 ### P0 范围覆盖说明
 
-本次 P0 范围按用户最新确认执行，**高于技术建议报告 v4.0 的原阶段优先级建议**：两周最小系统必须包括每用户 SQLCipher 数据隔离、基础低权限 worker 进程隔离、默认拒绝公网、业务数据加密和双模块同时运行。P0 仅做最小可验收实现；完整备份恢复、恢复码、生产证书链、完整 systemd 加固、域名代理及产品化仍列 P1。若 Qt SQLCipher 驱动、Pi 网络隔离、ESP TLS/BLE安全接入或双槽硬件核验遇阻，Mr.F 必须立即报告为关键阻塞，不得无声降级验收。
+本次 P0 范围按用户最新确认执行，**高于技术建议报告 v4.0 的原阶段优先级建议**：两周最小系统必须包括每用户 SQLCipher 数据隔离、基础低权限 worker 进程隔离、默认拒绝公网、业务数据加密和双模块同时运行。P0 仅做最小可验收实现；完整备份恢复、恢复码、生产证书链、完整 systemd 加固、域名代理及产品化仍列 P1。若 SQLCipher C API 不可用、Pi 网络隔离、ESP TLS/BLE安全接入或双槽硬件核验遇阻，Mr.F 必须立即报告为关键阻塞，不得无声降级验收。
 
 ## 1. 分层和审核强度
 
@@ -67,6 +64,11 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_ter
 
 - **PBR/LinkIt 控制面**：桥板 attach/status/detach、RC522 `rfid_card`、桥板控制/诊断。PBR 当前无 AEAD；P0 增加 AEAD 后仍不在 PBR 传输业务传感器历史。盆栽BLE GATT未强制安全属性，LAN/TCP无TLS，P0需升级业务lane。
 - **模块业务数据面**：按模块合同使用固定 BLE 或 Pi hotspot LAN/TCP；盆栽全部传感器数据走此数据面。Pi `TransportPolicy` 将 BLE-only/LAN-only 作为互斥 profile。
+- **P0 必须同时实现 BLE 与 LAN 两条 lane（2026-10-28 定稿；报告书 v4.1 第 9.3 节同步修订，与第 558 行风险表一致）**：
+  - LAN：模块当 TLS server（现状 `listen`），Pi 当 client；模块**自签证书**，Pi 以 **SHA-256 指纹固定**（首次登记，换模块须重登记）；无明文回退。已在本机实测跑通。
+  - BLE：**两层**——链路层 `pairingStatus==Paired`（Just Works 可接受）+ **应用层挑战-响应** `HMAC-SHA256(k, challenge‖module_id‖boot_id)`；32B 对称密钥由 T-03 配对时经 LAN 下发写模块 NVS；未通过前不发业务数据。
+  - 单条业务 payload ≤512B（BLE），分片由 `BleTransport` 内部完成；lane 可热切换但**必须重新认证**，单次 attach 最多 3 次。
+  - `fixed_ble` + `hotspot_lan` 包并存合法（业务走 BLE、插件包走 LAN），不属于「两类混用」。
 - **目标不变量**：控制/业务链路均执行身份/授权检查；控制事件绑定物理槽及绑定代次，业务绑定设备/业务session/task/原用户，slot仅为可空位置属性；RC522为桥板级事件，使用bridge/reader/boot/session上下文，不伪造slot/device。PBR CRC仅framing/error detection，不是MAC；当前token会话不等于该目标已实现。
 - **部署前置**：ESP 项目配置中 `CONFIG_APP_PI_DATA_ENABLE` 默认开启、LAN profile 默认选中、STA 密码默认空、session token 默认空；空 token 会使服务拒绝启动，空 Wi-Fi 密码允许 open authmode。P0 测试使用不入库的私有 `sdkconfig`/测试 token，拒绝开放网络配置，Pi hotspot 不做 WAN 转发。
 
@@ -78,7 +80,7 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_ter
 T-01 F冻结需求、字段、权限、错误码和验收
  ├── T-02 D/Z确认Pi构建、Qt和串口基线
  ├── T-03 D/F/L冻结桥板/模块身份和密钥边界
- ├── T-04 Z实现用户、PIN和会话服务（同时依赖T-03）
+ ├── T-04 Z实现用户、PIN和会话服务（仅依赖T-01；2026-10-28解除对T-03依赖）
  ├── T-05 D实现PBR编解码和桥板事件状态机
  └── T-06 L采购啸天探头并核验双槽电气
 
@@ -88,8 +90,11 @@ T-03 + T-05
 T-04 + T-07
  └── T-08 D/Z接通真实RC522→Pi→UID派生→PIN
 
-T-04 + T-08 + T-10
- └── T-09 Z完成登录、锁屏、绑卡、挂失UI
+T-04 + T-10
+ └── T-09a Z完成PIN页、锁屏、切用户、配对/撤销页面
+
+T-07 + T-08 + T-09a
+ └── T-09b Z完成绑卡、挂失UI（同一张T-09卡，2026-10-28拆段）
 
 T-04
  └── T-10 Z完成每用户SQLCipher最小存储
@@ -98,11 +103,11 @@ T-03 + T-04 + T-10
  └── T-11 Z/D/L完成基础worker隔离和默认拒网
 
 T-01 + T-03 + T-04
- └── T-12 D/L/Z实现LAN TLS业务lane；BLE启用则加密认证，否则禁用
+ └── T-12 D/L/Z实现LAN TLS业务lane；BLE profile 须已配对才接受业务数据
 
 T-03 + T-05 + T-06 + T-11 + T-12
- ├── T-13 L/D/Z盆栽安全接入和全量传感器数据显示
- └── T-14 L/D/Z啸天两路真实输入和状态页面
+ ├── T-13 L固件/D只做Pi侧接口/Z用户UI：盆栽安全接入和全量数据显示
+ └── T-14 L硬件固件/D只做Pi侧事件字段/Z页面：啸天两路真实输入
 
 T-08 + T-09 + T-10 + T-11 + T-12 + T-13 + T-14
  └── T-15 两模块分别运行
@@ -119,19 +124,19 @@ T-17 F最终P0实机验收与PR合并
 | T-01 | 需求、接口、权限和验收冻结 | F | 🔴 audit | 无 | IT-001 |
 | T-02 | Pi/Qt/USB串口基线 | D、Z | ⚪ audit | T-01 | IT-002 |
 | T-03 | 桥板/模块身份与密钥边界 | D、F、L | 🔴 audit | T-01 | UT-001、IT-003 |
-| T-04 | 用户、PIN、会话和管理员权限 | Z | 🔴 audit | T-01、T-03 | UT-002、IT-004 |
+| T-04 | 用户、PIN、会话和管理员权限 | Z | 🔴 audit | T-01 | UT-002、IT-004 |
 | T-05 | PBR编解码、接收和桥板事件状态机 | D | 🟡 guarded | T-01 | UT-003、IT-005 |
 | T-06 | 啸天采购与双槽电气核验 | L | ⚪ audit | T-01 | IT-006 |
 | T-07 | 测试AEAD、重放保护、ACK和事件去重 | D | 🔴 audit | T-03、T-05 | UT-004、IT-007 |
-| T-08 | RC522到Pi安全事件闭环 | D、Z | 🟡 guarded | T-04、T-07 | IT-008、E2E-001 |
-| T-09 | Qt登录、绑卡、锁屏、挂失 | Z | 🟢 guarded | T-04、T-08、T-10 | E2E-002 |
+| T-08 | RC522到Pi安全事件闭环 | **D 收口**；D 事件链路、Z 用户匹配 | 🟡 guarded | T-04、T-07 | IT-008、E2E-001 |
+| T-09 | Qt登录、绑卡、锁屏、挂失 | Z | 🟢 guarded | T-09a：T-04、T-10；T-09b：T-07、T-08、T-09a | E2E-002 |
 | T-10 | 每用户SQLCipher最小实现 | Z | 🔴 audit | T-04 | UT-005、IT-012 |
 | T-11 | 基础worker隔离和默认拒网 | Z、D、L | 🔴 audit | T-03、T-04、T-10 | IT-013 |
 | T-12 | 模块业务数据TLS/BLE安全传输 | D（Pi 侧）、L（ESP 侧）、Z | 🔴 audit | T-01、T-03、T-04 | IT-014 |
-| T-13 | 盆栽模块安全接入和全量数据 | L（固件）、D（Pi 侧接口）、Z（UI） | 🟡 guarded | T-03、T-05、T-11、T-12 | IT-009、E2E-003 |
-| T-14 | 啸天两路真实输入和页面 | L（固件）、D（Pi 侧字段）、Z（UI） | 🟡 guarded | T-06、T-07、T-11、T-12 | IT-010、E2E-004 |
-| T-15 | 两模块分别运行 | L（实机）、D（Pi 侧路由）、Z（页面） | 🔴 audit | T-08～T-14 | E2E-005 |
-| T-16 | 双槽同时运行、独立路由和单槽故障 | F（判）、L（实机）、D（Pi 侧路由）、Z（页面） | 🔴 audit | T-15 | IT-011、E2E-006 |
+| T-13 | 盆栽模块安全接入和全量数据 | **L 收口**；L 固件、D Pi 侧接口、Z UI | 🟡 guarded | T-03、T-05、T-11、T-12 | IT-009、E2E-003 |
+| T-14 | 啸天两路真实输入和页面 | **L 收口**；L 固件、D Pi 侧字段、Z UI | 🟡 guarded | T-06、T-07、T-11、T-12 | IT-010、E2E-004 |
+| T-15 | 两模块分别运行 | **L 收口**；L 实机、D Pi 侧路由、Z 页面 | 🔴 audit | T-08～T-14 | E2E-005 |
+| T-16 | 双槽同时运行、独立路由和单槽故障 | **L 收口**；L 实机、D Pi 侧路由、Z 页面、F 判门槛 | 🔴 audit | T-15 | IT-011、E2E-006 |
 | T-17 | P0最终实机验收和PR合并 | F | 🔴 audit | T-16 | Journey-001 |
 
 详细任务卡：
@@ -162,7 +167,7 @@ T-17 F最终P0实机验收与PR合并
 - [ ] 桥板项目签发测试身份与每个模块身份相互独立。
 - [ ] DIY 模块密钥逐台唯一，仅保存在设备和 Pi。
 - [ ] PBR 测试版 AEAD、序号和重放保护通过。
-- [ ] P0固定LAN业务profile使用TLS；若启用BLE则强制加密/认证，否则BLE profile明确禁用；明文和降级均被拒绝。
+- [ ] P0固定LAN业务profile使用TLS（自签+指纹固定）；BLE须**配对+应用层挑战-响应**两层，未通过不发业务数据；明文和降级均被拒绝。
 - [ ] RFID ACK、有限重传、TTL 和去重通过。
 - [ ] 每用户 SQLCipher 数据库互相不可读。
 - [ ] 盆栽旧明文JSON历史不再作为P0数据存储/读取路径；不擅自删除或把无归属旧记录分给新用户。
@@ -181,7 +186,7 @@ T-17 F最终P0实机验收与PR合并
 
 | 时间 | 必须交付 | 失败处置 |
 |---|---|---|
-| 第1天 | F审定范围/边界并收集技术签认；D做串口/身份/AEAD设计及SDK来源检查，Z做Qt/SQLCipher driver与worker UID/sandbox预检，D/L验证ESP TLS及禁用BLE；L核验双槽图并下单探头 | 任一安全基础不可行即由F当日记录blocker和修复路线；密码协议细节未审不得称完全冻结；不用SQLite/同进程伪装通过 |
+| 第1天 | F审定范围/边界并收集技术签认；D做串口/身份/AEAD设计及SDK来源检查，Z做SQLCipher C API与worker UID/sandbox预检，D/L验证ESP TLS（含指纹固定）及BLE两层（配对+应用层挑战-响应）；L核验双槽图并下单探头 | 任一安全基础不可行即由F当日记录blocker和修复路线；密码协议细节未审不得称完全冻结；不用SQLite/同进程伪装通过 |
 | 第2-3天 | D完成PBR reader/编码骨架；Z完成PIN/session和SQLCipher schema骨架；L探头到货、双槽电气实测、盆栽字段确认 | 第3天无探头或双槽不支持时升级为红色阻塞，F立即协调硬件改造和后续步骤 |
 | 第4-6天 | D测试AEAD/重放/ACK；Z完成每用户DB与worker最小隔离；L完成啸天两路固件和盆栽全量数据链 | 每日由PR/Issue异步更新；安全验收不得通过减少测试规避 |
 | 第7天 | 中期演示：RC522模拟/实卡PIN流程、SQLCipher跨用户拒绝、worker拒网、盆栽数据、啸天两路输入、双槽结论 | 未通过项指定责任人和截止时间；F判断是否仍有14天完成可能 |
@@ -192,7 +197,7 @@ T-17 F最终P0实机验收与PR合并
 
 ### 关键路径风险
 
-- T-10 SQLCipher驱动和Pi部署可行性必须第1天验证；需要给出Qt SQL plugin/library的实际加载证据。
+- T-10 存储路线已定（2026-10-28）：**直接调 SQLCipher C API**，不走 Qt SQL 插件。Qt 6.5.3 SDK 不带 SQLCipher 驱动、无 `qsql_sqlite_p.h` 私有头，重编 QSQLITE 需要整套 Qt 源码，不可行。第 1 天验证项改为「C API 链接 + `PRAGMA cipher_version` + 错误 key 返回 26」。
 - T-11 必须从当前 `QLibrary` 同进程插件迁移出P0所需的最小 worker 边界；仅启动 `QProcess` 不构成沙箱。
 - 双槽物理存在不代表独立电气通道；T-06结论是T-15前置门。
 - 桥板当前 PBR 没有 AEAD/事件 ACK；T-07 是真实 UID可被Pi信任前置条件。
