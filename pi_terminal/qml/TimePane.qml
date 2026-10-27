@@ -22,7 +22,7 @@ Rectangle {
     color: Theme.surface
     border.color: Theme.outlineVariant
 
-    readonly property real headerHeight: Math.max(48 * Theme.scaleFactor, headingColumn.implicitHeight)
+    readonly property real headerHeight: Math.max(48 * Theme.scaleFactor, headingRow.implicitHeight)
     // 正文占用的纵向预算：上边距 + 标题 + 半格间距在上，一格间距在下。隐式高度与
     // 内部 Flickable 用同一套账，否则单栏“按内容高”的卡片自己就会溢出半格。
     readonly property real bodyTop: headerHeight + Theme.gap * 1.5
@@ -58,28 +58,36 @@ Rectangle {
                     light: true
                 }
             }
-            Column {
-                id: headingColumn
+            // 标题一行：主标题在左、小字（副标题）在右，不再各占一行——省下来的高度
+            // 全给正文。副标题放不下就整条不显示（宁可删掉也不截断成没意义的半句）。
+            RowLayout {
+                id: headingRow
                 x: 48 * Theme.scaleFactor + Theme.gap
                 width: Math.max(1, parent.width - 48 * Theme.scaleFactor - Theme.gap)
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 2 * Theme.scaleFactor
+                spacing: Theme.gap / 2
                 CarText {
+                    id: titleText
                     text: card.title
                     heading: true
-                    width: parent.width
+                    Layout.fillWidth: true
                     maximumLineCount: 1
                     elide: Text.ElideRight
                 }
                 CarText {
-                    visible: card.subtitle !== ""
+                    id: subtitleText
                     text: card.subtitle
                     subdued: true
-                    width: parent.width
-                    // 窄卡片里副标题必须单行省略：换行会把标题区撑到 90px 以上，双栏短屏
-                    // 时正文被挤得只剩一百多像素（真机视口下时钟卡就放不下了）。
                     maximumLineCount: 1
                     elide: Text.ElideRight
+                    // 放不下（超过卡片 55% 宽，或主标题本身已经很长）就整条不显示：
+                    // 宁可删掉，也不留半句被截断的小字。
+                    Layout.maximumWidth: card.width * 0.55
+                    // 标题优先：主标题 + 副标题 + 间距放不下时，副标题整条不显示，
+                    // 而不是把主标题挤成「中国…」。
+                    visible: card.subtitle !== ""
+                             && titleText.implicitWidth + implicitWidth + headingRow.spacing
+                                <= headingRow.width
                 }
             }
         }

@@ -201,7 +201,7 @@ private slots:
         QCOMPARE(page->property("timerLabel").toString(), QStringLiteral("01:00"));
     }
 
-    void clockStyleAndRingtoneDefaults() {
+    void clockFacesAndRingtoneDefaults() {
         TimeToolsHost host;
         QQmlEngine engine;
         engine.rootContext()->setContextProperty("systemTools", &host);
@@ -218,14 +218,12 @@ private slots:
         // 新页面的铃声默认取内置 15 秒节选
         QCOMPARE(page->property("alarmRingtone").toString(),
                  QStringLiteral("qrc:/ringtones/default-ringtone.mp3"));
+        // 数字/指针不再二选一：表盘在上、数字钟在下，两者同时存在
         auto *analog = page->findChild<QQuickItem *>(QStringLiteral("analogClock"));
         QVERIFY(analog);
-        QCOMPARE(page->property("clockStyle").toString(), QStringLiteral("digital"));
-        page->setProperty("clockStyle", QStringLiteral("analog"));
-        QTest::qWait(60);
-        QCOMPARE(page->property("clockStyle").toString(), QStringLiteral("analog"));
         QVERIFY(analog->height() > 0);
-        QCOMPARE(host.settings.value(QStringLiteral("time/clock-style")), QStringLiteral("analog"));
+        QVERIFY(page->findChild<QQuickItem *>(QStringLiteral("clockAnnounce")));
+        QCOMPARE(page->property("clockTime").toString().size(), 8);
 
         // 试听按钮：无论默认还是自选铃声都走引擎的同一个入口，且可安全停止。
         // 闹钟页是 Loader 懒加载的，先切过去。
@@ -609,40 +607,6 @@ private slots:
         QVERIFY(sync->property("status").toString().contains(QStringLiteral("线路二")));
     }
 
-    // 时钟样式按钮必须真的响应点击（曾经被报时热区整片盖住，点了只会播报）。
-    void clockStyleButtonsAreClickable() {
-        TimeToolsHost host;
-        QQmlEngine engine;
-        engine.rootContext()->setContextProperty("systemTools", &host);
-        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
-        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
-        QScopedPointer<QObject> object(component.createWithInitialProperties(
-            {{"width", 800}, {"height", 365}, {"uiScale", 0.75}, {"active", true}}));
-        QVERIFY2(object, qPrintable(component.errorString()));
-        auto *page = qobject_cast<QQuickItem *>(object.data());
-        QQuickWindow window;
-        window.resize(800, 365);
-        page->setParentItem(window.contentItem());
-        page->setWidth(800);
-        page->setHeight(365);
-        window.show();
-        QTest::qWait(200);
-
-        QCOMPARE(page->property("clockStyle").toString(), QStringLiteral("digital"));
-        auto *analog = findItemByObjectName(page, QStringLiteral("clockStyleAnalog"));
-        auto *digital = findItemByObjectName(page, QStringLiteral("clockStyleDigital"));
-        QVERIFY(analog && digital);
-        const QPointF analogCenter = analog->mapToScene(QPointF(analog->width() / 2, analog->height() / 2));
-        QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, analogCenter.toPoint());
-        QTest::qWait(120);
-        QCOMPARE(page->property("clockStyle").toString(), QStringLiteral("analog"));
-        QCOMPARE(host.settings.value(QStringLiteral("time/clock-style")), QStringLiteral("analog"));
-        const QPointF digitalCenter = digital->mapToScene(QPointF(digital->width() / 2, digital->height() / 2));
-        QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, digitalCenter.toPoint());
-        QTest::qWait(120);
-        QCOMPARE(page->property("clockStyle").toString(), QStringLiteral("digital"));
-    }
-
     // 340px 宽的卡片是双栏的硬约束：卡片内任何可见控件都不得越过卡片右边界。
     // 计时器预设原本按页面宽度算列数、三组步进器挤一行，真机上「秒」直接被挤出卡片。
     void paneContentStaysInsideCard() {
@@ -900,8 +864,10 @@ private slots:
                     left->mapToItem(page, QPointF(0, 0)).y() + left->height() - 1);
             auto *flick = page->findChild<QQuickItem *>(QStringLiteral("timePage"));
             QVERIFY(flick);
-            QVERIFY2(flick->property("contentHeight").toDouble() > flick->height() + 1,
-                     "narrow layout must scroll as one page");
+            // 单栏：两张卡上下堆叠，第二张必须在滚动范围内（放得下就不滚，放不下整页滚）
+            QVERIFY2(right->mapToItem(page, QPointF(0, right->height())).y() <=
+                         flick->property("contentHeight").toDouble() + 1,
+                     "narrow layout must keep the second card inside the scroll extent");
         }
     }
 
@@ -1077,7 +1043,6 @@ private slots:
     // 默认值会先覆盖磁盘设置，load() 再读回默认值 —— 表现为“重启后设置全丢”。
     void storedSettingsSurviveConstruction() {
         TimeToolsHost host;
-        host.settings.insert(QStringLiteral("time/clock-style"), QStringLiteral("analog"));
         host.settings.insert(QStringLiteral("time/cities"),
                              QStringLiteral("[\"Asia/Tokyo\",\"Europe/London\"]"));
         host.settings.insert(QStringLiteral("time/api-mode"), QStringLiteral("custom"));
@@ -1114,8 +1079,8 @@ private slots:
              {"alarmEngine", QVariant::fromValue(alarm.data())}}));
         QVERIFY2(object, qPrintable(component.errorString()));
         auto *page = qobject_cast<QQuickItem *>(object.data());
-        QCOMPARE(page->property("clockStyle").toString(), QStringLiteral("analog"));
-        QCOMPARE(host.settings.value(QStringLiteral("time/clock-style")), QStringLiteral("analog"));
+        QCOMPARE(page->property("alarmRingtone").toString(),
+                 QStringLiteral("qrc:/ringtones/default-ringtone.mp3"));
     }
 
     void twoPanePanesFillViewport_data() {

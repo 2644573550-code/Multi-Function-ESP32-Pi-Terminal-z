@@ -76,7 +76,6 @@ Item {
     property string clockDate: ""
     property string clockWeekday: ""
     property int localOffset: 0
-    property string clockStyle: "digital"      // "digital" | "analog"
     property int clockHour: 0
     property int clockMinute: 0
     property int clockSecond: 0
@@ -98,7 +97,7 @@ Item {
     // ------------------------------------------------------------ 持久化设置
 
     property double timerSavedAt: 0
-    // 初值 true：构造期的初值赋值不能先覆盖磁盘上的 time/clock-style，见 TimeSync.qml。
+    // 初值 true：构造期的初值赋值不能先覆盖磁盘上的设置，见 TimeSync.qml。
     property bool loadingSettings: true
     // 删除时收干净编辑态：删的就是正在编辑那条 → 回新建态；删的是它前面的 →
     // 编号前移一位，继续编辑同一条。接引擎信号而不是 ListModel 的 countChanged，
@@ -139,7 +138,6 @@ Item {
         timerMinutes = TimeMath.clamp(Number(preset[1]) || 0, 0, 59)
         timerSeconds = TimeMath.clamp(Number(preset[2]) || 0, 0, 59)
         if (alarmEngine) alarmEngine.resetTimer(timerTotalMs)
-        clockStyle = readSetting("time/clock-style", "digital") === "analog" ? "analog" : "digital"
         loadingSettings = false
     }
 
@@ -152,7 +150,6 @@ Item {
         timerSaveTimer.restart()
     }
 
-    onClockStyleChanged: if (!loadingSettings) writeSetting("time/clock-style", clockStyle)
 
     // -------------------------------------------------------------- countdown
 
@@ -240,6 +237,17 @@ Item {
         timerMinutes = minutes % 60
         timerSeconds = 0
         if (alarmEngine) alarmEngine.resetTimer(timerTotalMs)
+        scheduleTimerPresetSave()
+    }
+
+    // 轮盘/预设改过时/分/秒后：没在跑就按新时长复位，并合并写入设置。
+    onTimerHoursChanged: root.timerPartsEdited()
+    onTimerMinutesChanged: root.timerPartsEdited()
+    onTimerSecondsChanged: root.timerPartsEdited()
+
+    function timerPartsEdited() {
+        if (loadingSettings) return
+        if (alarmEngine && !timerRunning) alarmEngine.resetTimer(timerTotalMs)
         scheduleTimerPresetSave()
     }
 
@@ -501,25 +509,19 @@ Item {
                         id: clockColumn
                         anchors.horizontalCenter: parent.horizontalCenter
                         spacing: Theme.gap / 3
-                        Row {
+                        // 指针小钟在上、数字钟在下：不再提供"数字/指针"二选一。
+                        AnalogClock {
+                            objectName: "analogClock"
                             anchors.horizontalCenter: parent.horizontalCenter
-                            spacing: Theme.gap / 2
-                            CarButton {
-                                objectName: "clockStyleDigital"
-                                text: I18n.t("数字")
-                                checked: root.clockStyle === "digital"
-                                onClicked: root.clockStyle = "digital"
-                            }
-                            CarButton {
-                                objectName: "clockStyleAnalog"
-                                text: I18n.t("指针")
-                                checked: root.clockStyle === "analog"
-                                onClicked: root.clockStyle = "analog"
-                            }
+                            // 短屏（真机视口只有 ~365px 高）给小表盘。
+                            height: root.height < 420 ? Math.max(56 * root.uiScale, root.height * 0.16)
+                                                      : 112 * root.uiScale
+                            hours: root.clockHour
+                            minutes: root.clockMinute
+                            seconds: root.clockSecond
                         }
                         Row {
                             id: digitalClockRow
-                            visible: root.clockStyle === "digital"
                             anchors.horizontalCenter: parent.horizontalCenter
                             Repeater {
                                 model: 3
@@ -548,18 +550,6 @@ Item {
                                     }
                                 }
                             }
-                        }
-                        AnalogClock {
-                            objectName: "analogClock"
-                            visible: root.clockStyle === "analog"
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            // 短屏（真机 1024×600 视口只有 ~365px 高）给小表盘，
-                            // 否则数字/指针 + 表盘 + 日期放不进卡片，日期会被切掉。
-                            height: root.height < 420 ? Math.max(56 * root.uiScale, root.height * 0.16)
-                                                      : 112 * root.uiScale
-                            hours: root.clockHour
-                            minutes: root.clockMinute
-                            seconds: root.clockSecond
                         }
                         CarText {
                             anchors.horizontalCenter: parent.horizontalCenter
@@ -602,7 +592,7 @@ Item {
                     CarText {
                         Layout.fillWidth: true
                         maximumLineCount: 1
-                        fontPixelSize: Theme.fontLabel
+                        fontPixelSize: Theme.fontStrong
                         text: I18n.t("城市") + " " + root.cities.length + "/" + root.maxCities
                     }
                     CarButton {
@@ -626,33 +616,46 @@ Item {
                     wrapMode: Text.Wrap
                     text: I18n.t("世界时钟不可用：校时模块未连接。")
                 }
-                Repeater {
-                    model: root.cities.length
-                    delegate: RowLayout {
-                        required property int index
-                        Layout.fillWidth: true
-                        implicitHeight: Math.max(Theme.hit, 40 * root.uiScale)
-                        spacing: Theme.gap
-                        CarText {
-                            Layout.fillWidth: true
-                            maximumLineCount: 1
-                            elide: Text.ElideRight
-                            text: I18n.t(root.cities[index].label)
-                        }
-                        CarText {
-                            Layout.preferredWidth: 84 * root.uiScale
-                            horizontalAlignment: Text.AlignRight
-                            maximumLineCount: 1
-                            fontPixelSize: Theme.fontDisplay
-                            text: TimeMath.formatHm(TimeMath.cityParts(root.cityTickMs, root.zoneOffsets[index]))
-                        }
-                        CarText {
-                            // 与左侧时间同字号；列宽按 "UTC+08:00" 的实际宽度给。
-                            Layout.preferredWidth: 132 * root.uiScale
-                            horizontalAlignment: Text.AlignRight
-                            maximumLineCount: 1
-                            fontPixelSize: Theme.fontDisplay
-                            text: TimeMath.formatOffset(root.zoneOffsets[index])
+                // 每个城市一块：指针小时钟在上、城市名在下，下面再跟当天的 UTC 偏移。
+                GridLayout {
+                    objectName: "worldClockGrid"
+                    Layout.fillWidth: true
+                    columns: width < 360 * root.uiScale ? 2 : 3
+                    columnSpacing: Theme.gap / 2
+                    rowSpacing: Theme.gap / 2
+                    Repeater {
+                        model: root.cities
+                        delegate: ColumnLayout {
+                            id: cityTile
+                            required property var modelData
+                            required property int index
+                            readonly property var parts:
+                                TimeMath.cityParts(root.cityTickMs, root.zoneOffsets[index])
+                            spacing: 2 * root.uiScale
+                            AnalogClock {
+                                Layout.alignment: Qt.AlignHCenter
+                                height: Math.min(80 * root.uiScale, 76)
+                                hours: cityTile.parts.hour
+                                minutes: cityTile.parts.minute
+                                seconds: cityTile.parts.second
+                            }
+                            CarText {
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                                maximumLineCount: 1
+                                elide: Text.ElideRight
+                                fontPixelSize: Theme.fontLabel
+                                text: I18n.t(cityTile.modelData.label)
+                            }
+                            CarText {
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                                maximumLineCount: 1
+                                subdued: true
+                                fontPixelSize: Theme.fontCaption
+                                text: TimeMath.formatHm(cityTile.parts) + " · " +
+                                      TimeMath.formatOffset(root.zoneOffsets[cityTile.index])
+                            }
                         }
                     }
                 }
@@ -712,7 +715,7 @@ Item {
                 // 触发 polish 循环（实机 log 可复现），网格布局行为确定。
                 GridLayout {
                     Layout.fillWidth: true
-                    columns: 3      // 6 个预设 = 3 列 × 2 行；按卡片宽度算列数会切到卡外
+                    columns: 6      // 一行 6 个、只到 48% 高度；给下面的轮盘让出空间
                     columnSpacing: Theme.gap / 2
                     rowSpacing: Theme.gap / 2
                     Repeater {
@@ -720,52 +723,47 @@ Item {
                         delegate: CarButton {
                             required property int modelData
                             Layout.fillWidth: true
-                            text: modelData + I18n.t(" 分钟")
+                            implicitHeight: Math.max(36 * root.uiScale, 36)
+                            fontPixelSize: Theme.fontCaption
+                            topPadding: 0
+                            bottomPadding: 0
+                            leftPadding: Theme.gap * 0.4
+                            rightPadding: Theme.gap * 0.4
+                            text: modelData + I18n.t("分")
                             checked: root.timerPresetMinutes === modelData && !root.timerRunning
                             onClicked: root.applyPreset(modelData)
                         }
                     }
                 }
 
-                // 时/分/秒各占一行（标签 + 数字框 + ± 同一行）。原来三组挤在一个
-                // RowLayout 里，340px 卡片下「秒」会被挤出卡片右边界。
+                // iOS 式轮盘：时/分/秒 三个 Tumbler 并排一行，滚动选值。
+                // 比原来的「三行 ± 按钮」省一半高度，也不用再挤数字输入框。
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Theme.gap / 2
-                    CarText { text: I18n.t("时"); maximumLineCount: 1 }
-                    Item { Layout.fillWidth: true }
-                    StepperBox {
-                        objectName: "timerHourStepper"
-                        value: root.timerHours
-                        maximum: 23
+                    Wheel {
+                        objectName: "timerHourWheel"
+                        Layout.fillWidth: true
                         caption: I18n.t("时")
-                        onAdjusted: function(delta) { root.adjustTimer("hour", delta) }
+                        maximum: 23
+                        value: root.timerHours
+                        onScrolled: function(value) { root.timerHours = value }
                     }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.gap / 2
-                    CarText { text: I18n.t("分"); maximumLineCount: 1 }
-                    Item { Layout.fillWidth: true }
-                    StepperBox {
-                        objectName: "timerMinuteStepper"
-                        value: root.timerMinutes
-                        maximum: 59
+                    Wheel {
+                        objectName: "timerMinuteWheel"
+                        Layout.fillWidth: true
                         caption: I18n.t("分")
-                        onAdjusted: function(delta) { root.adjustTimer("minute", delta) }
-                    }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.gap / 2
-                    CarText { text: I18n.t("秒"); maximumLineCount: 1 }
-                    Item { Layout.fillWidth: true }
-                    StepperBox {
-                        objectName: "timerSecondStepper"
-                        value: root.timerSeconds
                         maximum: 59
+                        value: root.timerMinutes
+                        onScrolled: function(value) { root.timerMinutes = value }
+                    }
+                    Wheel {
+                        objectName: "timerSecondWheel"
+                        Layout.fillWidth: true
                         caption: I18n.t("秒")
-                        onAdjusted: function(delta) { root.adjustTimer("second", delta) }
+                        maximum: 59
+                        value: root.timerSeconds
+                        onScrolled: function(value) { root.timerSeconds = value }
                     }
                 }
 
@@ -1476,6 +1474,54 @@ Item {
                 label: I18n.t("增加") + " " + box.caption
                 onClicked: box.adjusted(1)
             }
+        }
+    }
+
+    // 类 iOS 的数值轮盘：三行可见、两端环绕，选中项最亮，中间一条选择带。
+    // 用 QtQuick.Controls 的 Tumbler，不引入第三方库，也不自绘惯性滚动。
+    component Wheel: Tumbler {
+        id: wheel
+        property int maximum: 59
+        property int value: 0
+        property string caption: ""
+        signal scrolled(int value)
+        readonly property real itemHeight: Math.max(30 * root.uiScale, 30)
+        Layout.preferredHeight: 3 * itemHeight
+        visibleItemCount: 3
+        wrap: true
+        model: maximum + 1
+        // 初值走绑定，用户滚动后绑定会断，再由 onValueChanged 补上程序性变化。
+        currentIndex: value
+        // 轮盘首次布局时会自己滚一下（currentIndex 抖动），那不是用户操作，
+        // 不能回写模型——否则预设 5 分钟会被改成 3 分钟。
+        property bool ready: false
+        Component.onCompleted: currentIndex = value
+        Timer {
+            interval: 600
+            running: true
+            onTriggered: wheel.ready = true
+        }
+        onValueChanged: if (currentIndex !== value) currentIndex = value
+        onCurrentIndexChanged: if (wheel.ready) wheel.scrolled(currentIndex)
+        background: Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: (parent.height - wheel.itemHeight) / 2
+            width: parent.width
+            height: wheel.itemHeight
+            radius: Theme.shapeSmall
+            color: Theme.surfaceContainerHigh
+        }
+        delegate: CarText {
+            required property int index
+            width: wheel.width
+            height: wheel.itemHeight
+            text: (index < 10 ? "0" : "") + index
+            fontPixelSize: Theme.fontDisplay
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            // 距离中心越远越淡，模拟轮盘的纵深感。
+            opacity: 1 - Math.min(1, Math.abs(Tumbler.displacement) / 1.5) * 0.7
+            Accessible.name: wheel.caption + " " + index
         }
     }
 
