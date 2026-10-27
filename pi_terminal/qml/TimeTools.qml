@@ -21,6 +21,8 @@ Item {
 
     property bool active: false
     property real uiScale: 1
+    // 表盘配色偏好（设置页「时间与报时」里选）：auto / light / dark。
+    property string clockFace: "auto"
 
     // 接到宿主的既有通知横幅与语音播报（由 Main.qml 连接）。
     signal notifyRequested(string title, string message, bool important)
@@ -49,6 +51,12 @@ Item {
     // 左栏下限跟着可用宽度走：原先固定 340 的下限在 560px 页面里会把右栏挤到 200px，
     // 右栏内容（管理城市、城市钟）直接被裁。宽屏仍是 clamp(340, 42%, 460)。
     readonly property real leftPaneWidth: Math.max(240 * uiScale, Math.min(460, width * 0.42))
+    // 世界时钟卡片的可用宽度：由页面宽度推算，而不是去读网格自己的 width——
+    // 「列数依赖自身宽度」的写法会让 GridLayout 与正文 ColumnLayout 互相推，
+    // 首帧被 Qt 中止在两次迭代后，城市格子就会挤成一团。
+    readonly property real worldCardWidth: Math.max(1, twoPane
+                                                   ? width - leftPaneWidth - Theme.gap
+                                                   : width)
 
     // 城市选择、同步到的偏移与校时线路状态都归 TimeSync.qml（Main 实例化一次），
     // 设置页的「时间与报时」分区与这里看到的是同一份状态；本页面只做显示与操作。
@@ -618,7 +626,7 @@ Item {
                 GridLayout {
                     objectName: "worldClockGrid"
                     Layout.fillWidth: true
-                    columns: width < 360 * root.uiScale ? 2 : 3
+                    columns: (root.worldCardWidth - Theme.gap * 2) < 360 * root.uiScale ? 2 : 3
                     columnSpacing: Theme.gap / 2
                     rowSpacing: Theme.gap / 2
                     Repeater {
@@ -1635,12 +1643,22 @@ Item {
         implicitWidth: height
         width: height
         readonly property real radius: width / 2
+        // 表盘跟着当地时刻走：06:00–17:59 白天用浅色盘面 + 深色指针，
+        // 其余时间用深色盘面 + 浅色指针。城市钟用各自城市的小时数。
+        readonly property bool daytime: root.clockFace === "light" ? true
+                                                      : root.clockFace === "dark" ? false
+                                                      : (hours >= 6 && hours < 18)
+        readonly property color faceColor: daytime ? "#f1f4f8" : "#0a1119"
+        readonly property color inkColor: daytime ? "#101a26" : "#e8f1ff"
+        readonly property color rimColor: daytime ? "#b9c6d4" : Theme.outlineVariant
         Rectangle {
+            objectName: "analogFace"
             anchors.fill: parent
             radius: width / 2
-            color: Theme.surfaceContainerHigh
+            color: face.faceColor
             border.width: 2
-            border.color: Theme.outlineVariant
+            border.color: face.rimColor
+            Behavior on color { ColorAnimation { duration: 400 } }
         }
         Repeater {
             model: 12
@@ -1649,7 +1667,8 @@ Item {
                 width: 2 * root.uiScale
                 height: 7 * root.uiScale
                 radius: width / 2
-                color: Theme.outline
+                color: face.inkColor
+                opacity: 0.75
                 x: face.radius + (face.radius - 10 * root.uiScale) * Math.sin(index * Math.PI / 6) - width / 2
                 y: face.radius - (face.radius - 10 * root.uiScale) * Math.cos(index * Math.PI / 6) - height / 2
                 rotation: index * 30
@@ -1659,7 +1678,7 @@ Item {
             width: 5 * root.uiScale
             height: face.radius * 0.5
             radius: width / 2
-            color: Theme.foreground
+            color: face.inkColor
             x: face.radius - width / 2
             y: face.radius - height
             transformOrigin: Item.Bottom
@@ -1669,7 +1688,7 @@ Item {
             width: 4 * root.uiScale
             height: face.radius * 0.72
             radius: width / 2
-            color: Theme.foreground
+            color: face.inkColor
             x: face.radius - width / 2
             y: face.radius - height
             transformOrigin: Item.Bottom

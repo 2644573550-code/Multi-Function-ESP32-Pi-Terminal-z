@@ -108,6 +108,12 @@ protected:
 
 // Repeater 生成的 delegate 的 QObject 父链不在页面对象下，findChild 找不到它们；
 // 这里按可视树递归查找，页面里任何层级的控件都能定位。
+void collectItemsByObjectName(QQuickItem *root, const QString &name, QList<QQuickItem *> *out) {
+    if (!root) return;
+    if (root->objectName() == name) out->append(root);
+    for (QQuickItem *child : root->childItems()) collectItemsByObjectName(child, name, out);
+}
+
 QQuickItem *findItemByObjectName(QQuickItem *root, const QString &name) {
     if (!root) return nullptr;
     if (root->objectName() == name) return root;
@@ -605,6 +611,72 @@ private slots:
         QCOMPARE(offset.toInt(), 0);
         QVERIFY(!sync->property("status").toString().isEmpty());
         QVERIFY(sync->property("status").toString().contains(QStringLiteral("线路二")));
+    }
+
+    // 指针表盘跟着当地时刻变浅/变深：白天浅底深针，夜间深底浅针。
+    void analogClockFollowsDayAndNight() {
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent syncComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeSync.qml")));
+        QVERIFY2(syncComponent.isReady(), qPrintable(syncComponent.errorString()));
+        QScopedPointer<QObject> sync(syncComponent.create());
+        QVERIFY(sync);
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0},
+             {"timeSync", QVariant::fromValue(sync.data())}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *page = qobject_cast<QQuickItem *>(object.data());
+        QQuickWindow window;
+        window.resize(1024, 600);
+        page->setParentItem(window.contentItem());
+        page->setWidth(1024);
+        page->setHeight(600);
+        window.show();
+        QTest::qWait(200);
+
+        auto *clock = findItemByObjectName(page, QStringLiteral("analogClock"));
+        QVERIFY(clock);
+        auto *face = findItemByObjectName(clock, QStringLiteral("analogFace"));
+        QVERIFY(face);
+        auto lightness = [face] {
+            return QColor(face->property("color").value<QColor>()).lightnessF();
+        };
+
+        // 自动模式：12 点浅盘、23 点深盘（盘面颜色有 400ms 过渡，用 QTRY 等）
+        page->setProperty("clockFace", QStringLiteral("auto"));
+        clock->setProperty("hours", 12);
+        QTRY_VERIFY_WITH_TIMEOUT(clock->property("daytime").toBool(), 1500);
+        QTRY_VERIFY_WITH_TIMEOUT(lightness() > 0.8, 2000);
+        clock->setProperty("hours", 23);
+        QTRY_VERIFY_WITH_TIMEOUT(!clock->property("daytime").toBool(), 1500);
+        QTRY_VERIFY_WITH_TIMEOUT(lightness() < 0.2, 2000);
+
+        // 显式模式覆盖时刻
+        page->setProperty("clockFace", QStringLiteral("light"));
+        QTRY_VERIFY_WITH_TIMEOUT(clock->property("daytime").toBool(), 2000);
+        QTRY_VERIFY_WITH_TIMEOUT(lightness() > 0.8, 2000);
+        page->setProperty("clockFace", QStringLiteral("dark"));
+        clock->setProperty("hours", 12);
+        QTRY_VERIFY_WITH_TIMEOUT(!clock->property("daytime").toBool(), 2000);
+        QTRY_VERIFY_WITH_TIMEOUT(lightness() < 0.2, 2000);
+
+        // 每个城市钟按自己的小时数决定深浅（页面里可能同时存在白天与夜间城市）
+        page->setProperty("clockFace", QStringLiteral("auto"));
+        QTest::qWait(700);
+        QList<QQuickItem *> faces;
+        collectItemsByObjectName(page, QStringLiteral("analogFace"), &faces);
+        QVERIFY(faces.size() >= 2);
+        for (QQuickItem *item : faces) {
+            auto *owner = qobject_cast<QQuickItem *>(item->parentItem());
+            QVERIFY(owner);
+            const bool day = owner->property("daytime").toBool();
+            const qreal value = QColor(item->property("color").value<QColor>()).lightnessF();
+            QVERIFY2(day ? value > 0.6 : value < 0.4,
+                     qPrintable(QStringLiteral("face lightness=%1 daytime=%2").arg(value).arg(day)));
+        }
     }
 
     // 铃声片段：自选文件可以指定 15 秒片段起点，落盘、响铃与试听都用这个偏移。

@@ -15,6 +15,9 @@ SettingsGroup {
 
     property var timeSync: null
     property var alarmEngine: null
+    // 指针表盘配色：auto / light / dark，由 Main 持有并持久化。
+    property string clockFace: "auto"
+    signal clockFaceRequested(string mode)
 
     // 供页面/测试观察：线路失效弹窗是否在屏上。
     readonly property bool alertPopupOpen: syncAlert.visible
@@ -23,6 +26,42 @@ SettingsGroup {
     accentColor: "#8f7bff"
     title: I18n.t("时间与报时")
     subtitle: I18n.t("世界时钟校时与整点语音报时")
+
+    // ------------------------------------------------------------ 表盘配色
+
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.gap / 2
+        CarText {
+            Layout.fillWidth: true
+            maximumLineCount: 1
+            text: I18n.t("指针表盘配色")
+        }
+        CarButton {
+            objectName: "clockFaceLight"
+            text: I18n.t("白")
+            checked: settings.clockFace === "light"
+            onClicked: settings.clockFaceRequested("light")
+        }
+        CarButton {
+            objectName: "clockFaceDark"
+            text: I18n.t("黑")
+            checked: settings.clockFace === "dark"
+            onClicked: settings.clockFaceRequested("dark")
+        }
+        CarButton {
+            objectName: "clockFaceAuto"
+            text: I18n.t("跟随白天夜晚")
+            checked: settings.clockFace === "auto"
+            onClicked: settings.clockFaceRequested("auto")
+        }
+    }
+    CarText {
+        Layout.fillWidth: true
+        wrapMode: Text.Wrap
+        subdued: true
+        text: I18n.t("自动模式：06:00–17:59 用浅色盘面，其余时间用深色盘面；城市钟按各自城市的时间判断。")
+    }
 
     // ------------------------------------------------------------ 校时方式
 

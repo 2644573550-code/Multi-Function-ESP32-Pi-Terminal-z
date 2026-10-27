@@ -12,6 +12,10 @@ ApplicationWindow {
     minimumWidth:320;minimumHeight:320
     title: I18n.t("模块化终端"); color: Theme.background
     property real textScale: systemTools.interfaceScale
+    // 指针表盘配色：auto = 跟随当地白天/夜晚，light = 常白，dark = 常黑。
+    // 存在 time/clock-face（与时间页其它设置同一个前缀），时间页与设置分区共用这一份。
+    property string clockFace: systemTools.settingsRead("time/clock-face", "auto")
+    onClockFaceChanged: systemTools.settingsWrite("time/clock-face", clockFace)
     readonly property bool efficientRendering: systemTools.energySaving
     readonly property Item blurBackdropItem: desktopBackground
     property bool repairBackdropOnly:false
@@ -1805,7 +1809,8 @@ ApplicationWindow {
                 TimeSyncSettings {
                     Layout.fillWidth:true
                     visible:!settingsQuery || /时间|校时|报时|time|chime|alarm/i.test(settingsQuery)
-                    timeSync:timeSync;alarmEngine:alarmEngine
+                    timeSync:timeSync;alarmEngine:alarmEngine;clockFace:win.clockFace
+                    onClockFaceRequested:function(mode){win.clockFace=mode}
                 }
                 SettingsGroup {
                     Layout.fillWidth:true
@@ -1975,7 +1980,7 @@ ApplicationWindow {
             onMediaPlayingChanged:if(mediaPlaying){devicePanel.preferVideo=true;musicPage.pauseMedia();tvPage.pauseMedia()}}
         TvPlayer {id:tvPage;objectName:"tvPlayerPage";active:win.section===11 && win.phase!=="home";uiScale:win.uiScale;hostWindow:win;virtualKeyboard:screenKeyboard;onKeyboardRequested:screenKeyboard.show()
             onMediaPlayingChanged:if(mediaPlaying){devicePanel.preferVideo=true;musicPage.pauseMedia();videoPage.pauseMedia()}}
-        TimeTools {id:timePage;objectName:"timeToolsPage";active:win.section===12 && win.phase!=="home";uiScale:win.uiScale;alarmEngine:alarmEngine;timeSync:timeSync
+        TimeTools {id:timePage;objectName:"timeToolsPage";active:win.section===12 && win.phase!=="home";uiScale:win.uiScale;alarmEngine:alarmEngine;timeSync:timeSync;clockFace:win.clockFace
             onNotifyRequested:function(title,message,important){win.notify(title,message,important,I18n.t("时间"),"schedule")}
             onAnnounceRequested:function(text){win.announce(text)}
             onKeyboardRequested:if(!screenKeyboard.visible)screenKeyboard.show()}
