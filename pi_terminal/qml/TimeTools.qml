@@ -266,16 +266,6 @@ Item {
         scheduleTimerPresetSave()
     }
 
-    function adjustTimer(unit, delta) {
-        if (timerRunning) return
-        if (unit === "hour") timerHours = (timerHours + delta + 24) % 24
-        else if (unit === "minute") timerMinutes = (timerMinutes + delta + 60) % 60
-        else timerSeconds = (timerSeconds + delta + 60) % 60
-        timerPresetMinutes = 0
-        if (alarmEngine) alarmEngine.resetTimer(timerTotalMs)
-        scheduleTimerPresetSave()
-    }
-
     function toggleStopwatch() {
         if (stopwatchRunning) {
             stopwatchAccumMs += Date.now() - stopwatchStartedAtMs

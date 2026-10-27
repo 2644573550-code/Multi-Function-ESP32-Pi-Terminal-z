@@ -558,8 +558,9 @@ private slots:
         QCOMPARE(sync->property("syncedOnce").toBool(), false);
         QVERIFY(custom.requests >= 1);
         QCOMPARE(fallback.requests, 0);   // custom mode never silently uses the public APIs
-        const QJSValue providerState = sync->property("providerState").value<QJSValue>();
-        QCOMPARE(providerState.property(QStringLiteral("custom")).toInt(), -1);
+        // 线路状态点随设置页改版下线：失败原因体现在 error 上，弹窗文案带线路名
+        QVERIFY(sync->property("error").toString().contains(QStringLiteral("失败")));
+        QVERIFY(sync->property("alertText").toString().contains(QStringLiteral("自定义服务器")));
     }
 
     void customServerNeedsAScheme() {

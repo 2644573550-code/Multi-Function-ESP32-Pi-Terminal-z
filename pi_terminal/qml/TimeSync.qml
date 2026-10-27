@@ -44,7 +44,6 @@ Item {
     property string apiMode: "auto"                  // "auto" | "custom"
     property string customHost: ""
     property var providerQueue: []
-    property var providerState: ({})                 // id -> 0 未测 / 1 可用 / -1 不可用
     property int providerIndex: -1
     property int syncIndex: -1
     property int syncToken: 0
@@ -76,10 +75,6 @@ Item {
     }
 
     Component.onCompleted: sync.load()
-
-    // 界面只显示“线路一/线路二”，不暴露真实服务地址。
-    readonly property var providerIds: apiMode === "custom" && customHost.trim() !== ""
-        ? ["custom", "worldtimeapi", "timeapi"] : ["worldtimeapi", "timeapi"]
 
     readonly property var cities: {
         const list = []
@@ -190,10 +185,6 @@ Item {
         return zone ? zone.offset : 0
     }
 
-    function isSyncedZone(id) {
-        return syncedOffsets[id] !== undefined
-    }
-
     // 恢复内置时区：清掉同步结果与线路状态，城市选择保留。
     function resetZones() {
         syncedOffsets = ({})
@@ -204,7 +195,6 @@ Item {
         alertText = ""
         skewMs = 0
         syncedAt = ""
-        providerState = ({})
         providerQueue = []
         providerIndex = -1
     }
@@ -235,17 +225,6 @@ Item {
         return id === "worldtimeapi" ? I18n.t("线路一") : I18n.t("线路二")
     }
 
-    function providerStateOf(id) {
-        const state = providerState[id]
-        return state === undefined ? 0 : state
-    }
-
-    function setProviderState(id, value) {
-        const next = Object.assign({}, providerState)
-        next[id] = value
-        providerState = next
-    }
-
     // 手动校时（会弹失败提示）与自动校时（静默）分成两个入口：
     // QML 函数一旦带参数，QMetaObject::invokeMethod 就不能无参调用，测试与调用方都会踩。
     function syncTime() { doSync(false) }
@@ -267,7 +246,6 @@ Item {
         providerQueue = queue
         providerIndex = -1
         syncedOffsets = ({})
-        providerState = ({})          // 红点只在本次同步内有效
         syncing = true
         error = ""
         alertText = ""
@@ -293,7 +271,6 @@ Item {
         if (current.kind === "timeapi" && baseUtcMs === 0) { sendSyncRequest(-1); return }
         ++syncIndex
         if (syncIndex >= cities.length) {
-            setProviderState(current.id, 1)
             finishSync()
             return
         }
@@ -379,7 +356,6 @@ Item {
         cancelRequest()
         const current = providerQueue[providerIndex]
         if (!current) { syncing = false; return }
-        setProviderState(current.id, -1)
         const more = providerIndex + 1 < providerQueue.length
         const label = providerLabel(current.id)
         if (more) {

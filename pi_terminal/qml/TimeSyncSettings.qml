@@ -236,6 +236,12 @@ SettingsGroup {
             text: settings.statusText
         }
         CarButton {
+            objectName: "timeSyncReset"
+            visible: settings.timeSync ? settings.timeSync.syncedOnce : false
+            text: I18n.t("恢复内置时区")
+            onClicked: if (settings.timeSync) settings.timeSync.resetZones()
+        }
+        CarButton {
             objectName: "timeSyncStart"
             visible: settings.timeSync ? !settings.timeSync.syncing : false
             text: I18n.t("立即校时")
