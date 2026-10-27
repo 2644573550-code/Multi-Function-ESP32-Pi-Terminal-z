@@ -2,7 +2,7 @@
 
 本示例由 `module_devkit.py init` 生成，再实现真实模块业务。仅依赖此 SDK、ESP-IDF 5.5.4、与 Pi 匹配的 ARM64/Qt 6.4 工具链，不需主程序源码。不修改 Pi 主程序、配置或发布公钥。
 
-仓库内正式ESP代码已归并到 `esp/S3_Pi_Module/` 与 `esp/shared/`；本目录的 `firmware/` 保留为可单独分发的SDK导出副本。维护关系及一致性检查见 [SDK维护说明](../../docs/MAINTENANCE.md)，不手工维护两个不同版本。
+正式 ESP 代码位于**独立仓库** `gggitj/ESP-Modular-Terminal-Service` 的 `esp/S3_Pi_Module/` 与 `esp/shared/`（本 Pi 仓库不跟踪 `esp/`）；本目录的 `firmware/` 保留为可单独分发的SDK导出副本。维护关系及一致性检查见 [SDK维护说明](../../docs/MAINTENANCE.md)，不手工维护两个不同版本。
 
 ## 硬件与身份
 

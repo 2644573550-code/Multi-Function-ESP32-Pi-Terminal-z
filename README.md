@@ -92,7 +92,7 @@ python3 -m http.server 8000 --bind 127.0.0.1
 | 模块接入 | 控制面与数据面分离、认证会话、签名包验证、`QLibrary` 加载 C ABI 插件 | [模块 SDK](module-devkit/README.md)。串口连接成功不等于业务会话就绪。 |
 | 基础触屏浏览器 | Qt WebEngine + Viper 核心能力，导航、标签、书签、历史、下载与权限提示 | [浏览器范围](docs/viper-browser-port.md)。不是完整移植 Viper；不提供用户脚本、凭据自动填充等全部上游功能。 |
 | 音乐 | 原生音乐服务、在线 API、本地播放、歌词与整曲缓存后的跳转 | [音乐实现](docs/native-music.md)。在线 API 按需拉起；可用性受上游服务及网络影响。 |
-| 本地视频与网络电视 | 本地视频使用 Qt Multimedia；电视页面使用 `GstVideoItem` / GStreamer，含频道与线路选择 | [电视内核说明](docs/tv-hls-player-notes.md)。VLC 迁移仍见路线图，不能把开发分支状态当作主线实现。 |
+| 本地视频与网络电视 | 本地视频使用 VLC（`VlcVideoItem`，已并入主线）；电视页面使用 `GstVideoItem` / GStreamer，含频道与线路选择 | [电视内核说明](docs/tv-hls-player-notes.md) · [VLC 说明](docs/vlc-joystick.md)。VLC 后端尚未做树莓派实机性能验证。 |
 | 文件与系统 | 文件操作、图片预览、文本编辑、受限 USB 存储访问、系统音量及播报时媒体降音 | [系统库与运行时](docs/native-runtime-modules.md)。USB 与音量控制需要相应系统服务。 |
 | 渲染与个性化 | 双槽背景模糊缓存、普通/节能渲染模式 | [模糊设计](docs/blur-performance.md)。 |
 | 环境模块示例 | 温度、空气湿度、气压、照度、电量和日/周温度历史 | [智能盆栽](module-devkit/examples/smart-planter/README.md) · [验证范围](module-devkit/examples/smart-planter/VALIDATION.md)。**没有土壤传感器或浇水执行器**。 |
@@ -229,7 +229,7 @@ python3 -m http.server 8000 --bind 127.0.0.1
 └── third_party/       Viper、媒体参考代码、GStreamer 头文件等第三方内容
 ```
 
-> 部分旧文档和维护脚本引用 `esp/` 正式固件目录；**当前 GitHub 主线未跟踪该目录**。公开设备侧开发入口是 `module-devkit/sdk/esp32/` 和 `module-devkit/examples/smart-planter/firmware/`，不要把维护者本地存在的工程当作克隆后必定具备的文件。
+> 部分旧文档和维护脚本引用 `esp/` 正式固件目录；**当前 GitHub 主线未跟踪该目录**。桥板与模块固件位于**独立仓库** [gggitj/ESP-Modular-Terminal-Service](https://github.com/gggitj/ESP-Modular-Terminal-Service)（`esp/S3_PiBridge_LinkIt_Host/`、`esp/S3_Pi_Module/`、`esp/shared/`）。公开设备侧开发入口是 `module-devkit/sdk/esp32/` 和 `module-devkit/examples/smart-planter/firmware/`，不要把维护者本地存在的工程当作克隆后必定具备的文件。
 
 ## 开始开发
 

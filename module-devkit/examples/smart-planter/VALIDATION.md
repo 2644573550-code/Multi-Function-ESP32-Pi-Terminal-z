@@ -30,6 +30,6 @@
 
 ## 产物
 
-本地实际签名包和烧录镜像位于 `module-devkit/artifacts/smart-planter-3.0.0/`，其中 `validation.json` 保存哈希与测试范围。固件包含私有设备配置，产物目录已加入SDK `.gitignore`，不要把它当作可公开分发的通用模板。
+本地实际签名包和烧录镜像位于 `module-devkit/artifacts/smart-planter-3.0.0/`，其中 `validation.json` 保存哈希与测试范围。固件包含私有设备配置；产物目录虽已列入 SDK `.gitignore`，但**这些文件已被 Git 跟踪，仍随仓库分发**（B-07）。在受控核查与必要凭据轮换完成前不得再分发，也不要把它当作可公开分发的通用模板。
 
 源代码、测试及开发说明位于本目录，复制SDK到其他机器仍需自行安装匹配工具链、提供平台签名路径和私有配置。
