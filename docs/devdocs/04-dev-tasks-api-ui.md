@@ -139,7 +139,7 @@ QML不得读取SQLCipher文件、raw UID或持有数据库密钥；所有操作�
 ### 工作内容
 
 - P0把盆栽固定为 LAN-only profile，在模块服务端与Pi客户端实现TLS；Pi校验证书链/设备绑定/主机身份，桥板/模块身份密钥与传输密钥分离。
-- 若P0 profile仍保留BLE，必须强制加密和经过认证的配对/应用层挑战认证；不能只因GATT连接成功就接受业务payload。建议首轮固定LAN以控范围；未实现安全的BLE profile须显式禁用并验证拒绝。
+- **BLE 保留（2026-10-28 F 裁决）**，但必须过配对门控：Qt 6.5.3 的 `QLowEnergyController` 无 pair/encrypt 接口，唯一入口是 `QBluetoothLocalDevice::requestPairing()`；发数据前须 `pairingStatus(addr)==Paired`，否则拒绝并返回 `TRANSPORT_SECURITY_REQUIRED`。不能只因 GATT 连接成功就接受业务 payload，也不得先发数据再补配对。仅 `transport_mode=fixed_ble` 的模块走 BLE；`fixed_hotspot_lan` 仍强制 LAN TLS。
 - 未加密、未认证、身份不匹配、过期会话或TLS/BLE安全协商失败均关闭；P0 profile 禁止回退现有明文TCP/未认证GATT。
 - 用逐设备测试凭据；密钥仅在设备/Pi，绝不提交仓库。
 - PBR只传attach/status/detach和RC522等控制事件；不将盆栽历史/测量payload塞进PBR。
@@ -150,7 +150,7 @@ QML不得读取SQLCipher文件、raw UID或持有数据库密钥；所有操作�
 
 ### 验收标准
 
-- P0固定LAN业务profile要求TLS且设备认证；若启用BLE，同样必须加密并认证。
+- P0固定LAN业务profile要求TLS且设备认证；BLE profile 须已配对（`pairingStatus==Paired`）才接受 GATT 业务数据，未配对拒绝，不降级明文。
 - Pi能验证模块身份；错误/共享/撤销凭据拒绝。
 - BLE未建立安全配对/应用认证前不接受GATT业务数据。
 - LAN不接受明文TCP session；TLS失败无fallback。
@@ -182,7 +182,7 @@ D提交 Pi 侧协议/key separation 设计，F审核算法/证书验证/fail-clo
 
 独立模块身份认证、真实 attach/status、所有已实现传感器值显示、时间/新鲜度/故障状态正确；退出用户后旧用户上下文不能继续读取；模块断开显示未知而非伪造正常。数据必须走经配置选择的BLE-only或LAN-only lane，不得把LinkIt/PBR控制帧冒充传感器业务数据。
 
-“全部”包括温度、湿度、气压、照度、battery_V/battery_pct及供电/保护状态；缺传感器或无可靠外部电源检测则显示不可用/unknown，charging当前为null，不伪造测量。P0固定LAN TLS、禁用BLE；现有Qt6.4.2/明文历史验证不代替Qt6.5.3/SQLCipher/worker新路径验收。
+“全部”包括温度、湿度、气压、照度、battery_V/battery_pct及供电/保护状态；缺传感器或无可靠外部电源检测则显示不可用/unknown，charging当前为null，不伪造测量。P0固定LAN TLS；BLE 保留但须已配对（`pairingStatus==Paired`）才接受业务数据，未配对拒绝、不降级明文（2026-10-28 修订）；现有Qt6.4.2/明文历史验证不代替Qt6.5.3/SQLCipher/worker新路径验收。
 
 ### Review 要点
 

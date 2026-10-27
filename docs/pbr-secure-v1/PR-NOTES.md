@@ -113,7 +113,7 @@ Z 的 Pi 侧软件有七个原本悬空、会各自分叉的决定，本轮一�
 | 依赖死锁 | **T-04 不再依赖 T-03**；**T-09 拆 a/b**（PIN/锁屏/切用户 vs 绑卡/挂失）。D 和 Z 原本互相堵死，已解开 |
 | worker 隔离 | `DynamicUser=yes` + `PrivateNetwork=yes`，不建持久账号；判 UID ≠ 宿主即可 |
 | BLE | 保留。Qt 无 pair/encrypt API，唯一入口 `QBluetoothLocalDevice::requestPairing()`；未 Paired 拒发，不降级 |
-| `uidIndexKey` | **整机单钥** 0600（放每用户 DB 会鸡生蛋：刷卡选用户发生在登录前） |
+| `uidIndexKey` | **整机单钥**，`AppConfigLocation` 下 0600（放每用户 DB 会鸡生蛋；放 `AppLocalDataLocation` 会暴露给模块） |
 | 模块 QML | 改**独立 QQmlEngine**，否则模块页能直读 `connectionManager`，T-13 的隔离要求无法验收 |
 
 Z 现在能独立做完 5 件：`uidIndexKey`、T-04、T-10、T-11、T-09a。做完前三件即解除 D 的阻塞。

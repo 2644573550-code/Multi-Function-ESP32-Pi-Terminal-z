@@ -175,6 +175,7 @@ f-day1 §4.2 要求"用握手建立并验证的对端单调时间偏移校验 TT
   | 算法 | `HMAC-SHA256(key, ASCII("p0-rfid-index-v1") + u8(uid_len) + rawUid)`（f-day1 §3 原文） |
   | 密钥 | Z 持有与轮换；D 不接触、不缓存、不落盘 |
   | 失败 | 长度非法返回**空** `QByteArray`，调用方按 `INVALID_MESSAGE` 处理；不得返回全零或截断值 |
+  | 密钥入口 | **只有一处**：`deriveUidIndex()` 内部调 `uidIndexKey()` 取密钥，Z 不实现任何 HMAC，D 不接触密钥字节。`uidIndexKey()` 返回 false 时 `deriveUidIndex()` 直接返回空 |
 
   **密钥接口由 Z 提供**，签名冻结如下（Z 实现，D 只调用）：
   ```cpp
@@ -285,7 +286,7 @@ f-day1 §4.2 要求"用握手建立并验证的对端单调时间偏移校验 TT
 | Z-3 | 依赖解耦 | **T-04 不再依赖 T-03**（PIN 认证与桥板身份无代码交集）；**T-09 拆 a/b**：`T-09a` PIN/锁屏/切用户 = T-04+T-10，`T-09b` 绑卡/挂失 = T-07+T-08+T-09a。仍是一张卡，不新增编号 |
 | Z-4 | worker 隔离 | systemd `DynamicUser=yes` + `PrivateNetwork=yes`，不建持久账号；IT-013 按 **worker PID 的 UID ≠ 宿主 UID** 判定，不要求固定值 |
 | Z-5 | BLE | **保留**。Qt 6.5.3 的 `QLowEnergyController` **无 pair/encrypt 接口**，唯一入口 `QBluetoothLocalDevice::requestPairing()`；未 `Paired` 拒绝 `writeCharacteristic`，返回 `TRANSPORT_SECURITY_REQUIRED`，不得降级明文。仅 `fixed_ble` 模块生效 |
-| Z-6 | `uidIndexKey` 位置 | **整机单钥**，`AppLocalDataLocation/uid_index.key`，0600。理由：刷卡的用途是选用户，发生在登录之前；放每用户 DB 会鸡生蛋 |
+| Z-6 | `uidIndexKey` 位置 | **整机单钥**，`AppConfigLocation/uid_index.key`，0600（**不是** `AppLocalDataLocation`——那是 `ModuleManager::dataDirectory()` 交给模块的目录）。理由：刷卡的用途是选用户，发生在登录之前；放每用户 DB 会鸡生蛋 |
 | Z-7 | 模块 QML 隔离 | 模块页改**独立 `QQmlEngine` + 独立 `QQmlContext`**，只注入 `sessionModel`/只读 `userContext`/主题。理由：现在 `Main.qml:667` 用同一引擎，模块页能直读 `connectionManager`，T-13 的"QML 只见选择结果"无法验收 |
 
 #### B. 现在就能做完（无外部前置）

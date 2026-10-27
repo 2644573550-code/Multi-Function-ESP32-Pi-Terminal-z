@@ -48,7 +48,7 @@
 
 - 事实：Pi PBR只有CRC16；`HostEventDetector`只分发attach/detach，无RFID用户链；`HotspotLanTransport`用QTcpSocket；ESP TCP token明文往返，BLE GATT未强制安全属性；ModuleManager在主进程QLibrary执行，并加载模块任意QML。Pi没有通用AuthService/用户SQLCipher/worker安全服务。
 - 问题/影响：raw UID、业务数据和token无法由当前协议保证保密；签名包/首次信任不能约束原生插件的宿主权限。浏览器SQLite和音乐登录不是用户安全库/终端身份。
-- 最小处理：按T-03/04/07/10/11/12实现，不降级；P0固定LAN TLS、BLE禁用，具体成熟密码协议/参数仍须D/Z/L提交及F专项审核。桥板项目签发与模块逐台DIY身份分开，Secure Boot/Flash Encryption为生产目标，未验证现有设备开启。
+- 最小处理：按T-03/04/07/10/11/12实现，不降级；P0固定LAN TLS；**BLE 保留但须过配对门控**（2026-10-28 修订：Qt 6.5.3 无 pair/encrypt API，唯一入口 `QBluetoothLocalDevice::requestPairing()`，未 Paired 拒发、不降级明文），具体成熟密码协议/参数仍须D/Z/L提交及F专项审核。桥板项目签发与模块逐台DIY身份分开，Secure Boot/Flash Encryption为生产目标，未验证现有设备开启。
 
 ### 7）P0拔槽策略是有意变更，不是当前行为（任务及兼容性已订正）
 

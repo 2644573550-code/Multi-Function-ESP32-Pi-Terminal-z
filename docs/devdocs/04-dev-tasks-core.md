@@ -132,12 +132,12 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 | review_profile | `audit` |
 | 依赖 | T-04 |
 | 追溯 | F-011 / AC-011 / UT-005、IT-012 |
-| 文件范围 | Pi C++ trusted data service、Qt SQL driver/SQLCipher build config、DB schema/migration |
-| 代码路径 | 新增 `pi_terminal/src/security/SqlCipherStore.{h,cpp}`、`UserDatabase.{h,cpp}`；更新 `pi_terminal/CMakeLists.txt` 及DB/schema测试。Qt SQL plugin实际入口须在第1天确认后写入PR |
+| 文件范围 | Pi C++ trusted data service、SQLCipher C API 链接配置（**不用 Qt SQL 插件**）、DB schema/migration |
+| 代码路径 | 新增 `pi_terminal/src/security/SqlCipherStore.{h,cpp}`、`UserDatabase.{h,cpp}`；更新 `pi_terminal/CMakeLists.txt`（`find_library(SQLCIPHER_LIB sqlcipher)` + `-DSQLITE_HAS_CODEC`）及DB/schema测试。**不走 `QSqlDatabase`**：Qt 6.5.3 SDK 无 SQLCipher 驱动、无 `qsql_sqlite_p.h`，重编 QSQLITE 不可行（2026-10-28 F 裁决） |
 
 ### 工作内容
 
-- 第 1 天验证 Pi 目标 Qt 6.5.3 能否加载/构建 SQLCipher driver；形成通过日志。
+- 第 1 天验证 SQLCipher C API 可链接：`sqlite3_key` 打开、`PRAGMA cipher_version`、错误 key 返回 `SQLITE_NOTADB`(26)；形成通过日志。**不再验证 Qt driver 加载**——路线已改为 C API。
 - 每用户独立 SQLCipher DB，密钥只由可信 service 管理。
 - 每用户生成随机 DB key；用户 PIN 经成熟KDF派生KEK后只封装/解封DB key，PIN本身不作SQLCipher key。
 - 登录后key只在trusted service短期内存态；PIN修改在验证旧PIN后重新封装DB key，不重加密整库。
@@ -162,7 +162,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 
 ### Review 要点
 
-若目标 Qt/SQLCipher 驱动不兼容，必须由 F 裁决正式替代集成方式；不得把普通 SQLite 标记成 SQLCipher 完成。
+存储路线已由 F 裁决（2026-10-28）：直接调 SQLCipher C API，不走 Qt SQL 插件。不得把普通 SQLite 标记成 SQLCipher 完成；CMake 找不到 `libsqlcipher` 时须 `FATAL_ERROR`，不得静默降级。
 
 ## T-11 基础worker进程隔离与默认拒网（P0）
 

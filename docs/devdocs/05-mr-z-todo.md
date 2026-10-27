@@ -26,6 +26,8 @@
 
 结论：**代码可以在这里写、编译、跑单测**；只有需要真 UID、真 systemd、真 BlueZ、真触摸的项必须上 Pi。上一版写「本机无编译器、无 cmake、无 Qt」是错的，会让人以为一行代码都写不了。
 
+**与审查文档的关系**：本文的七项冻结参数在 `docs/pbr-secure-v1/F-REVIEW-2.md` **§5.3.2** 有同一份表述（与 D 的 §5.3.1 对称）。两份若不一致，以 F-REVIEW-2 为准并提 PR 修本文。
+
 **现状标注**
 
 - ❌ 代码中不存在，需从零实现（上一版用 ✅，与「已完成」的直觉相反，已换掉）
@@ -164,12 +166,13 @@ bool uidIndexKey(QByteArray *out32);   // 成功 true；不可用 false
 
 | 项 | 冻结值 |
 |---|---|
-| 位置 | `QStandardPaths::AppLocalDataLocation + "/uid_index.key"`，权限 **0600** |
+| 位置 | `QStandardPaths::AppConfigLocation + "/uid_index.key"`，权限 **0600**。**不得放 `AppLocalDataLocation`**：`ModuleManager::dataDirectory()` 正是把该目录交给模块（`ModuleManager.cpp:61-65`），放那里等于让每个模块都能读到整机 UID 密钥 |
 | 数量 | **整机一个**，不是每用户一个 |
 | 生成 | 首次使用时 `QRandomGenerator::system()` 32 字节 |
 | 轮换 | 提供显式接口，轮换后**所有旧 UID 索引失效**，须重新绑卡；不得静默迁移 |
 | 缺失/不可读 | 返回 `false`；调用方（D 的 `deriveUidIndex`）返回空 → `INVALID_MESSAGE`，**失败关闭** |
 | 落日志/DB/QSettings | 禁止 |
+| 谁来算 HMAC | **不是 Z**。D 的 `deriveUidIndex()` 内部调你的 `uidIndexKey()` 取密钥后自己算 HMAC；你只提供 32 字节密钥，不实现派生 |
 
 **为什么是整机单钥**：刷卡的用途是**选用户**，发生在任何用户登录之前。密钥若存在每用户 DB 里，未登录时读不到，刷卡选用户就成了鸡生蛋。整机单钥的代价是"任何用户登录后都能算出全机 UID 索引"，但索引本身不可反推 UID，且卡↔用户映射表在各用户库里仍隔离——这个代价可接受。
 
@@ -220,7 +223,7 @@ bool uidIndexKey(QByteArray *out32);   // 成功 true；不可用 false
 
 | Day | 项目要求 Z 交付 | 你的状态 | 现在能不能做 |
 |---|---|---|---|
-| 1 | Qt/SQLCipher driver 与 worker UID/sandbox 预检（B-02、B-03、B-06） | 未交（见 §1） | **能**：SQLCipher 本机可跑（§0.1），KDF 已定（§0.2），worker unit 可写（§0.4） |
+| 1 | SQLCipher 可行性与 worker UID/sandbox 预检（B-02、B-03、B-06） | 未交（见 §1） | **能**：SQLCipher 本机可跑（§0.1），KDF 已定（§0.2），worker unit 可写（§0.4） |
 | 2-3 | **PIN/session 骨架、SQLCipher schema 骨架** | 待开工（见 §2 D1、§3 D4） | **能**：T-04 已解除对 T-03 的依赖（§0.3） |
 | 4-6 | 每用户 DB、worker 最小隔离 | 提前可做（见 §3 D8、§3 D11） | 提前可做 |
 | 7 | 中期演示：SQLCipher 跨用户拒绝、worker 拒网 | — | DB 部分本机可测；拒网需 Pi |
@@ -279,7 +282,7 @@ bool uidIndexKey(QByteArray *out32);   // 成功 true；不可用 false
   ```cpp
   bool uidIndexKey(QByteArray *out32);   // 成功 true；密钥不可用时 false
   ```
-- [x] ✅ **密钥存放位置已由 F 裁决**：整机单钥，`AppLocalDataLocation/uid_index.key`，0600（§0.6）
+- [x] ✅ **密钥存放位置已由 F 裁决**：整机单钥，`AppConfigLocation/uid_index.key`，0600（§0.6；**不是** `AppLocalDataLocation`，那是模块可读目录）
   - 并行要求：D 的 `deriveUidIndex()` 在密钥缺失时返回空 `QByteArray` → `INVALID_MESSAGE`
 - [ ] ❌ **实现密钥生成**，32 字节 `QRandomGenerator::system()`
 - [ ] ❌ **实现密钥存储**，0600 文件；D 不接触、不缓存

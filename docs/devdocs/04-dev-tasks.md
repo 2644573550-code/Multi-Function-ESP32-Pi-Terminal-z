@@ -33,7 +33,7 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_ter
 
 ### P0 范围覆盖说明
 
-本次 P0 范围按用户最新确认执行，**高于技术建议报告 v4.0 的原阶段优先级建议**：两周最小系统必须包括每用户 SQLCipher 数据隔离、基础低权限 worker 进程隔离、默认拒绝公网、业务数据加密和双模块同时运行。P0 仅做最小可验收实现；完整备份恢复、恢复码、生产证书链、完整 systemd 加固、域名代理及产品化仍列 P1。若 Qt SQLCipher 驱动、Pi 网络隔离、ESP TLS/BLE安全接入或双槽硬件核验遇阻，Mr.F 必须立即报告为关键阻塞，不得无声降级验收。
+本次 P0 范围按用户最新确认执行，**高于技术建议报告 v4.0 的原阶段优先级建议**：两周最小系统必须包括每用户 SQLCipher 数据隔离、基础低权限 worker 进程隔离、默认拒绝公网、业务数据加密和双模块同时运行。P0 仅做最小可验收实现；完整备份恢复、恢复码、生产证书链、完整 systemd 加固、域名代理及产品化仍列 P1。若 SQLCipher C API 不可用、Pi 网络隔离、ESP TLS/BLE安全接入或双槽硬件核验遇阻，Mr.F 必须立即报告为关键阻塞，不得无声降级验收。
 
 ## 1. 分层和审核强度
 
@@ -75,7 +75,7 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_ter
 T-01 F冻结需求、字段、权限、错误码和验收
  ├── T-02 D/Z确认Pi构建、Qt和串口基线
  ├── T-03 D/F/L冻结桥板/模块身份和密钥边界
- ├── T-04 Z实现用户、PIN和会话服务（同时依赖T-03）
+ ├── T-04 Z实现用户、PIN和会话服务（仅依赖T-01；2026-10-28解除对T-03依赖）
  ├── T-05 D实现PBR编解码和桥板事件状态机
  └── T-06 L采购啸天探头并核验双槽电气
 
@@ -85,8 +85,11 @@ T-03 + T-05
 T-04 + T-07
  └── T-08 D/Z接通真实RC522→Pi→UID派生→PIN
 
-T-04 + T-08 + T-10
- └── T-09 Z完成登录、锁屏、绑卡、挂失UI
+T-04 + T-10
+ └── T-09a Z完成PIN页、锁屏、切用户、配对/撤销页面
+
+T-07 + T-08 + T-09a
+ └── T-09b Z完成绑卡、挂失UI（同一张T-09卡，2026-10-28拆段）
 
 T-04
  └── T-10 Z完成每用户SQLCipher最小存储
@@ -116,12 +119,12 @@ T-17 F最终P0实机验收与PR合并
 | T-01 | 需求、接口、权限和验收冻结 | F | 🔴 audit | 无 | IT-001 |
 | T-02 | Pi/Qt/USB串口基线 | D、Z | ⚪ audit | T-01 | IT-002 |
 | T-03 | 桥板/模块身份与密钥边界 | D、F、L | 🔴 audit | T-01 | UT-001、IT-003 |
-| T-04 | 用户、PIN、会话和管理员权限 | Z | 🔴 audit | T-01、T-03 | UT-002、IT-004 |
+| T-04 | 用户、PIN、会话和管理员权限 | Z | 🔴 audit | T-01 | UT-002、IT-004 |
 | T-05 | PBR编解码、接收和桥板事件状态机 | D | 🟡 guarded | T-01 | UT-003、IT-005 |
 | T-06 | 啸天采购与双槽电气核验 | L | ⚪ audit | T-01 | IT-006 |
 | T-07 | 测试AEAD、重放保护、ACK和事件去重 | D | 🔴 audit | T-03、T-05 | UT-004、IT-007 |
 | T-08 | RC522到Pi安全事件闭环 | D、Z | 🟡 guarded | T-04、T-07 | IT-008、E2E-001 |
-| T-09 | Qt登录、绑卡、锁屏、挂失 | Z | 🟢 guarded | T-04、T-08、T-10 | E2E-002 |
+| T-09 | Qt登录、绑卡、锁屏、挂失 | Z | 🟢 guarded | T-09a：T-04、T-10；T-09b：T-07、T-08、T-09a | E2E-002 |
 | T-10 | 每用户SQLCipher最小实现 | Z | 🔴 audit | T-04 | UT-005、IT-012 |
 | T-11 | 基础worker隔离和默认拒网 | Z、D、L | 🔴 audit | T-03、T-04、T-10 | IT-013 |
 | T-12 | 模块业务数据TLS/BLE安全传输 | D（Pi 侧）、L（ESP 侧）、Z | 🔴 audit | T-01、T-03、T-04 | IT-014 |
@@ -178,7 +181,7 @@ T-17 F最终P0实机验收与PR合并
 
 | 时间 | 必须交付 | 失败处置 |
 |---|---|---|
-| 第1天 | F审定范围/边界并收集技术签认；D做串口/身份/AEAD设计及SDK来源检查，Z做Qt/SQLCipher driver与worker UID/sandbox预检，D/L验证ESP TLS及禁用BLE；L核验双槽图并下单探头 | 任一安全基础不可行即由F当日记录blocker和修复路线；密码协议细节未审不得称完全冻结；不用SQLite/同进程伪装通过 |
+| 第1天 | F审定范围/边界并收集技术签认；D做串口/身份/AEAD设计及SDK来源检查，Z做SQLCipher C API与worker UID/sandbox预检，D/L验证ESP TLS及BLE配对门控；L核验双槽图并下单探头 | 任一安全基础不可行即由F当日记录blocker和修复路线；密码协议细节未审不得称完全冻结；不用SQLite/同进程伪装通过 |
 | 第2-3天 | D完成PBR reader/编码骨架；Z完成PIN/session和SQLCipher schema骨架；L探头到货、双槽电气实测、盆栽字段确认 | 第3天无探头或双槽不支持时升级为红色阻塞，F立即协调硬件改造和后续步骤 |
 | 第4-6天 | D测试AEAD/重放/ACK；Z完成每用户DB与worker最小隔离；L完成啸天两路固件和盆栽全量数据链 | 每日由PR/Issue异步更新；安全验收不得通过减少测试规避 |
 | 第7天 | 中期演示：RC522模拟/实卡PIN流程、SQLCipher跨用户拒绝、worker拒网、盆栽数据、啸天两路输入、双槽结论 | 未通过项指定责任人和截止时间；F判断是否仍有14天完成可能 |
@@ -189,7 +192,7 @@ T-17 F最终P0实机验收与PR合并
 
 ### 关键路径风险
 
-- T-10 SQLCipher驱动和Pi部署可行性必须第1天验证；需要给出Qt SQL plugin/library的实际加载证据。
+- T-10 存储路线已定（2026-10-28）：**直接调 SQLCipher C API**，不走 Qt SQL 插件。Qt 6.5.3 SDK 不带 SQLCipher 驱动、无 `qsql_sqlite_p.h` 私有头，重编 QSQLITE 需要整套 Qt 源码，不可行。第 1 天验证项改为「C API 链接 + `PRAGMA cipher_version` + 错误 key 返回 26」。
 - T-11 必须从当前 `QLibrary` 同进程插件迁移出P0所需的最小 worker 边界；仅启动 `QProcess` 不构成沙箱。
 - 双槽物理存在不代表独立电气通道；T-06结论是T-15前置门。
 - 桥板当前 PBR 没有 AEAD/事件 ACK；T-07 是真实 UID可被Pi信任前置条件。

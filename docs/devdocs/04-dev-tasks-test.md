@@ -73,7 +73,7 @@ generated_at: 2026-10-26
 
 ### IT-014：模块业务数据加密和认证
 
-P0固定LAN profile，抓取链路并注入无TLS TCP、错误设备key、过期会话和TLS协商失败；若P0启用BLE，再测试未配对GATT和错误应用认证；未启用的BLE profile必须确认被禁用。
+P0固定LAN profile，抓取链路并注入无TLS TCP、错误设备key、过期会话和TLS协商失败；BLE profile（`fixed_ble`）须测试未配对 GATT 被拒绝（`pairingStatus!=Paired` → `TRANSPORT_SECURITY_REQUIRED`）以及配对后正常收发；不得出现明文降级。
 
 通过：P0 LAN业务lane必须TLS+设备认证；BLE若启用则强制加密和应用认证，否则连接被拒绝；抓包不能恢复传感器明文或凭证；任何错误均不回退旧明文协议。
 

@@ -125,7 +125,7 @@ worker/任务绑定设备和业务会话/能力；上表槽位仅为位置快照
 
 数据 API 仅允许已声明的数据类型和设备，分页查询每页≤100条；记录envelope含可信分配的用户、device/slot、task_id、接收时间及样本序号。前台能力与任务能力分开；锁屏撤销前台读写，仅保留绑定启动用户的任务追加。切换/退出必须先按第2节收尾任务再关库/销毁worker；任何迟到回调都不得挂入新用户页面或改写归属。
 
-每用户独立随机256位DB key；PIN通过成熟KDF派生KEK后以认证加密封装DB key。PIN修改必须验证旧PIN并原子重封装，失败保留可用旧封装。只在可信内存解封；不把PIN直接当SQLCipher key。SQLCipher驱动须验证`cipher_version`非空、实际库加载、错误key无法读取和DB/WAL/temp不泄漏；普通QSQLITE加载成功不算通过。浏览器自带SQLite不是用户SQLCipher库。
+每用户独立随机256位DB key；PIN通过成熟KDF派生KEK后以认证加密封装DB key。PIN修改必须验证旧PIN并原子重封装，失败保留可用旧封装。只在可信内存解封；不把PIN直接当SQLCipher key。SQLCipher 路线已定为 C API（2026-10-28）：须验证 `cipher_version`、错误 key 返回 `SQLITE_NOTADB`，不走 Qt SQL 插件。浏览器自带SQLite不是用户SQLCipher库。
 
 现有盆栽`History.h/module.cpp`按module_instance散列路径写明文JSON温度历史，无用户边界。T-10/11/13必须将P0历史读写迁到可信SQLCipher服务并禁用旧JSON写入；旧记录没有可证明的userId，不得自动归给首位登录用户。默认保留原文件且禁止P0业务读取，迁移/删除须用户明确确认；本轮不处理或删除运行数据。
 
@@ -176,7 +176,7 @@ TLS 最低 1.2，使用成熟 Qt/ESP-IDF API；验证信任链或明确登记的
 
 | ID / 关联任务 | 负责人 | 当日最小回执 | 当前状态 / 失败路线 |
 |---|---|---|---|
-| B-01 / T-03/07/12 | D，Z/L协作；F审核 | 库/IDF版本、桥/Pi双向认证及AEAD套件/字节规范/向量；ESP TLS和Pi身份校验最小握手、内存峰值；BLE禁用证据 | **部分回执（2026-10-28）**：F 侧已交付规范修订 2、`vectors.json`、`mbedtls_check.c`（2.28 与 3.6.5 各 7/7）；库版本锁定 IDF 5.5.4/mbedtls 3.6.5 与 Qt 6.5.3。**仍缺**：D 的技术签认、ESP 侧实机、内存峰值、BLE 禁用证据、TLS 最小握手。未关闭，T-07 不开工 |
+| B-01 / T-03/07/12 | D，Z/L协作；F审核 | 库/IDF版本、桥/Pi双向认证及AEAD套件/字节规范/向量；ESP TLS和Pi身份校验最小握手、内存峰值；BLE配对门控证据（未配对拒发） | **部分回执（2026-10-28）**：F 侧已交付规范修订 2、`vectors.json`、`mbedtls_check.c`（2.28 与 3.6.5 各 7/7）；库版本锁定 IDF 5.5.4/mbedtls 3.6.5 与 Qt 6.5.3。**仍缺**：D 的技术签认、ESP 侧实机、内存峰值、BLE 禁用证据、TLS 最小握手。未关闭，T-07 不开工 |
 | B-02 / T-02/10 | Z（驱动），D（串口/SDK） | Pi OS/Qt/plugin path、SQLCipher实际加载库与cipher_version、错误key拒绝、打开/KDF延迟；串口by-id及权限、构建日志；两仓SDK来源/哈希与同步检查 | Pi/驱动待回执；SDK检查已证实失败：Pi缺13项ESP源映射，ESP清单需刷新；D先交跨仓显式来源与哈希清单，Z验证构建，禁止SQLite冒充 |
 | B-03 / T-11 | Z，D协作 | worker与宿主PID/UID、DB/主目录/管理端口/WAN拒绝测试，热点不转发；宿主自身网络仍可用 | 待回执；仅QProcess/配置文本不通过，由Z补OS隔离并实测 |
 | B-04 / T-06 | L，D协作 | 双槽原理/接线图、DET/总线/供电/隔离清单；两对探头下单及预计到货日，隐去个人订单信息 | 待回执；电气不安全先断电修正；第3天未到货或双槽不支持升级红色阻塞 |
