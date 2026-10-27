@@ -34,7 +34,7 @@ document: p0-test-plan
 | IT-011 | IT | 双槽同时运行、独立路由、单槽故障 | D/Z/L/F |
 | IT-012 | IT | SQLCipher运行时打开、用户间不可读 | Z |
 | IT-013 | IT | Worker隔离、DB/文件拒绝访问、无公网egress | Z/D/L/F |
-| IT-014 | IT | 模块业务数据LAN TLS（BLE若启用则安全认证）、明文降级拒绝和抓包检查 | D/L/Z |
+| IT-014 | IT | 模块业务数据LAN TLS（指纹固定）+ BLE 两层（配对+应用层挑战）、明文降级拒绝和抓包检查 | D/L/Z |
 | E2E-001 | E2E | 已绑定卡→PIN→用户会话 | D/Z |
 | E2E-002 | E2E | 登录后绑卡和管理员挂失 | Z |
 | E2E-003 | E2E | 盆栽全部数据展示 | L/D/Z |
@@ -132,4 +132,4 @@ document: p0-test-plan
 | F-010 双模块 | AC-010 同时运行/单槽故障 | IT-011、E2E-005/006、Journey-001 | 待执行 |
 | F-011 SQLCipher | AC-011 每用户隔离/错误key拒绝 | UT-005、IT-012 | 待执行 |
 | F-012 worker sandbox | AC-012 DB/文件/公网拒绝、崩溃隔离 | IT-013 | 待执行 |
-| F-013 业务数据安全传输 | AC-013 P0 LAN TLS/设备认证；BLE启用时安全认证；无明文降级 | IT-014、E2E-003/006 | 待执行 |
+| F-013 业务数据安全传输 | AC-013 P0 LAN TLS/设备认证（指纹固定）；BLE 配对+应用层挑战；无明文降级 | IT-014、E2E-003/006 | 待执行 |

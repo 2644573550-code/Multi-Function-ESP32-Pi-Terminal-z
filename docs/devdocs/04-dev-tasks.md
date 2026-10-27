@@ -17,7 +17,7 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_ter
 | Pi | Raspberry Pi 3B，64 位 Raspberry Pi OS Bookworm，Qt 6.5.3，Wayland |
 | 桥板 | ESP32-S3、RC522、USB-UART；Pi 当前测试路径 `/dev/ttyUSB0`，验收需同时记 `/dev/serial/by-id/` |
 | 模块 | 智能盆栽已有实机模块；啸天探头未采购，L 负责采购，目标第 3 天前到货 |
-| P0 演示 | 真实 RC522→Pi/PIN→盆栽全部已实现传感器数据（业务LAN必须TLS；BLE若启用须加密认证）；啸天两路真实输入→事件→页面；分别通过后两模块同时运行 |
+| P0 演示 | 真实 RC522→Pi/PIN→盆栽全部已实现传感器数据（业务LAN必须TLS+指纹固定；BLE须配对+应用层挑战）；啸天两路真实输入→事件→页面；分别通过后两模块同时运行 |
 | 身份 | `bridge_id`、各 `device_id` 独立；桥板统一项目签发；模块支持正式签发与 DIY 逐模块现场生成。P0两个原型模块使用不同的 DIY 测试身份 |
 | 密钥 | 私钥只保存在设备和 Pi；公开仓库只提交生成工具、格式、非秘密公钥/指纹或已失效样例，绝不提交真实私钥 |
 | 代码基线 | 代码审查时 Pi main 为 `d6ee9ac`（相对 `8349ce8` 仅增加报告）；F第1天 fetch 后 Pi `origin/main=20013b2`，新增报告/计划文档，`pi_terminal/` 代码树未变；ESP 服务远端 `main=16aebdd` |
@@ -167,7 +167,7 @@ T-17 F最终P0实机验收与PR合并
 - [ ] 桥板项目签发测试身份与每个模块身份相互独立。
 - [ ] DIY 模块密钥逐台唯一，仅保存在设备和 Pi。
 - [ ] PBR 测试版 AEAD、序号和重放保护通过。
-- [ ] P0固定LAN业务profile使用TLS；若启用BLE则强制加密/认证，否则BLE profile明确禁用；明文和降级均被拒绝。
+- [ ] P0固定LAN业务profile使用TLS（自签+指纹固定）；BLE须**配对+应用层挑战-响应**两层，未通过不发业务数据；明文和降级均被拒绝。
 - [ ] RFID ACK、有限重传、TTL 和去重通过。
 - [ ] 每用户 SQLCipher 数据库互相不可读。
 - [ ] 盆栽旧明文JSON历史不再作为P0数据存储/读取路径；不擅自删除或把无归属旧记录分给新用户。

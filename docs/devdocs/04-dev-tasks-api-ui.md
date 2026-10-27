@@ -127,7 +127,7 @@ QML不得读取SQLCipher文件、raw UID或持有数据库密钥；所有操作�
 | 属性 | 内容 |
 |---|---|
 | 主责 | Mr.D（**Pi 侧**协议/加密传输对端） |
-| 协作 | Mr.L（ESP 侧实现，等软件完成后开工）、Mr.Z（Pi TLS/BLE 会话及用户授权）、Mr.F（安全评审） |
+| 协作 | Mr.L（ESP 侧 TLS server/BLE `sm_io_cap`/NVS，等软件完成后开工）、Mr.Z（**仅**传输层之上的会话与用户授权，不改 `BleTransport`/`HotspotLanTransport`）、Mr.F（安全评审） |
 | 层级/审核 | 🔴 安全协议；`review_profile=audit` |
 | TDD 模式 | 安全集成测试先行：明文/未配对连接拒绝与证书校验失败测试→安全lane实现→网络抓包/降级复测 |
 | review_profile | `audit` |
