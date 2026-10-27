@@ -22,7 +22,19 @@ Rectangle {
     color: Theme.surface
     border.color: Theme.outlineVariant
 
-    readonly property real headerHeight: Math.max(48 * Theme.scaleFactor, headingRow.implicitHeight)
+    // 用标题字体推一个确定的高度，而不是取 RowLayout.implicitHeight：后者经
+    // 「副标题显隐 → 行内容 → 行高」会回到 headerHeight 上，日志里能直接看到
+    // 「Binding loop detected for property "headerHeight"」。
+    readonly property real headerHeight: Math.max(48 * Theme.scaleFactor,
+                                                  Math.round(1.5 * Theme.title))
+    // 副标题的测量探针：与副标题同字体、不参与布局。
+    CarText {
+        id: subtitleProbe
+        visible: false
+        text: card.subtitle
+        maximumLineCount: 1
+    }
+
     // 正文占用的纵向预算：上边距 + 标题 + 半格间距在上，一格间距在下。隐式高度与
     // 内部 Flickable 用同一套账，否则单栏“按内容高”的卡片自己就会溢出半格。
     readonly property real bodyTop: headerHeight + Theme.gap * 1.5
@@ -80,14 +92,13 @@ Rectangle {
                     subdued: true
                     maximumLineCount: 1
                     elide: Text.ElideRight
-                    // 放不下（超过卡片 55% 宽，或主标题本身已经很长）就整条不显示：
-                    // 宁可删掉，也不留半句被截断的小字。
-                    Layout.maximumWidth: card.width * 0.55
                     // 标题优先：主标题 + 副标题 + 间距放不下时，副标题整条不显示，
-                    // 而不是把主标题挤成「中国…」。
+                    // 而不是把主标题挤成「中国…」。宽度用隐藏探针量，避免在布局过程中
+                    // 读正在被布局的副标题自身宽度。
+                    Layout.maximumWidth: card.width * 0.55
                     visible: card.subtitle !== ""
-                             && titleText.implicitWidth + implicitWidth + headingRow.spacing
-                                <= headingRow.width
+                             && titleText.implicitWidth + subtitleProbe.implicitWidth
+                                + headingRow.spacing <= headingRow.width
                 }
             }
         }
