@@ -19,7 +19,7 @@ generated_at: 2026-10-26
 | 依赖 | T-01 |
 | 追溯 | F-002 / AC-002 / UT-001、IT-003 |
 | 身份字段 | `bridge_id`、`device_id`、`slot_id`、`boot_id`、key_id/version |
-| 文件范围 | 现有：`pi_terminal/src/core/ConnectionManager.cpp`、`HostEventDetector.h`；ESP：`esp/S3_PiBridge_LinkIt_Host/main/Kconfig.projbuild`、`main/main.c`；新增Pi身份验证/信任存储接口（由F在T-01命名冻结） |
+| 文件范围 | 现有：`pi_terminal/src/core/ConnectionManager.cpp`、`HostEventDetector.h`；**依赖远端（不改动）**：`esp/S3_PiBridge_LinkIt_Host/main/Kconfig.projbuild`、`main/main.c` 的身份字段现状；新增Pi身份验证/信任存储接口（由F在T-01命名冻结） |
 
 ### 工作内容
 
@@ -99,7 +99,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 | 依赖 | T-03、T-05 |
 | 追溯 | F-004 / AC-004 / UT-004、IT-007 |
 | 接口 | `PbrSession`、`ReplayGuard`、`EventAckManager` |
-| 文件范围 | 现有Pi：`pi_terminal/src/protocol/pibridge_protocol.cpp`、`src/transport/PogoControlTransport.cpp`；ESP：`esp/S3_PiBridge_LinkIt_Host/main/main.c`、`main/rfid_service.c`；新增PBR安全封装/会话模块 |
+| 文件范围 | 现有Pi：`pi_terminal/src/protocol/pibridge_protocol.cpp`、`src/transport/PogoControlTransport.cpp`；**依赖远端（不改动）**：`esp/S3_PiBridge_LinkIt_Host/main/main.c`、`main/rfid_service.c` 的帧格式；新增PBR安全封装/会话模块 |
 
 ### 工作内容
 
@@ -180,7 +180,7 @@ UT 覆盖正确/错误 PIN、限速阈值、锁定超时、并发登录、切换
 | review_profile | `audit` |
 | 依赖 | T-03、T-04、T-10 |
 | 追溯 | F-012 / AC-012 / IT-013 |
-| 文件范围 | Pi module launch/IPC、worker uid/目录权限、systemd unit/profile、Pi hotspot/WAN rules、ESP module network config |
+| 文件范围 | Pi module launch/IPC、worker uid/目录权限、systemd unit/profile、Pi hotspot/WAN rules；**ESP 网络配置归 L（不改动）** |
 | 代码路径 | 现有Pi：`pi_terminal/src/core/ModuleManager.{h,cpp}`、`src/modules/api/IModulePlugin.h`、`src/modules/api/pi_module_api.h`；新增 `src/core/ModuleWorkerLauncher.{h,cpp}`、IPC协议和最小worker入口；Pi安装配置新增systemd unit/profile |
 
 ### 工作内容
