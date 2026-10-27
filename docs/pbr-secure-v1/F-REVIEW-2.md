@@ -321,6 +321,8 @@ f-day1 §4.2 要求"用握手建立并验证的对端单调时间偏移校验 TT
 
 P0 要**同时实现**两条业务 lane。参数已冻结，见 `05-mr-z-todo.md` §0.8。
 
+> **依据**：`TECHNICAL-ADVISORY-REPORT.docx` v4.1 已同步修订（原第 9.3 节写「BLE profile 禁用并测拒绝」，与第 558 行「BLE 安全配对与应用认证」矛盾；2026-10-28 按 F 裁决统一为「BLE 要做」，第 558 行为准）。
+
 | 项 | 定值 | 归属 |
 |---|---|---|
 | LAN 方向 | 模块 `listen`、Pi `connect`（现状，不改） | L（server）/ D（client） |

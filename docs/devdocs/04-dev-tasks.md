@@ -64,7 +64,7 @@ source: docs/TECHNICAL-ADVISORY-REPORT.docx v4.1; Pi origin/main 20013b2 (pi_ter
 
 - **PBR/LinkIt 控制面**：桥板 attach/status/detach、RC522 `rfid_card`、桥板控制/诊断。PBR 当前无 AEAD；P0 增加 AEAD 后仍不在 PBR 传输业务传感器历史。盆栽BLE GATT未强制安全属性，LAN/TCP无TLS，P0需升级业务lane。
 - **模块业务数据面**：按模块合同使用固定 BLE 或 Pi hotspot LAN/TCP；盆栽全部传感器数据走此数据面。Pi `TransportPolicy` 将 BLE-only/LAN-only 作为互斥 profile。
-- **P0 必须同时实现 BLE 与 LAN 两条 lane（2026-10-28 定稿）**：
+- **P0 必须同时实现 BLE 与 LAN 两条 lane（2026-10-28 定稿；报告书 v4.1 第 9.3 节同步修订，与第 558 行风险表一致）**：
   - LAN：模块当 TLS server（现状 `listen`），Pi 当 client；模块**自签证书**，Pi 以 **SHA-256 指纹固定**（首次登记，换模块须重登记）；无明文回退。已在本机实测跑通。
   - BLE：**两层**——链路层 `pairingStatus==Paired`（Just Works 可接受）+ **应用层挑战-响应** `HMAC-SHA256(k, challenge‖module_id‖boot_id)`；32B 对称密钥由 T-03 配对时经 LAN 下发写模块 NVS；未通过前不发业务数据。
   - 单条业务 payload ≤512B（BLE），分片由 `BleTransport` 内部完成；lane 可热切换但**必须重新认证**，单次 attach 最多 3 次。
