@@ -1,0 +1,150 @@
+{
+  "suite": "x25519-hkdf-sha256-chacha20poly1305-ecdsa-p256",
+  "proto_ver": 1,
+  "env_ver": 1,
+  "note": "Fixed inputs; regenerate with docs/pbr-secure-v1/gen_vectors.py",
+  "handshake": {
+    "pi_eph_priv": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+    "bridge_eph_priv": "2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40",
+    "pi_eph_pub": "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c",
+    "bridge_eph_pub": "5869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b",
+    "x25519_shared": "a84dc7c3c8f058b1b2dc4cd1e9b5dc0a7987f88b6a9564cde3391fc421159e77",
+    "pi_identity_pub_uncompressed": "049fad84aeae08bbef7f010014d82cef6a09de2b0cf871b5ce0c4f1d13a59a593407cb45769f1070e2c2470fe5b1bfe63133c0b0cdc64ea4bf3791a8ec2a07fd4f",
+    "bridge_identity_pub_uncompressed": "0453c5a47b0f3273d7333320d3dc363b241a99928781b9d8827d9660a01dcdf9e98024c87efd5c1388f0a6c3d274467f4824d89218ce12550c298f6a9b393efe20",
+    "pi_key_id": 97,
+    "bridge_key_id": 9,
+    "boot_id": "7887ef3cf836a8a7c8838c91aed76a11",
+    "boot_id4": "7887ef3c",
+    "msg1_body": "010107a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c11111111111111111111111111111111",
+    "msg2_body": "01015869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b222222222222222222222222222222227887ef3c09",
+    "msg3_body": "61049fad84aeae08bbef7f010014d82cef6a09de2b0cf871b5ce0c4f1d13a59a593407cb45769f1070e2c2470fe5b1bfe63133c0b0cdc64ea4bf3791a8ec2a07fd4f",
+    "t2": "0d007062725f68656c6c6f5f7265713200010107a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c111111111111111111111111111111110e007062725f68656c6c6f5f72657370370001015869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b222222222222222222222222222222227887ef3c09",
+    "t3": "0d007062725f68656c6c6f5f7265713200010107a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c111111111111111111111111111111110e007062725f68656c6c6f5f72657370370001015869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b222222222222222222222222222222227887ef3c0910007062725f68656c6c6f5f66696e697368420061049fad84aeae08bbef7f010014d82cef6a09de2b0cf871b5ce0c4f1d13a59a593407cb45769f1070e2c2470fe5b1bfe63133c0b0cdc64ea4bf3791a8ec2a07fd4f",
+    "transcript_hash": "d2a1060ec6bb229d267a159420de4d16cadecd3fed842c7b3eab961e74fad99f",
+    "session_id": "d2a1060ec6bb229d267a159420de4d16",
+    "nonce_prefix": "cadecd3f"
+  },
+  "keys": {
+    "info": "pbr-secure-v1",
+    "salt_is_transcript_hash": true,
+    "hkdf_96": "901307483b1f9b43507af22cfb7117805f6d8a0a733dcf7fd710a7ddab70fd395ffdc73c937263b78df2a3e0db38a26cfa9ba96c2fabd2c58277e556b404a011ed5fed5c7632f3b94b2e49bf0df693e1ea44df7e27e5dd729def9e67c5ef2ed4",
+    "k_handshake": "901307483b1f9b43507af22cfb7117805f6d8a0a733dcf7fd710a7ddab70fd39",
+    "k_pi_to_bridge": "5ffdc73c937263b78df2a3e0db38a26cfa9ba96c2fabd2c58277e556b404a011",
+    "k_bridge_to_pi": "ed5fed5c7632f3b94b2e49bf0df693e1ea44df7e27e5dd729def9e67c5ef2ed4"
+  },
+  "hello_ok": {
+    "auth_seq": 1,
+    "plaintext": "{\"schema\":\"pbr-handshake-v1\",\"msg\":\"hello_ok\",\"uptime_ms\":12345}",
+    "nonce": "cadecd3f0100000000000000",
+    "aad": "01090101010000004000",
+    "ciphertext": "fe4b13e9b1061015b0f38d3ad7e7975040b9e2692a073c18f3512b53b488dfedb0960a5efbcd029817556ce405258c50d968c661f5957d5a399082b7da18d298",
+    "tag": "f011a6f9413bbc04fb9aaa67e588473d",
+    "envelope_hex": "0109cadecd3f0100000000000000fe4b13e9b1061015b0f38d3ad7e7975040b9e2692a073c18f3512b53b488dfedb0960a5efbcd029817556ce405258c50d968c661f5957d5a399082b7da18d298f011a6f9413bbc04fb9aaa67e588473d"
+  },
+  "envelope": {
+    "auth_seq": 2,
+    "plaintext": "{\"event\":\"attach\",\"module_id\":80,\"module_instance\":\"planter-a\"}",
+    "nonce": "cadecd3f0200000000000000",
+    "aad": "01090101020000003f00",
+    "ciphertext": "f414554ef4a955f55891338e7e35263261e669cc70bf1be6ca3168a538629cf99746aea7544628fd968084fcea7c8c1c7ffd3f5b45e5b58df08e02d3f82dcf",
+    "tag": "5923c17b55bd64e3d5bde79c87044c93",
+    "envelope_hex": "0109cadecd3f0200000000000000f414554ef4a955f55891338e7e35263261e669cc70bf1be6ca3168a538629cf99746aea7544628fd968084fcea7c8c1c7ffd3f5b45e5b58df08e02d3f82dcf5923c17b55bd64e3d5bde79c87044c93"
+  },
+  "identity_signature": {
+    "alg": "ECDSA-P256-SHA256, raw r||s 64 bytes",
+    "signer": "pi",
+    "signed": "0d007062725f68656c6c6f5f7265713200010107a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c111111111111111111111111111111110e007062725f68656c6c6f5f72657370370001015869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b222222222222222222222222222222227887ef3c0910007062725f68656c6c6f5f66696e697368420061049fad84aeae08bbef7f010014d82cef6a09de2b0cf871b5ce0c4f1d13a59a593407cb45769f1070e2c2470fe5b1bfe63133c0b0cdc64ea4bf3791a8ec2a07fd4f",
+    "signature_raw": "69cb916bee6dae4dca41f87faf3653fecea7994e1076eff2a4546d2e31bd81b4589127393e5d6128cf49fc21890096f51b11897ea64721ab35ed496b1e943182",
+    "must_verify_with": "049fad84aeae08bbef7f010014d82cef6a09de2b0cf871b5ce0c4f1d13a59a593407cb45769f1070e2c2470fe5b1bfe63133c0b0cdc64ea4bf3791a8ec2a07fd4f"
+  },
+  "bridge_signature": {
+    "alg": "ECDSA-P256-SHA256, raw r||s 64 bytes",
+    "signer": "bridge",
+    "signed": "0d007062725f68656c6c6f5f7265713200010107a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c111111111111111111111111111111110e007062725f68656c6c6f5f72657370370001015869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b222222222222222222222222222222227887ef3c09",
+    "signature_raw": "8edce1ba1b1f9122d3f2fd3f99e7a0d7cc99b30fb85c2dd7f5df740019935621cd6404f725187aaa478a769aeefe9cb64c7ae8f87089a7dda35a1db58e9319b1",
+    "must_verify_with": "0453c5a47b0f3273d7333320d3dc363b241a99928781b9d8827d9660a01dcdf9e98024c87efd5c1388f0a6c3d274467f4824d89218ce12550c298f6a9b393efe20"
+  },
+  "negative": [
+    {
+      "case": "flip_ciphertext_bit",
+      "envelope_hex": "0109cadecd3f0200000000000000f514554ef4a955f55891338e7e35263261e669cc70bf1be6ca3168a538629cf99746aea7544628fd968084fcea7c8c1c7ffd3f5b45e5b58df08e02d3f82dcf5923c17b55bd64e3d5bde79c87044c93",
+      "expect": "tag_mismatch",
+      "response": "none"
+    },
+    {
+      "case": "flip_tag_bit",
+      "envelope_hex": "0109cadecd3f0200000000000000f414554ef4a955f55891338e7e35263261e669cc70bf1be6ca3168a538629cf99746aea7544628fd968084fcea7c8c1c7ffd3f5b45e5b58df08e02d3f82dcf5923c17b55bd64e3d5bde79c87044c13",
+      "expect": "tag_mismatch",
+      "response": "none"
+    },
+    {
+      "case": "replay_same_envelope",
+      "envelope_hex": "0109cadecd3f0200000000000000f414554ef4a955f55891338e7e35263261e669cc70bf1be6ca3168a538629cf99746aea7544628fd968084fcea7c8c1c7ffd3f5b45e5b58df08e02d3f82dcf5923c17b55bd64e3d5bde79c87044c93",
+      "expect": "REPLAY",
+      "response": "error_frame",
+      "note": "deliver the same envelope twice; second must be REPLAY"
+    },
+    {
+      "case": "auth_seq_zero",
+      "envelope_hex": "0109cadecd3f00000000000000007d2aa427545a90f90b6cd05d505b6a8a56bb13a7d019b9a074410fb75802479b1d62f2d38ff2978ec7f235f40886e57cfbc76c55e983225e4b11ee4a36c62c410d21e39286be97c7ab285a6e681d3a",
+      "expect": "REPLAY",
+      "response": "error_frame"
+    },
+    {
+      "case": "wrong_key_id",
+      "key_id": 10,
+      "envelope_hex": "010acadecd3f0200000000000000f414554ef4a955f55891338e7e35263261e669cc70bf1be6ca3168a538629cf99746aea7544628fd968084fcea7c8c1c7ffd3f5b45e5b58df08e02d3f82dcf5923c17b55bd64e3d5bde79c87044c93",
+      "expect": "IDENTITY_REJECTED",
+      "response": "none",
+      "note": "unknown key id is dropped silently; the code only reaches the audit log"
+    },
+    {
+      "case": "sealed_with_wrong_direction_key",
+      "envelope_hex": "0109cadecd3f020000000000000026e15d52492f285d115bdb0a8f95ed163d7ea4d9796937b17f51f4439d04868a644cf42b05211fb9b1812a6879bbcb57fc33386bd38cd0408d0e340434e4b287169714da59e2d24d205bad3348d2c0",
+      "expect": "tag_mismatch",
+      "response": "none"
+    },
+    {
+      "case": "kind_tampered",
+      "envelope_hex": "0109cadecd3f0200000000000000f414554ef4a955f55891338e7e35263261e669cc70bf1be6ca3168a538629cf99746aea7544628fd968084fcea7c8c1c7ffd3f5b45e5b58df08e02d3f82dcf5923c17b55bd64e3d5bde79c87044c93",
+      "frame_kind": 3,
+      "expect": "tag_mismatch",
+      "response": "none",
+      "note": "AAD covers kind; changing the frame header kind alone must fail"
+    },
+    {
+      "case": "proto_ver_downgrade",
+      "proto_ver": 0,
+      "expect": "UNSUPPORTED_VERSION",
+      "response": "error_frame"
+    },
+    {
+      "case": "bridge_signature_tampered",
+      "signed": "0d007062725f68656c6c6f5f7265713200010107a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c111111111111111111111111111111110e007062725f68656c6c6f5f72657370370001015869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b222222222222222222222222222222227887ef3c09",
+      "signature_raw": "8fdce1ba1b1f9122d3f2fd3f99e7a0d7cc99b30fb85c2dd7f5df740019935621cd6404f725187aaa478a769aeefe9cb64c7ae8f87089a7dda35a1db58e9319b1",
+      "must_verify_with": "0453c5a47b0f3273d7333320d3dc363b241a99928781b9d8827d9660a01dcdf9e98024c87efd5c1388f0a6c3d274467f4824d89218ce12550c298f6a9b393efe20",
+      "expect": "IDENTITY_REJECTED",
+      "response": "error_frame"
+    },
+    {
+      "case": "ttl_not_3000",
+      "ttl_ms": 2999,
+      "expect": "EVENT_EXPIRED",
+      "response": "error_frame"
+    },
+    {
+      "case": "rfid_uid_wrong_length",
+      "uid": "A1B2C3",
+      "uid_len": 4,
+      "expect": "INVALID_MESSAGE",
+      "response": "error_frame"
+    },
+    {
+      "case": "rfid_uid_not_hex",
+      "uid": "ZZ123456",
+      "uid_len": 4,
+      "expect": "INVALID_MESSAGE",
+      "response": "error_frame"
+    }
+  ]
+}
