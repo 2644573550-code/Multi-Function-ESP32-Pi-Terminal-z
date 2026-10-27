@@ -508,78 +508,68 @@ Item {
                 title: I18n.t("中国时间")
                 subtitle: I18n.t("系统时钟") + " · " + TimeMath.formatOffset(root.localOffset)
 
-                // 数字钟、表盘与日期放在同一个水平居中的列里；样式开关浮在右上角，
-                // 不参与列宽计算，所以三者始终落在同一条中线上。
-                Item {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: Math.max(clockColumn.implicitHeight, Theme.hit)
-                    Column {
-                        id: clockColumn
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        spacing: Theme.gap / 3
-                        // 指针小钟在上、数字钟在下：不再提供"数字/指针"二选一。
-                        AnalogClock {
-                            objectName: "analogClock"
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            // 短屏（真机视口只有 ~365px 高）给小表盘。
-                            height: root.height < 420 ? Math.max(56 * root.uiScale, root.height * 0.16)
-                                                      : 112 * root.uiScale
-                            hours: root.clockHour
-                            minutes: root.clockMinute
-                            seconds: root.clockSecond
-                        }
-                        Row {
-                            id: digitalClockRow
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            Repeater {
-                                model: 3
-                                delegate: Row {
-                                    required property int index
-                                    Item {
-                                        width: root.clockCellWidth
-                                        height: clockText.implicitHeight
-                                        CarText {
-                                            id: clockText
-                                            anchors.centerIn: parent
-                                            fontPixelSize: root.clockFontPx
-                                            maximumLineCount: 1
-                                            text: index === 0 ? root.clockTime.substring(0, 2)
-                                                : index === 1 ? root.clockTime.substring(3, 5)
-                                                : root.clockTime.substring(6, 8)
-                                            Accessible.name: index === 0 ? I18n.t("时") : index === 1 ? I18n.t("分") : I18n.t("秒")
-                                        }
-                                    }
-                                    CarText {
-                                        visible: index < 2
-                                        fontPixelSize: root.clockFontPx
-                                        maximumLineCount: 1
-                                        text: ":"
-                                        Accessible.ignored: true
-                                    }
+                // 表盘、数字钟、日期直接作为正文列的居中对齐子项，不再套一层
+                // "Item + 锚定 Column"：那种写法里父项高度来自子项隐式高度、子项又
+                // 跟随父项宽度换行，首帧容易互相推（Qt 报 polish loop）。
+                AnalogClock {
+                    objectName: "analogClock"
+                    Layout.alignment: Qt.AlignHCenter
+                    // 短屏（真机视口只有 ~365px 高）给小表盘。
+                    height: root.height < 420 ? Math.max(56 * root.uiScale, root.height * 0.16)
+                                              : 112 * root.uiScale
+                    hours: root.clockHour
+                    minutes: root.clockMinute
+                    seconds: root.clockSecond
+                }
+                Row {
+                    id: digitalClockRow
+                    Layout.alignment: Qt.AlignHCenter
+                    Repeater {
+                        model: 3
+                        delegate: Row {
+                            required property int index
+                            Item {
+                                width: root.clockCellWidth
+                                height: clockText.implicitHeight
+                                CarText {
+                                    id: clockText
+                                    anchors.centerIn: parent
+                                    fontPixelSize: root.clockFontPx
+                                    maximumLineCount: 1
+                                    text: index === 0 ? root.clockTime.substring(0, 2)
+                                        : index === 1 ? root.clockTime.substring(3, 5)
+                                        : root.clockTime.substring(6, 8)
+                                    Accessible.name: index === 0 ? I18n.t("时")
+                                                     : index === 1 ? I18n.t("分") : I18n.t("秒")
                                 }
                             }
-                        }
-                        CarText {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            maximumLineCount: 1
-                            text: root.clockDate + "  " + root.clockWeekday
+                            CarText {
+                                visible: index < 2
+                                fontPixelSize: root.clockFontPx
+                                maximumLineCount: 1
+                                text: ":"
+                                Accessible.ignored: true
+                            }
                         }
                     }
-                    // 报时按钮：原来是整列可点，但热区声明在 Column 之后、压在样式按钮
-                    // 上面，点「数字 / 指针」只会触发报时、样式永远不切。改成表盘旁的
-                    // 48px 小喇叭按钮，热区不再和样式按钮抢点击。
-                    IconButton {
-                        objectName: "clockAnnounce"
-                        iconName: "volume_up"
-                        label: I18n.t("报时")
-                        filled: true
-                        accentColor: "#8f7bff"
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        onClicked: root.announceRequested(
-                            I18n.t("中国时间") + " " + root.clockTime + " " +
-                            TimeMath.formatOffset(root.localOffset))
-                    }
+                }
+                CarText {
+                    Layout.alignment: Qt.AlignHCenter
+                    maximumLineCount: 1
+                    text: root.clockDate + "  " + root.clockWeekday
+                }
+                // 报时按钮：原来整卡可点，但热区压在样式按钮上面，点一下只会播报。
+                // 现在是表盘旁的 48px 小喇叭按钮。
+                IconButton {
+                    objectName: "clockAnnounce"
+                    Layout.alignment: Qt.AlignRight
+                    iconName: "volume_up"
+                    label: I18n.t("报时")
+                    filled: true
+                    accentColor: "#8f7bff"
+                    onClicked: root.announceRequested(
+                        I18n.t("中国时间") + " " + root.clockTime + " " +
+                        TimeMath.formatOffset(root.localOffset))
                 }
             }
 
