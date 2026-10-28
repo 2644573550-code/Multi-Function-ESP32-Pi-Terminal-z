@@ -61,7 +61,8 @@ set(TERMINAL_SECURITY_SOURCES
     src/security/SqlCipherStore.cpp src/security/SqlCipherStore.h
     src/security/UserDatabase.cpp src/security/UserDatabase.h
     src/security/AuditLog.cpp src/security/AuditLog.h
-    src/security/PermissionMatrix.cpp src/security/PermissionMatrix.h)
+    src/security/PermissionMatrix.cpp src/security/PermissionMatrix.h
+    src/security/Backup.cpp src/security/Backup.h)
 
 # 只有 HostIdentity（ECDSA P-256）需要 mbedtls。缺失时跳过该文件，
 # 其余安全组件照常构建。CI 上缺 mbedtls 会让身份用例静默消失，需在下游显式断言。
@@ -127,7 +128,9 @@ add_library(terminal_core STATIC
     src/core/ModuleWorkerClient.cpp src/core/ModuleWorkerClient.h
     src/core/ModulePageHost.cpp src/core/ModulePageHost.h
     src/core/LaneGate.cpp src/core/LaneGate.h
-    src/core/PowerStatus.cpp src/core/PowerStatus.h)
+    src/core/PowerStatus.cpp src/core/PowerStatus.h
+    src/core/SecurityService.cpp src/core/SecurityService.h
+    src/core/NetworkGate.cpp src/core/NetworkGate.h)
 target_include_directories(terminal_core PUBLIC src src/modules/api)
 target_link_libraries(terminal_core PUBLIC terminal_transports terminal_security terminal_routing Qt6::Core Qt6::Network Qt6::StateMachine Qt6::Qml Qt6::Quick)
 target_compile_definitions(terminal_core PRIVATE PI_PACKAGE_TOOL="${CMAKE_INSTALL_PREFIX}/libexec/orange-pi-terminal/package_tool.py")
@@ -454,6 +457,12 @@ if(BUILD_TESTING)
     target_link_libraries(card_matcher_test PRIVATE terminal_security Qt6::Test)
     add_test(NAME card_index_matching COMMAND card_matcher_test)
     # T-12 Pi 侧验收（§0.8.7）：未配对拒发、挑战-响应失败拒发、指纹不匹配拒绝。
+    add_executable(backup_test tests/backup_test.cpp)
+    target_link_libraries(backup_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME backup_restore_roundtrip COMMAND backup_test)
+    add_executable(network_gate_test tests/network_gate_test.cpp)
+    target_link_libraries(network_gate_test PRIVATE terminal_core Qt6::Test)
+    add_test(NAME network_master_switch COMMAND network_gate_test)
     add_executable(power_status_test tests/power_status_test.cpp)
     target_link_libraries(power_status_test PRIVATE terminal_core Qt6::Test)
     add_test(NAME power_status_semantics COMMAND power_status_test)

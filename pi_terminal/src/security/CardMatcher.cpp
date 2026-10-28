@@ -135,6 +135,16 @@ bool CardIndex::revoke(const QString &userId, const QByteArray &rawUid, Derive d
     return found && save(entries);
 }
 
+QVector<CardIndex::BoundCard> CardIndex::boundCards(const QString &userId) const {
+    QVector<BoundCard> out;
+    if (userId.isEmpty()) return out;
+    for (const Entry &entry : load()) {
+        if (entry.revoked || entry.userId != userId) continue;
+        out.append(BoundCard{entry.userId, entry.boundAtMs});
+    }
+    return out;
+}
+
 int CardIndex::revokeAll(const QString &userId) {
     if (userId.isEmpty()) return 0;
     QVector<Entry> entries = load();

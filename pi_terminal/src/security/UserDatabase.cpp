@@ -248,6 +248,24 @@ bool UserDatabase::addHistorySample(qint64 observedAtMs, double value) {
     return ok;
 }
 
+bool UserDatabase::restoreHistoryBucket(const HistoryBucket &bucket) {
+    if (!isOpen() || bucket.bucketMs <= 0 || bucket.count <= 0) return false;
+    // 恢复是幂等覆盖：同一个桶已存在就用备份里的值替换，不叠加。
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "INSERT OR REPLACE INTO module_history(bucket_ms, sum_value, low_value,"
+            " high_value, sample_count) VALUES(?,?,?,?,?)"), &stmt))
+        return false;
+    store_->bindInt(stmt, 1, bucket.bucketMs);
+    store_->bindDouble(stmt, 2, bucket.sum);
+    store_->bindDouble(stmt, 3, bucket.low);
+    store_->bindDouble(stmt, 4, bucket.high);
+    store_->bindInt(stmt, 5, bucket.count);
+    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
+    store_->finalize(stmt);
+    return ok;
+}
+
 QVector<UserDatabase::HistoryBucket> UserDatabase::historySeries(
     qint64 nowMs, qint64 spanMs, qint64 stepMs) const {
     QVector<HistoryBucket> out;

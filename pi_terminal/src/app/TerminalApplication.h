@@ -4,6 +4,9 @@
 
 #include "core/ConnectionManager.h"
 #include "core/ModulePageHost.h"
+#include "core/NetworkGate.h"
+#include "core/PowerStatus.h"
+#include "core/SecurityService.h"
 #include "core/SecurityStatus.h"
 #include "security/AuthService.h"
 #include "security/SessionManager.h"
@@ -32,6 +35,9 @@ private:
     SystemTools systemTools_;
     ConnectionManager connection_;
     SecurityStatus securityStatus_{&connection_};
+    SecurityService securityService_;
+    NetworkGate networkGate_;
+    Power::PowerStatus powerStatus_;
     DesktopShell desktopShell_;
     MusicService musicService_;
     ViperBrowserController browserController_;

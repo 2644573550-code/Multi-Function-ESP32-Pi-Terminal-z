@@ -12,7 +12,9 @@ ApplicationWindow {
     visible: true; width: 1280; height: 800
     minimumWidth:320;minimumHeight:320
     title: I18n.t("模块化终端"); color: Theme.background
-    property real textScale: systemTools.interfaceScale
+    // 报告 §14：大字号模式在界面缩放之上再放大一档，但仍受 Theme 的
+    // 48px 热区下限约束（热区用 Math.max，不会被放大到越界）。
+    property real textScale: systemTools.interfaceScale * (systemTools.largeText ? 1.15 : 1.0)
     // 指针表盘配色：auto = 跟随当地白天/夜晚，light = 常白，dark = 常黑。
     // 存在 time/clock-face（与时间页其它设置同一个前缀），时间页与设置分区共用这一份。
     property string clockFace: systemTools.settingsRead("time/clock-face", "auto")
@@ -1847,6 +1849,16 @@ ApplicationWindow {
                 }
                 SettingsGroup {
                     Layout.fillWidth:true
+                    visible:!settingsQuery || /适老|大字|无障碍|accessibility|large/i.test(settingsQuery)
+                    iconName:"accessibility";accentColor:"#ffb74d";title:I18n.t("无障碍");subtitle:I18n.t("大字号模式")
+                    Switch {id:largeTextSwitch;objectName:"largeTextSwitch";Layout.fillWidth:true;text:I18n.t("大字号");font.pointSize:Theme.body;implicitHeight:Theme.hit
+                        Binding {target:largeTextSwitch;property:"checked";value:systemTools.largeText}
+                        onClicked:systemTools.setLargeText(!systemTools.largeText)
+                    }
+                    CarText {text:I18n.t("在界面缩放之上再放大一档字号；按钮热区不会小于 48 像素。");subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                }
+                SettingsGroup {
+                    Layout.fillWidth:true
                     visible:!settingsQuery || /隐私|保留|清理|记录|privacy|retention|cleanup/i.test(settingsQuery)
                     iconName:"shield";accentColor:"#4fd4a4";title:I18n.t("隐私与数据");subtitle:I18n.t("记录保留期限")
                     Flow {Layout.fillWidth:true;spacing:Theme.gap/2
@@ -1881,14 +1893,29 @@ ApplicationWindow {
                 }
                 SettingsGroup {
                     Layout.fillWidth:true
-                    visible:!settingsQuery || /网络|热点|wi.?fi|lan|internet/i.test(settingsQuery)
-                    iconName:"wifi";accentColor:"#35a9ff";title:I18n.t("网络与连接");subtitle:I18n.t("热点状态与设备网络")
+                    visible:!settingsQuery || /网络|热点|wi.?fi|lan|internet|联网/i.test(settingsQuery)
+                    iconName:"wifi";accentColor:"#35a9ff";title:I18n.t("网络与连接");subtitle:I18n.t("热点状态、联网总开关与供电")
+                    // §9.3：联网总开关。默认关闭，关闭时拒绝可解释。
+                    Switch {id:networkGateSwitch;objectName:"networkGateSwitch";Layout.fillWidth:true;text:I18n.t("允许联网");font.pointSize:Theme.body;implicitHeight:Theme.hit
+                        Binding {target:networkGateSwitch;property:"checked";value:networkGate.enabled}
+                        onClicked:networkGate.setEnabledFromUi(!networkGate.enabled)
+                    }
+                    CarText {text:networkGate.enabled?I18n.t("联网已开启"):I18n.t("联网已关闭 · 终端不主动访问外部服务");subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                    // §13：供电状态。未知就是未知，不显示假百分比。
+                    CarText {text:I18n.t("供电") + " · " + (powerStatus.known ? powerStatus.source : I18n.t("状态未知"))
+                            ;subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
                     Flow {Layout.fillWidth:true;spacing:Theme.gap/2
                         CarButton {text:systemTools.hotspotBusy?I18n.t("处理中"):I18n.t("开启热点");enabled:!systemTools.hotspotBusy && (!systemTools.deviceStatus.hotspotKnown || !systemTools.deviceStatus.hotspotActive);onClicked:systemTools.hotspot(true)}
                         CarButton {text:I18n.t("关闭热点");enabled:!systemTools.hotspotBusy && (!systemTools.deviceStatus.hotspotKnown || systemTools.deviceStatus.hotspotActive);onClicked:systemTools.hotspot(false)}
                     }
                     CarText {text:I18n.t("热点 · ")+(!systemTools.deviceStatus.hotspotKnown?I18n.t("状态未知"):systemTools.deviceStatus.hotspotActive?I18n.t("已开启"):I18n.t("已关闭"));subdued:true;Layout.fillWidth:true}
                      CarText {text:I18n.t(systemTools.network);Layout.fillWidth:true;wrapMode:Text.Wrap}
+                }
+                SettingsGroup {
+                    Layout.fillWidth:true
+                    visible:sessionManager.isAdmin && (!settingsQuery || /配对|设备|授权|管理员|pair|device|admin/i.test(settingsQuery))
+                    iconName:"verified_user";accentColor:"#4fd4a4";title:I18n.t("设备配对与授权");subtitle:I18n.t("桥板信任、卡片与操作记录")
+                    AdminPairingPage { Layout.fillWidth:true }
                 }
                 SettingsGroup {
                     Layout.fillWidth:true

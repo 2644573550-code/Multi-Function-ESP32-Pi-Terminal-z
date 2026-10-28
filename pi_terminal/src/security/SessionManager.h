@@ -93,6 +93,12 @@ public:
     // 可信侧短期持有；不暴露给 QML。
     QByteArray dbKey() const;
 
+    // 当前打开的用户库（未登录/锁屏前为 nullptr）。
+    // 只给 SecurityService 这类可信宿主组件用；不得经 contextProperty 暴露。
+    UserDatabase *database() const { return database_; }
+    // 打开/关闭用户库。登录后由 TerminalApplication 调用一次。
+    bool openDatabase();
+
 signals:
     void changed();
     void usersChanged();

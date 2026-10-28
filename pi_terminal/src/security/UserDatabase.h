@@ -42,6 +42,8 @@ public:
     void close();
 
     bool isOpen() const;
+    // 当前打开的用户（不透明 ID）。备份用它做归属校验。
+    QString openUserId() const { return openUserId_; }
     QString errorCode() const;
 
     // 写入归属当前打开的用户；userId 参数不存在，防止越权写入他人库。
@@ -67,6 +69,10 @@ public:
     };
     // 把一条观测并入当前分钟桶。返回 false 表示样本无效或库未打开。
     bool addHistorySample(qint64 observedAtMs, double value);
+
+    // 直接写入一个已聚合的桶（恢复备份用）。
+    // 与 addHistorySample 的区别：不重新聚合，保留原 sum/low/high/count。
+    bool restoreHistoryBucket(const HistoryBucket &bucket);
     // 按 [now - span, now] 取聚合序列，stepMs 为分组宽度。
     QVector<HistoryBucket> historySeries(qint64 nowMs, qint64 spanMs, qint64 stepMs) const;
     // 清理早于 nowMs - retentionMs 的桶。

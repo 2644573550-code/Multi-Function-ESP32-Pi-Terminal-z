@@ -226,6 +226,18 @@ bool SessionManager::validate(const QString &token) const {
     return diff == 0;
 }
 
+bool SessionManager::openDatabase() {
+    if (database_) return database_->isOpen();
+    if (activeUserId_.isEmpty() || dbKey_.size() != 32) return false;
+    database_ = new UserDatabase();
+    if (!database_->openForSession(activeUserId_, dbKey_)) {
+        delete database_;
+        database_ = nullptr;
+        return false;
+    }
+    return true;
+}
+
 bool SessionManager::recordObservation(const QString &deviceId, double value) {
     // 锁屏不阻止任务追加（f-day1 §5），但拒绝写入时需要明确失败。
     if (activeUserId_.isEmpty() || deviceId.isEmpty()) return false;

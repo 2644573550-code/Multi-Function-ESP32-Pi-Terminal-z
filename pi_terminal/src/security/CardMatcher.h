@@ -42,6 +42,13 @@ public:
     // 挂失/停用该用户的全部卡。返回撤销条数。
     int revokeAll(const QString &userId);
 
+    // 只读视图：该用户当前有效绑卡（不含 raw UID，只有绑定时间）。
+    struct BoundCard {
+        QString userId;
+        qint64 boundAtMs = 0;
+    };
+    QVector<BoundCard> boundCards(const QString &userId) const;
+
     QString path() const { return mapPath_; }
 
 private:

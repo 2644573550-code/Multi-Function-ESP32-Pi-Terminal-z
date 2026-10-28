@@ -45,6 +45,13 @@ int TerminalApplication::initialize(const QCommandLineParser &options) {
 
     engine_.rootContext()->setContextProperty("connectionManager", &connection_);
     engine_.rootContext()->setContextProperty("securityStatus", &securityStatus_);
+    // 安全服务门面：QML 只能通过它做信任/绑卡/授权/审计/导出。
+    securityService_.setSessionManager(&session_);
+    engine_.rootContext()->setContextProperty("securityService", &securityService_);
+    // §9.3 联网总开关：默认关闭，QML 只读写状态，实际放行由 C++ 判定。
+    engine_.rootContext()->setContextProperty("networkGate", &networkGate_);
+    // §13 供电状态：P0 无数据源，保持 unknown，界面据此显示"状态未知"。
+    engine_.rootContext()->setContextProperty("powerStatus", &powerStatus_);
     engine_.rootContext()->setContextProperty("systemTools", &systemTools_);
     engine_.rootContext()->setContextProperty("musicService", &musicService_);
     engine_.rootContext()->setContextProperty("viperBrowser", &browserController_);

@@ -480,5 +480,25 @@ QtObject {
         "隐私与数据":"Privacy & data", "记录保留期限":"Record retention",
         "30 天":"30 days", "90 天":"90 days", "180 天":"180 days", "永久":"Forever",
         "超过保留期限的健康记录会在下次登录时清理；本机删除不影响已拔出的 USB 备份。":"Health records past the retention window are cleaned up on the next sign-in; local deletion does not affect USB backups you have already removed."
+,
+        "设备配对与授权":"Device pairing & permissions", "桥板信任、卡片与操作记录":"Bridge trust, cards and activity",
+        "信任库已损坏，所有桥板都会被拒绝":"Trust store corrupted; every bridge will be rejected",
+        "已绑定卡片":"Bound cards", "还没有配对任何桥板":"No bridges paired yet",
+        "挂失":"Report lost", "全部挂失":"Report all lost", "最近操作":"Recent activity"
+,
+        "无障碍":"Accessibility", "大字号模式":"Large text", "大字号":"Large text",
+        "在界面缩放之上再放大一档字号；按钮热区不会小于 48 像素。":"Enlarges text one step beyond the interface scale; tap targets never drop below 48px."
+,
+        "热点状态、联网总开关与供电":"Hotspot, network master switch and power",
+        "允许联网":"Allow network access", "联网已开启":"Network access on",
+        "联网已关闭 · 终端不主动访问外部服务":"Network access off; the terminal will not reach external services",
+        "供电":"Power", "状态未知":"Status unknown"
+,
+        "点":"point", "保存":"Save", "倒计时":"Countdown", "倒计时进行中":"Countdown running",
+        "各城市当前时间":"Current time in each city", "已登录":"Signed in", "查找":"Find",
+        "线路":"Stream", "网页方向轮盘":"Page direction wheel", "返回分类":"Back to categories",
+        "选择分类":"Choose category"
+,
+        " 点":" point"
 })
 }
