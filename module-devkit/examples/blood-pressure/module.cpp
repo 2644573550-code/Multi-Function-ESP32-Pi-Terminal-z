@@ -135,6 +135,8 @@ extern "C" int pi_module_action(pi_module_handle_t *m, const char *a) {
     const QString action = QString::fromUtf8(a);
     // 只声明了 request_disconnect；其余有界拒绝。
     if (action != QLatin1String("request_disconnect")) return -1;
+    if (!m->host->send_data) return -1;
+    // 下发命令给固件；固件决定是否真的开始测量。
     const QByteArray data("{\"command\":\"request_disconnect\"}");
     return m->host->send_data(m->host->context, m->transport,
                               reinterpret_cast<const uint8_t *>(data.constData()),

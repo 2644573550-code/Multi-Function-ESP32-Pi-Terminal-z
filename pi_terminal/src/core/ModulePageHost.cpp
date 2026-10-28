@@ -98,8 +98,11 @@ bool ModulePageHost::load(const QUrl &source, QObject *sessionModel, const QVari
     context->setContextProperty(QStringLiteral("hostTheme"), theme);
     // §6.1：模块页访问用户数据的唯一入口。不是数据库句柄、没有 SQL，
     // 作用域写死在 ModuleDataApi 里（moduleId + instance + 当前用户）。
+    //
+    // 名字必须是 moduleData，不能叫 data：QQuickItem 自带 data 属性
+    // （子项列表），会遮蔽 context property，模块页调到的永远是子项列表。
     if (moduleDataApi_)
-        context->setContextProperty(QStringLiteral("data"), moduleDataApi_);
+        context->setContextProperty(QStringLiteral("moduleData"), moduleDataApi_);
 
     lastError_.clear();
 
@@ -174,8 +177,15 @@ void ModulePageHost::setContainer(QObject *container) {
     if (!container_ || !page_) return;
     if (auto *item = qobject_cast<QQuickItem *>(page_)) {
         item->setParentItem(container_);
+        // 页面尺寸必须**持续**跟随容器：容器初始 width 可能是 0，
+        // 只在 setContainer 时取一次会让页面停在 0 宽。
         item->setWidth(container_->width());
         item->setHeight(container_->height());
+        QQuickItem *box = container_;
+        QObject::connect(box, &QQuickItem::widthChanged, item,
+                         [box, item] { item->setWidth(box->width()); });
+        QObject::connect(box, &QQuickItem::heightChanged, item,
+                         [box, item] { item->setHeight(box->height()); });
     }
 }
 

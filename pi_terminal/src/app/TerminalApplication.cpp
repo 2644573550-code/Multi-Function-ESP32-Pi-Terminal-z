@@ -96,6 +96,18 @@ int TerminalApplication::initialize(const QCommandLineParser &options) {
         securityService_.noteRequestedCapabilities(moduleId, capabilities);
     };
     });
+    // 调试/演示：ORANGE_PI_AUTO_LOGIN=<pin> 用第一个用户自动登录（见
+    // docs/devdocs/09-debug-hooks.md）。PIN 只从环境读一次，不写日志、不落盘。
+    const QString autoLoginPin = qEnvironmentVariable("ORANGE_PI_AUTO_LOGIN");
+    if (!autoLoginPin.isEmpty() && session_.hasUsers()) {
+        const QVariantList users = session_.users();
+        if (!users.isEmpty()) {
+            const QString userId =
+                users.first().toMap().value(QStringLiteral("userId")).toString();
+            const QString code = session_.login(userId, autoLoginPin);
+            qInfo().noquote() << "auto-login:" << (code.isEmpty() ? "ok" : code);
+        }
+    }
     connection_.setActiveUserId(session_.activeUserId());
     // 自动化审计（--ui-test）以无用户配置启动，门控会拒绝业务数据；
     // 仅测试路径注入一个占位用户，让审计能走完既有业务断言。

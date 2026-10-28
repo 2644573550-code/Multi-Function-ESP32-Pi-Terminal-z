@@ -1981,7 +1981,7 @@ ApplicationWindow {
                         // 模块声明的动作走 GUI 白名单入口（§8.4）：
                         // 未知动作仍显示原名，但参数范围由模块侧再校验。
                         iconName:({frame:"photo_camera",reset:"refresh",increment:"add",
-                                   decrement:"remove",arm:"shield",disarm:"shield_outlined",
+                                   decrement:"remove",arm:"check",disarm:"link_off",
                                    mute:"volume_off",unmute:"volume_up"})[modelData] || "extension"
                         label:({frame:I18n.t("采集单帧"),reset:I18n.t("复位"),
                                 increment:I18n.t("加一"),decrement:I18n.t("减一"),

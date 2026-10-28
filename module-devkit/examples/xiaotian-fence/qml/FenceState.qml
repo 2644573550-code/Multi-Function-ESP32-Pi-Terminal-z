@@ -83,7 +83,9 @@ QtObject {
     // 数据新鲜度：返回毫秒年龄，负数/0 表示尚无数据；页面自己格式化。
     function dataAgeMs(nowMs) {
         if (lastHeartbeatMs <= 0) return -1
-        return nowMs - lastHeartbeatMs
+        // 宿主时钟与页面时钟不同源：page.clock 每秒才刷新一次，
+        // 可能短暂落后于刚收到的心跳。负数一律按 0（刚收到）处理。
+        return Math.max(0, nowMs - lastHeartbeatMs)
     }
 
     // 供电：不知时为 unknown，页面显示"未检测"，不推算（§11.5 + §13）。

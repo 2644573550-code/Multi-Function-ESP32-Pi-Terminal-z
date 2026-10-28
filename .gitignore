@@ -59,3 +59,6 @@ build/log/
 
 # 电视频道生成缓存（tools/build_tv_channels.py）
 pi_terminal/assets/tv/.cache/
+
+# 模块构建产物：由 configure_file 从 module_manifest.h.in + manifest.json 生成
+module-devkit/examples/*/module_manifest.h

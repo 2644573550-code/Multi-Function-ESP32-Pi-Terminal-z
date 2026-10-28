@@ -173,17 +173,24 @@ extern "C" int pi_module_action(pi_module_handle_t *m, const char *a) {
     if (!m || m->stopped || !m->fence || !a) return -1;
     const QString action = QString::fromUtf8(a);
     // 动作白名单：只接受 manifest 里声明过的（§8.4）。
-    if (action == QLatin1String("arm")) m->fence->armed = true;
-    else if (action == QLatin1String("disarm")) { m->fence->armed = false; m->fence->alarmUntilMs = 0; }
-    else if (action == QLatin1String("request_disconnect")) {
-        const QByteArray data("{\"command\":\"request_disconnect\"}");
-        return m->host->send_data(m->host->context, m->transport,
-                                  reinterpret_cast<const uint8_t *>(data.constData()),
-                                  uint32_t(data.size()));
-    } else {
-        return -1;   // 未知动作有界拒绝，不重启模块（§11.4）
+    // 关键：arm/disarm 必须**下发给固件**（ESP 侧才是真正控制探头的地方）。
+    // 本地只记意图，等固件回报 armed 状态后才算生效。
+    if (action == QLatin1String("arm") || action == QLatin1String("disarm")
+        || action == QLatin1String("request_disconnect")) {
+        if (!m->host->send_data) return -1;
+        const QByteArray data("{\"command\":\"" + action.toUtf8() + "\"}");
+        const int rc = m->host->send_data(
+            m->host->context, m->transport,
+            reinterpret_cast<const uint8_t *>(data.constData()), uint32_t(data.size()));
+        if (rc < 0) return -1;
+        if (action == QLatin1String("arm")) m->fence->armed = true;
+        else if (action == QLatin1String("disarm")) {
+            m->fence->armed = false;
+            m->fence->alarmUntilMs = 0;
+        }
+        return 0;
     }
-    return 0;
+    return -1;   // 未知动作有界拒绝，不重启模块（§11.4）
 }
 
 extern "C" void pi_module_on_disconnect_request(pi_module_handle_t *, const char *) {}

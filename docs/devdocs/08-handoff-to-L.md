@@ -290,7 +290,7 @@ Pi 侧模块代码**已完成**（`module-devkit/examples/blood-pressure/`），
 ## 9. 盆栽固件（T-13）
 
 Pi 侧已改造：模块历史不再写明文 JSON，改由宿主写入每用户 SQLCipher 库；
-模块页通过 `data.appendSample()` 落库。
+模块页通过 `moduleData.appendSample()` 落库。
 
 - [ ] `emit_event("sample", ...)` 只发**原始观测**，不自己聚合/持久化
 - [ ] 现有 `History.h` 的 `save()` 已被 Pi 侧默认关闭

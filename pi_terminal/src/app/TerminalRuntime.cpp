@@ -120,8 +120,15 @@ int TerminalRuntime::run() {
                     if (card.value("instance").toString() != instance ||
                         !card.value("ready").toBool())
                         continue;
-                    if (QMetaObject::invokeMethod(engine.rootObjects().first(), "openModule",
-                                                  Q_ARG(QVariant, QVariant(instance)))) {
+                    // 关键：openModule 在 phase!=="home" 时会提前返回，
+                    // 因此必须等主页就绪后再调用，并检查它是否真的打开。
+                    auto *root = engine.rootObjects().first();
+                    if (root->property("phase").toString() != QLatin1String("home"))
+                        continue;
+                    QMetaObject::invokeMethod(root, "openModule",
+                                              Q_ARG(QVariant, QVariant(instance)));
+                    // openModule 成功后 activeSession 立即置位；phase 还要等动画。
+                    if (root->property("activeSession").toString() == instance) {
                         qInfo().noquote() << "Foreground module opened:" << instance;
                         openTimer->stop();
                         if (options_.isSet("invoke-action")) {

@@ -98,7 +98,13 @@ ConnectionManager::ConnectionManager(QObject *parent) : QObject(parent), modules
     });
     modules_.sender = [this](const QString &id, quint8 t, const QByteArray &data) {
         auto s = sessions_.value(id);
-        return s && s->loaded && s->ready && !s->stopping && send(s, "data", {{"payload", QString::fromLatin1(data.toBase64())}}, t);
+        const bool allowed = s && s->loaded && s->ready && !s->stopping;
+        if (!allowed) {
+            qWarning().noquote() << "module data blocked: loaded=" << (s ? s->loaded : false)
+                                 << "ready=" << (s ? s->ready : false) << "session=" << id;
+            return false;
+        }
+        return send(s, "data", {{"payload", QString::fromLatin1(data.toBase64())}}, t);
     };
     modules_.controlSender = [this](const QString &id, quint8 cmd, const QByteArray &payload, quint16 *seq) {
         auto s = sessions_.value(id); if (!s || s->stopping) return false;
@@ -670,7 +676,12 @@ void ConnectionManager::install(const QSharedPointer<Session> &s) {
         const auto policy = TransportPolicy::fromProfile(s->profile);
         if (policy.mode == TransportPolicy::Mode::BleOnly && policy.packageNeedsHotspot()) releaseHotspot(s);
         QSettings settings;
-        if (settings.value("trusted/" + s->trustKey, false).toBool()) loadVerified(s);
+        // 调试/演示：ORANGE_PI_AUTO_TRUST=1 跳过首次信任弹窗（见
+        // docs/devdocs/09-debug-hooks.md）。生产不设置即可，默认行为不变。
+        const bool autoTrust =
+            qEnvironmentVariable("ORANGE_PI_AUTO_TRUST") == QLatin1String("1");
+        if (autoTrust || settings.value("trusted/" + s->trustKey, false).toBool())
+            loadVerified(s);
         else {
             state(s, "awaiting_trust", "签名验证通过，请确认模块权限");
             QStringList permissions;

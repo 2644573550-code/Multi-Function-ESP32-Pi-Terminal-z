@@ -1,5 +1,7 @@
 // §0.7 / Z-7：模块页必须用独立 QQmlEngine，宿主对象不可见。
 #include "core/ModulePageHost.h"
+#include "core/ModuleDataApi.h"
+#include "core/PageProvider.h"
 
 #include <QFile>
 #include <QQuickItem>
@@ -229,6 +231,93 @@ Item {
         QVERIFY2(!loaded, "a page importing Qt.labs.settings must not load");
         QVERIFY(!host.hasPage());
         QVERIFY(!host.lastError().isEmpty());
+    }
+
+    // 回归：注入项不得被 QML/QtQuick 的同名属性遮蔽。
+    // `data` 是 QQuickItem 的自带属性（子项列表），曾经用它做数据接口名，
+    // 结果模块页调到的永远是子项列表，appendSample/historySeries 全部失效。
+    void moduleDataApiIsNotShadowedByItemData()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QFile page(dir.filePath("Api.qml"));
+        QVERIFY(page.open(QIODevice::WriteOnly));
+        page.write(R"(
+import QtQuick
+Item {
+    property bool apiVisible: typeof moduleData !== "undefined" && moduleData !== null
+    property string apiScope: apiVisible ? moduleData.scope : ""
+}
+)");
+        page.close();
+
+        ModulePageHost host;
+        ModuleDataApi api(82, QStringLiteral("fence-slot0"));
+        host.setModuleDataApi(&api);
+        QObject model;
+        QVERIFY2(host.load(QUrl::fromLocalFile(dir.filePath("Api.qml")), &model, {}),
+                 qPrintable(host.lastError()));
+        QCOMPARE(host.page()->property("apiVisible").toBool(), true);
+        QCOMPARE(host.page()->property("apiScope").toString(), api.scope());
+    }
+
+    // 回归：SessionModel 更新必须真的驱动模块页绑定。
+    // 曾经因页面声明同名属性遮蔽 context property，页面永远拿到 null。
+    void sessionModelUpdateReachesPageBinding()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QFile page(dir.filePath("Live.qml"));
+        QVERIFY(page.open(QIODevice::WriteOnly));
+        page.write(R"(
+import QtQuick
+Item {
+    readonly property var latest: sessionModel ? sessionModel.data : ({})
+    property bool gotSample: latest.armed === true
+    property int triggerCount: latest.trigger_count === undefined ? -1 : Number(latest.trigger_count)
+}
+)");
+        page.close();
+
+        ModulePageHost host;
+        SessionModel model;
+        QVERIFY(host.load(QUrl::fromLocalFile(dir.filePath("Live.qml")), &model, {}));
+        QCOMPARE(host.page()->property("gotSample").toBool(), false);
+
+        model.update({{"armed", true}, {"trigger_count", 3}});
+        QTRY_COMPARE(host.page()->property("gotSample").toBool(), true);
+        QCOMPARE(host.page()->property("triggerCount").toInt(), 3);
+    }
+
+    // 回归：容器尺寸变化时页面必须持续跟随。
+    // 只取一次快照的话，容器初始 0 宽会让页面永远停在 0 宽。
+    void pageFollowsContainerResize()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QFile page(dir.filePath("Size.qml"));
+        QVERIFY(page.open(QIODevice::WriteOnly));
+        page.write("import QtQuick\nRectangle { color: \"#000000\" }\n");
+        page.close();
+
+        QQuickWindow window;
+        window.resize(800, 600);
+        auto *container = new QQuickItem(window.contentItem());
+        container->setWidth(0);
+        container->setHeight(0);
+
+        ModulePageHost host;
+        host.setContainer(container);
+        QObject model;
+        QVERIFY(host.load(QUrl::fromLocalFile(dir.filePath("Size.qml")), &model, {}));
+        host.setContainer(container);
+        auto *item = qobject_cast<QQuickItem *>(host.page());
+        QVERIFY(item);
+
+        container->setWidth(640);
+        container->setHeight(480);
+        QTRY_COMPARE(item->width(), 640.0);
+        QCOMPARE(item->height(), 480.0);
     }
 
 };

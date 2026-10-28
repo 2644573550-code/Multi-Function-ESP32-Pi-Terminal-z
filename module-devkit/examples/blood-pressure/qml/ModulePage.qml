@@ -4,14 +4,16 @@ import QtQuick.Controls.Material
 
 // 血压读数模块页面（模块自带 QML，由宿主独立引擎加载）。
 //
-// 可用注入项：sessionModel / data / hostTheme。
-// data 是宿主注入的**当前用户**数据接口；本页不持有数据库、密钥或 SQL。
+// 可用注入项：sessionModel / moduleData / hostTheme。
+// moduleData 是宿主注入的**当前用户**数据接口；本页不持有数据库、密钥或 SQL。
 Rectangle {
     id: page
-    property var sessionModel: null
-    property real hostUiScale: 1
-    property var hostTheme: ({})
     property bool english: false
+
+    // 宿主经 context 注入 hostTheme（含 scale）；页面不声明同名属性，
+    // 否则会**遮蔽** context property（模块页拿到的永远是自己的默认值）。
+    readonly property var theme: (typeof hostTheme !== "undefined" && hostTheme) ? hostTheme : ({})
+    readonly property real uiScale: (theme.scale > 0) ? theme.scale : 1
 
     // 一次测量三个指标（报告 §12.1）：分开录入但存成一条记录。
     property string entrySys: ""
@@ -21,15 +23,15 @@ Rectangle {
     property string message: ""
     property var rows: []
 
-    readonly property color background: hostTheme.background || "#08121f"
-    readonly property color surface: hostTheme.surface || "#102238"
-    readonly property color foreground: hostTheme.foreground || "#ffffff"
-    readonly property real gap: 16 * hostUiScale
-    readonly property real hit: Math.max(48, 64 * hostUiScale)
+    readonly property color background: theme.background || "#08121f"
+    readonly property color surface: theme.surface || "#102238"
+    readonly property color foreground: theme.foreground || "#ffffff"
+    readonly property real gap: 16 * uiScale
+    readonly property real hit: Math.max(48, 64 * uiScale)
 
     function reload() {
-        if (typeof data === "undefined" || !data) { rows = []; return }
-        rows = data.recentMeasurements(100)
+        if (typeof moduleData === "undefined" || !moduleData) { rows = []; return }
+        rows = moduleData.recentMeasurements(100)
     }
 
     function sourceLabel(source) {
@@ -42,7 +44,7 @@ Rectangle {
     }
 
     function submit() {
-        if (typeof data === "undefined" || !data) return
+        if (typeof moduleData === "undefined" || !moduleData) return
         // 至少填一项才允许保存；空表单不造记录。
         const sys = entrySys.trim(), dia = entryDia.trim(), pulse = entryPulse.trim()
         if (sys.length === 0 && dia.length === 0 && pulse.length === 0) {
@@ -61,7 +63,7 @@ Rectangle {
                       ? "Systolic must be above diastolic" : "收缩压必须高于舒张压"
             return
         }
-        const ok = data.appendMeasurement(payload)
+        const ok = moduleData.appendMeasurement(payload)
         if (ok) {
             entrySys = ""; entryDia = ""; entryPulse = ""
             message = page.english ? "Saved" : "已保存"
@@ -74,7 +76,7 @@ Rectangle {
     Component.onCompleted: reload()
 
     Connections {
-        target: typeof data !== "undefined" ? data : null
+        target: typeof moduleData !== "undefined" ? moduleData : null
         function onDataChanged() { page.reload() }
     }
 
@@ -91,7 +93,7 @@ Rectangle {
                   ? "Daily reference only; not for diagnosis"
                   : "家庭日常参考，不作诊断依据"
             color: "#6e9abb"
-            font.pixelSize: 12 * page.hostUiScale
+            font.pixelSize: 12 * page.uiScale
             wrapMode: Text.Wrap
         }
 
@@ -99,7 +101,7 @@ Rectangle {
         Text {
             text: page.english ? "Manual entry" : "手工录入"
             color: page.foreground
-            font.pixelSize: 14 * page.hostUiScale
+            font.pixelSize: 14 * page.uiScale
         }
         RowLayout {
             Layout.fillWidth: true
@@ -149,7 +151,7 @@ Rectangle {
             visible: page.message.length > 0
             text: page.message
             color: "#ffdaa0"
-            font.pixelSize: 12 * page.hostUiScale
+            font.pixelSize: 12 * page.uiScale
             wrapMode: Text.Wrap
         }
 
@@ -157,14 +159,14 @@ Rectangle {
         Text {
             text: page.english ? "Recent readings" : "最近读数"
             color: "#6e9abb"
-            font.pixelSize: 14 * page.hostUiScale
+            font.pixelSize: 14 * page.uiScale
         }
         Text {
             Layout.fillWidth: true
             visible: page.rows.length === 0
             text: page.english ? "No readings yet" : "还没有读数"
             color: "#6e9abb"
-            font.pixelSize: 12 * page.hostUiScale
+            font.pixelSize: 12 * page.uiScale
         }
         Repeater {
             model: page.rows
@@ -172,7 +174,7 @@ Rectangle {
                 required property var modelData
                 Layout.fillWidth: true
                 Layout.preferredHeight: page.hit
-                radius: 12 * page.hostUiScale
+                radius: 12 * page.uiScale
                 color: page.surface
                 RowLayout {
                     anchors.fill: parent
@@ -186,18 +188,18 @@ Rectangle {
                               + (modelData.pulse !== undefined ? "  ♥" + modelData.pulse : "")
                               + (unit.length > 0 ? "  " + unit : "")
                         color: modelData.valid ? page.foreground : "#ffdaa0"
-                        font.pixelSize: 14 * page.hostUiScale
+                        font.pixelSize: 14 * page.uiScale
                     }
                     Text {
                         text: page.sourceLabel(modelData.source)
                         color: "#6e9abb"
-                        font.pixelSize: 12 * page.hostUiScale
+                        font.pixelSize: 12 * page.uiScale
                     }
                     Text {
                         visible: !modelData.valid
                         text: page.english ? "Invalid" : "无效"
                         color: "#ffdaa0"
-                        font.pixelSize: 12 * page.hostUiScale
+                        font.pixelSize: 12 * page.uiScale
                     }
                 }
             }

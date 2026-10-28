@@ -19,10 +19,10 @@ public:
 
     // pinnedFingerprint：SHA-256(证书 DER) 的 32 字节；为空则拒绝连接
     // （不能"没配指纹就连"，那等于不校验）。
-    // expectedBridgeId：非空时还要比对证书 CN 与 bridge_id（§0.8.1）。
+    // expectedModuleId：非空时还要比对证书 CN 与 module_id（§0.8.1）。
     bool connectToModule(const QHostAddress &address, quint16 port,
                          const QByteArray &pinnedFingerprint,
-                         const QString &expectedBridgeId = QString());
+                         const QString &expectedModuleId = QString());
 
     bool send(const QByteArray &payload);
     bool sendData(const QByteArray &payload) override { return send(payload); }
@@ -49,6 +49,6 @@ private:
     QByteArray outgoing_;
     QTimer timer_;
     QByteArray pinnedFingerprint_;
-    QString expectedBridgeId_;
+    QString expectedModuleId_;
     bool pinnedVerified_ = false;
 };

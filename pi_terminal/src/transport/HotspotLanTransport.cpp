@@ -21,6 +21,7 @@ HotspotLanTransport::HotspotLanTransport(QObject *parent) : TransportBase(parent
         emit disconnected("TLS disconnected");
     });
     connect(&socket_, &QSslSocket::errorOccurred, this, [this](auto) {
+        qWarning().noquote() << "TLS socket error:" << socket_.errorString();
         // 握手阶段出错时，QSslSocket 也会走这里；保持失败关闭。
         emit error(socket_.errorString());
     });
@@ -90,11 +91,14 @@ void HotspotLanTransport::onEncrypted() {
         close();
         return;
     }
-    if (!expectedBridgeId_.isEmpty()) {
-        // 证书 CN 必须是 <module_id>；这里复用 bridge_id 字段做设备标识比对。
+    if (!expectedModuleId_.isEmpty()) {
+        // §0.8.1：证书 CN 必须是 <module_id>。这里不再复用 bridge_id，
+        // 避免模块号与桥板号语义混淆（实机对齐点）。
         const QString cn = commonNameOf(peer);
-        if (cn.isEmpty() || cn != expectedBridgeId_) {
-            emit identityRejected("certificate CN mismatch");
+        if (cn.isEmpty() || cn != expectedModuleId_) {
+            emit identityRejected(
+                QStringLiteral("certificate CN mismatch: got '%1', expected '%2'")
+                    .arg(cn, expectedModuleId_));
             close();
             return;
         }
@@ -125,7 +129,7 @@ bool HotspotLanTransport::connectToModule(const QHostAddress &address, quint16 p
         return false;
     }
     pinnedFingerprint_ = pinnedFingerprint;
-    expectedBridgeId_ = expectedBridgeId;
+    expectedModuleId_ = expectedBridgeId;
     pinnedVerified_ = false;
     socket_.connectToHostEncrypted(address.toString(), port);
     return true;
