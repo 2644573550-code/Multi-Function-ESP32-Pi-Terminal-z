@@ -50,7 +50,10 @@ private slots:
 
     void init() {
         QDir(root_()).removeRecursively();
+        QFile::remove(mapPath_());
     }
+
+    QString mapPath_() const { return dir_.filePath("uid_map.json"); }
 
     void derivesOnlyForValidLengths() {
         QCOMPARE(testDerive(QByteArray::fromHex("aabbcc")).size(), 0);          // 3 字节非法
@@ -71,78 +74,79 @@ private slots:
     }
 
     void unmatchedCardReturnsNoMatch() {
-        UserDatabase db(root_());
-        QVERIFY(db.openForSession(QStringLiteral("userA"), keyA_));
-        db.close();
-
-        CardIndex matcher(&db);
-        // 库里没有这张卡。
-        const CardMatch match = matcher.findOwner(kCardA,
-            {{QStringLiteral("userA"), keyA_}}, testDerive);
+        CardIndex matcher(mapPath_());
+        // 映射表里没有这张卡。
+        const CardMatch match = matcher.findOwner(kCardA, testDerive);
         QCOMPARE(match.verdict, CardMatch::Verdict::NoMatch);
         QVERIFY(match.userId.isEmpty());
     }
 
     void boundCardMatchesItsOwner() {
-        UserDatabase db(root_());
-        CardIndex matcher(&db);
-        // 先建两个用户库。
-        QVERIFY(db.openForSession(QStringLiteral("userA"), keyA_)); db.close();
-        QVERIFY(db.openForSession(QStringLiteral("userB"), keyB_)); db.close();
+        CardIndex matcher(mapPath_());
+        QVERIFY(matcher.bind(QStringLiteral("userB"), kCardA, testDerive));
 
-        QVERIFY(matcher.bind(QStringLiteral("userB"), keyB_, kCardA, testDerive));
-
-        const CardMatch match = matcher.findOwner(kCardA,
-            {{QStringLiteral("userA"), keyA_}, {QStringLiteral("userB"), keyB_}}, testDerive);
+        // 关键：未登录、没有任何 DB key 也能选出用户（R-02 死锁已解除）。
+        const CardMatch match = matcher.findOwner(kCardA, testDerive);
         QCOMPARE(match.verdict, CardMatch::Verdict::Matched);
-        // 必须选中绑定的那个用户，不是第一个试开的。
         QCOMPARE(match.userId, QStringLiteral("userB"));
     }
 
     void revokedCardNoLongerMatches() {
-        UserDatabase db(root_());
-        CardIndex matcher(&db);
-        QVERIFY(db.openForSession(QStringLiteral("userA"), keyA_)); db.close();
-        QVERIFY(matcher.bind(QStringLiteral("userA"), keyA_, kCardA, testDerive));
-        QVERIFY(matcher.revoke(QStringLiteral("userA"), keyA_, kCardA, testDerive));
+        CardIndex matcher(mapPath_());
+        QVERIFY(matcher.bind(QStringLiteral("userA"), kCardA, testDerive));
+        QVERIFY(matcher.revoke(QStringLiteral("userA"), kCardA, testDerive));
 
-        const CardMatch match = matcher.findOwner(kCardA,
-            {{QStringLiteral("userA"), keyA_}}, testDerive);
+        const CardMatch match = matcher.findOwner(kCardA, testDerive);
         QCOMPARE(match.verdict, CardMatch::Verdict::NoMatch);
     }
 
     void invalidUidLengthIsRejected() {
-        UserDatabase db(root_());
-        CardIndex matcher(&db);
-        const CardMatch match = matcher.findOwner(QByteArray(3, '\x01'),
-            {{QStringLiteral("userA"), keyA_}}, testDerive);
+        CardIndex matcher(mapPath_());
+        const CardMatch match = matcher.findOwner(QByteArray(3, '\x01'), testDerive);
         QCOMPARE(match.verdict, CardMatch::Verdict::IndexRejected);
         // 也不允许绑非法长度。
-        QVERIFY(!matcher.bind(QStringLiteral("userA"), keyA_, QByteArray(3, '\x01'), testDerive));
+        QVERIFY(!matcher.bind(QStringLiteral("userA"), QByteArray(3, '\x01'), testDerive));
     }
 
     void hexCaseDoesNotMatterBecauseRawBytesAreUsed() {
         // 同一张卡以不同大小写 hex 文本输入，只要解成同一串原始字节就必须匹配。
-        UserDatabase db(root_());
-        CardIndex matcher(&db);
-        QVERIFY(db.openForSession(QStringLiteral("userA"), keyA_)); db.close();
-        QVERIFY(matcher.bind(QStringLiteral("userA"), keyA_,
+        CardIndex matcher(mapPath_());
+        QVERIFY(matcher.bind(QStringLiteral("userA"),
                              QByteArray::fromHex("A1B2C3D4"), testDerive));
-        const CardMatch match = matcher.findOwner(QByteArray::fromHex("a1b2c3d4"),
-            {{QStringLiteral("userA"), keyA_}}, testDerive);
+        const CardMatch match = matcher.findOwner(QByteArray::fromHex("a1b2c3d4"), testDerive);
         QCOMPARE(match.verdict, CardMatch::Verdict::Matched);
     }
 
-    void wrongDbKeySkipsCandidateNotMatch() {
-        UserDatabase db(root_());
-        CardIndex matcher(&db);
-        QVERIFY(db.openForSession(QStringLiteral("userA"), keyA_)); db.close();
-        QVERIFY(matcher.bind(QStringLiteral("userA"), keyA_, kCardA, testDerive));
+    void cardBoundToOthersCannotBeRebound() {
+        // 已绑他人的卡必须拒绝，不能靠一次 bind 抢走归属。
+        CardIndex matcher(mapPath_());
+        QVERIFY(matcher.bind(QStringLiteral("userA"), kCardA, testDerive));
+        QVERIFY(!matcher.bind(QStringLiteral("userB"), kCardA, testDerive));
+        QCOMPARE(matcher.findOwner(kCardA, testDerive).userId, QStringLiteral("userA"));
 
-        // 用一个错误的 DB key 去试开 userA：应当跳过而不是误判为匹配。
-        const CardMatch match = matcher.findOwner(kCardA,
-            {{QStringLiteral("userA"), QByteArray(32, 'z')}}, testDerive);
-        QCOMPARE(match.verdict, CardMatch::Verdict::NoMatch);
+        // 原用户挂失后才可以重新绑给他人。
+        QVERIFY(matcher.revoke(QStringLiteral("userA"), kCardA, testDerive));
+        QVERIFY(matcher.bind(QStringLiteral("userB"), kCardA, testDerive));
+        QCOMPARE(matcher.findOwner(kCardA, testDerive).userId, QStringLiteral("userB"));
+    }
+
+    void revokeAllClearsEveryCardOfUser() {
+        CardIndex matcher(mapPath_());
+        QVERIFY(matcher.bind(QStringLiteral("userA"), kCardA, testDerive));
+        QVERIFY(matcher.bind(QStringLiteral("userA"), kCardB, testDerive));
+        QCOMPARE(matcher.revokeAll(QStringLiteral("userA")), 2);
+        QCOMPARE(matcher.findOwner(kCardA, testDerive).verdict, CardMatch::Verdict::NoMatch);
+        QCOMPARE(matcher.findOwner(kCardB, testDerive).verdict, CardMatch::Verdict::NoMatch);
+    }
+
+    void mapFileIsOwnerOnly() {
+        CardIndex matcher(mapPath_());
+        QVERIFY(matcher.bind(QStringLiteral("userA"), kCardA, testDerive));
+        const QFile::Permissions permissions = QFile(mapPath_()).permissions();
+        QVERIFY(permissions.testFlag(QFile::ReadOwner));
+        QVERIFY(permissions.testFlag(QFile::WriteOwner));
+        QVERIFY(!permissions.testFlag(QFile::ReadGroup));
+        QVERIFY(!permissions.testFlag(QFile::ReadOther));
     }
 
     void bindingWindowIsSingleUse() {

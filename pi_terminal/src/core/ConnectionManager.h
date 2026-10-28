@@ -16,6 +16,7 @@
 #include "HostEventDetector.h"
 #include "BridgeConnectionMonitor.h"
 #include "TransportPolicy.h"
+#include "LaneGate.h"
 #include "transport/PogoControlTransport.h"
 #include "transport/BleTransport.h"
 #include "transport/HotspotLanTransport.h"
@@ -51,6 +52,11 @@ public:
     Q_INVOKABLE void action(const QString &instance, const QString &name);
     Q_INVOKABLE void retry(const QString &instance);
     Q_INVOKABLE void trust(const QString &instance, bool always);
+
+    // §0.8.5：业务数据必须挂在当前登录用户上。由 TerminalApplication 在
+    // 登录/切用户/退出时调用；空字符串表示无人登录（业务数据全部拒绝）。
+    void setActiveUserId(const QString &userId);
+    QString activeUserId() const { return activeUserId_; }
 signals:
     void cardsChanged();
     void pageMustClose(QString instance);
@@ -79,6 +85,8 @@ private:
         QString incoming;
         HotspotLanTransport *lan = nullptr;
         BleTransport *ble = nullptr;
+        // §0.8.5：每个 attach 一个 lane 门控实例（切 lane 必须重新认证、最多 3 次）。
+        LaneGate *laneGate = nullptr;
         QProcess *installer = nullptr;
         quint32 tx = 0, rx = 0;
         qint64 lastSeen = 0, lostAt = 0, retryAt = 0;
@@ -108,6 +116,7 @@ private:
     QSet<QString> suppressedInstances_;
     QJsonObject profiles_, config_;
     QString status_ = QStringLiteral("等待模块");
+    QString activeUserId_;
     void state(const QSharedPointer<Session> &, const QString &, const QString &);
     void connectData(const QSharedPointer<Session> &);
     void requestHotspot(const QSharedPointer<Session> &, bool forPackage);

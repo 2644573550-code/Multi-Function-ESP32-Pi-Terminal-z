@@ -115,9 +115,12 @@ Item {
             message: gate.localizedMessage(sessionManager.message)
             messageIsError: sessionManager.message.length > 0
             retryAfterMs: sessionManager.retryAfterMs
-            busy: false
+            busy: gate.verifying
             onPinSubmitted: function(userId, pin) {
+                // KDF 在服务端同步执行（Pi 上数百毫秒），期间给可见反馈。
+                gate.verifying = true
                 const code = sessionManager.login(userId, pin)
+                gate.verifying = false
                 if (code === "") gate.idleElapsed = 0
             }
             onRefreshRequested: sessionManager.refreshUsers()
@@ -128,8 +131,11 @@ Item {
         id: lockComponent
         LockScreen {
             message: gate.localizedMessage(sessionManager.message)
+            busy: gate.verifying
             onPinSubmitted: function(pin) {
+                gate.verifying = true
                 const code = sessionManager.unlockWithPin(pin)
+                gate.verifying = false
                 if (code === "") gate.idleElapsed = 0
             }
             onLogoutRequested: sessionManager.signOut()

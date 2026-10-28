@@ -38,13 +38,6 @@ CREATE TABLE IF NOT EXISTS samples(
     battery_pct INTEGER
 );
 CREATE INDEX IF NOT EXISTS samples_by_time ON samples(received_at_ms);
--- 卡索引：只存 UID 索引（HMAC 输出），不存 raw UID。
--- 放在每用户库里按 §0.6 原文；代价见 CardIndex::findOwner 的注释。
-CREATE TABLE IF NOT EXISTS card_index(
-    uid_index BLOB PRIMARY KEY,
-    added_at_ms INTEGER NOT NULL,
-    revoked INTEGER NOT NULL DEFAULT 0
-);
 )SQL";
 
 }  // namespace
@@ -179,60 +172,5 @@ bool UserDatabase::openForeign(const QString &userId, const QByteArray &dbKey) {
 
 QString UserDatabase::cipherVersion() const { return store_ ? store_->cipherVersion() : QString(); }
 
-bool UserDatabase::bindCard(const QByteArray &uidIndex) {
-    if (!isOpen() || uidIndex.size() != 32) return false;
-    void *stmt = nullptr;
-    // SQLCipher 3.4.1 基于 SQLite 3.15.2，不支持 UPSERT（ON CONFLICT DO UPDATE 需 3.24+）。
-    // 用 INSERT OR REPLACE 保持"重新绑卡即覆盖并清除 revoked"的语义。
-    if (!store_->prepare(QStringLiteral(
-            "INSERT OR REPLACE INTO card_index(uid_index, added_at_ms, revoked) VALUES(?,?,0)"),
-            &stmt))
-        return false;
-    // sqlite3_bind_blob 需要原始指针，这里经 exec 风格的封装不可行，直接调用。
-    struct BindBlob {
-        static bool apply(void *statement, int index, const QByteArray &value) {
-            auto *stmt = static_cast<sqlite3_stmt *>(statement);
-            return sqlite3_bind_blob(stmt, index, value.constData(), value.size(), SQLITE_TRANSIENT)
-                == SQLITE_OK;
-        }
-    };
-    if (!BindBlob::apply(stmt, 1, uidIndex)) { store_->finalize(stmt); return false; }
-    store_->bindInt(stmt, 2, QDateTime::currentMSecsSinceEpoch());
-    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
-    store_->finalize(stmt);
-    return ok;
-}
-
-bool UserDatabase::revokeCard(const QByteArray &uidIndex) {
-    if (!isOpen() || uidIndex.size() != 32) return false;
-    void *stmt = nullptr;
-    if (!store_->prepare(QStringLiteral(
-            "UPDATE card_index SET revoked=1 WHERE uid_index=?"), &stmt))
-        return false;
-    auto *raw = static_cast<sqlite3_stmt *>(stmt);
-    if (sqlite3_bind_blob(raw, 1, uidIndex.constData(), uidIndex.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-        store_->finalize(stmt);
-        return false;
-    }
-    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
-    store_->finalize(stmt);
-    return ok;
-}
-
-bool UserDatabase::hasCard(const QByteArray &uidIndex) const {
-    if (!isOpen() || uidIndex.size() != 32) return false;
-    void *stmt = nullptr;
-    if (!store_->prepare(QStringLiteral(
-            "SELECT 1 FROM card_index WHERE uid_index=? AND revoked=0"), &stmt))
-        return false;
-    auto *raw = static_cast<sqlite3_stmt *>(stmt);
-    if (sqlite3_bind_blob(raw, 1, uidIndex.constData(), uidIndex.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-        store_->finalize(stmt);
-        return false;
-    }
-    const bool found = store_->step(stmt);
-    store_->finalize(stmt);
-    return found;
-}
 
 }  // namespace security

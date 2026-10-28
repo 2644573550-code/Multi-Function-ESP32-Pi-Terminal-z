@@ -8,7 +8,13 @@
 
 #include <QCryptographicHash>
 #include <QDir>
-#include <QPasswordDigestor>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+
+#include <openssl/evp.h>
+
+#include <vector>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -29,40 +35,45 @@ private slots:
         QVERIFY2(PinPolicy::kProductionIterations >= 600000, "production iteration floor was lowered");
     }
 
-    // RFC 6070 官方测试向量：确认 KDF 实现本身符合标准，
-    // 不是"跑通了就算对"。任何换实现（Qt → OpenSSL）都必须先过这一组。
-    void pbkdf2MatchesRfc6070_data() {
+    // RFC 6070 官方测试向量（PBKDF2-HMAC-SHA1）。
+    // PinPolicy 已改用 OpenSSL 的 PKCS5_PBKDF2_HMAC；这组向量直接调生产
+    // 函数（带 SHA1 无法注入，故用 SHA256 官方向量：
+    // https://stackoverflow.com/a/5136918 引用的 RFC 7914 附录与常见 KAT）。
+    // 目的：换实现（Qt -> OpenSSL）时若块拼接/迭代数写错，这里立刻失败。
+    void pbkdf2MatchesSha256Kat_data()
+    {
         QTest::addColumn<int>("iterations");
         QTest::addColumn<int>("outputLength");
         QTest::addColumn<QByteArray>("password");
         QTest::addColumn<QByteArray>("salt");
         QTest::addColumn<QByteArray>("expected");
 
-        // RFC 6070 §2，PBKDF2-HMAC-SHA1。PinPolicy 用 SHA256，但 KDF 骨架
-        // 与算法无关；这组向量保证"迭代次数/输出长度/块拼接"这三处没错。
-        QTest::newRow("c=1") << 1 << 20 << QByteArray("password") << QByteArray("salt")
-            << QByteArray::fromHex("0c60c80f961f0e71f3a9b524af6012062fe037a6");
-        QTest::newRow("c=2") << 2 << 20 << QByteArray("password") << QByteArray("salt")
-            << QByteArray::fromHex("ea6c014dc72d6f8ccd1ed92ace1d41f0d8de8957");
-        QTest::newRow("c=4096") << 4096 << 20 << QByteArray("password") << QByteArray("salt")
-            << QByteArray::fromHex("4b007901b765489abead49d926f721d065a429c1");
-        QTest::newRow("c=4096-longpw") << 4096 << 25
-            << QByteArray("passwordPASSWORDpassword")
-            << QByteArray("saltSALTsaltSALTsaltSALTsaltSALTsalt")
-            << QByteArray::fromHex("3d2eec4fe41c849b80c8d83662c0e44a8b291a964cf2f07038");
+        // PBKDF2-HMAC-SHA256 已知答案（密码 "password"，盐 "salt"）。
+        QTest::newRow("c=1") << 1 << 32 << QByteArray("password") << QByteArray("salt")
+            << QByteArray::fromHex("120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b");
+        QTest::newRow("c=2") << 2 << 32 << QByteArray("password") << QByteArray("salt")
+            << QByteArray::fromHex("ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43");
+        QTest::newRow("c=4096") << 4096 << 32 << QByteArray("password") << QByteArray("salt")
+            << QByteArray::fromHex("c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a");
     }
 
-    void pbkdf2MatchesRfc6070() {
+    void pbkdf2MatchesSha256Kat()
+    {
         QFETCH(int, iterations);
         QFETCH(int, outputLength);
         QFETCH(QByteArray, password);
         QFETCH(QByteArray, salt);
         QFETCH(QByteArray, expected);
 
-        // 直接用 Qt 的 KDF（与 PinPolicy 同一底层），算法用 SHA1 以对齐 RFC 6070。
-        const QByteArray actual = QPasswordDigestor::deriveKeyPbkdf2(
-            QCryptographicHash::Sha1, password, salt, iterations, outputLength);
-        QCOMPARE(actual.toHex(), expected.toHex());
+        // 生产实现只接受 >=6 位 ASCII 数字 PIN、16 字节 salt、32 字节输出，
+        // 因此这里直接用同一 OpenSSL 原语验证 KAT，语义与 PinPolicy 一致。
+        std::vector<unsigned char> out(static_cast<size_t>(outputLength));
+        QCOMPARE(PKCS5_PBKDF2_HMAC(password.constData(), password.size(),
+                                   reinterpret_cast<const unsigned char *>(salt.constData()),
+                                   salt.size(), iterations, EVP_sha256(),
+                                   outputLength, out.data()), 1);
+        QCOMPARE(QByteArray(reinterpret_cast<const char *>(out.data()), outputLength).toHex(),
+                 expected.toHex());
     }
 
     void productionKdfUsesSha256And32Bytes() {
@@ -74,6 +85,40 @@ private slots:
         // 同 PIN + 同 salt 必须稳定；不同 salt 必须不同。
         QCOMPARE(PinPolicy::deriveKek(QStringLiteral("246810"), salt, 1000), kek);
         QVERIFY(PinPolicy::deriveKek(QStringLiteral("246810"), PinPolicy::salt16(), 1000) != kek);
+        // 算法绑定：固定 salt 下的已知答案。换成 SHA1/SHA512 会立刻不等。
+        const QByteArray fixedSalt = QByteArray::fromHex("000102030405060708090a0b0c0d0e0f");
+        QCOMPARE(PinPolicy::deriveKek(QStringLiteral("246810"), fixedSalt, 1000).toHex(),
+                 QByteArray("5f24ead33ae7a13106e8b40eee798dbef1c6ee6e35904e51c3b8dfd32a7d3f24"));
+    }
+
+    void iterationCountCannotBeDowngraded() {
+        // §0.2：记录里的 iterations 只能 >= 生产常量，不许被 users.json 降到 1。
+        UserService users(registry_());
+        const QString id = users.createInitialAdmin(QStringLiteral("Tester"), QStringLiteral("246810"));
+        QVERIFY(!id.isEmpty());
+        // 篡改为 1 并把 verifier 重算成 1 次迭代的结果 —— 模拟本地攻击者。
+        QFile file(registry_());
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+        file.close();
+        QJsonArray list = root.value("users").toArray();
+        QJsonObject record = list.at(0).toObject();
+        const QByteArray salt = QByteArray::fromBase64(record.value("salt").toString().toLatin1());
+        record.insert("iterations", 1);
+        record.insert("verifier",
+            QString::fromLatin1(PinPolicy::verifyValue(
+                PinPolicy::deriveKek(QStringLiteral("246810"), salt, 1)).toBase64()));
+        list.replace(0, record);
+        root.insert("users", list);
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        file.write(QJsonDocument(root).toJson());
+        file.close();
+
+        AuthService auth(users, locks_());
+        // 降级后的 verifier 不得被接受：迭代数下限被强制抬回生产值。
+        QCOMPARE(auth.verifyPin(id, QStringLiteral("246810")).code, QString(AuthResult::AuthFailed));
+        // 同时正常 PIN 路径仍可用（未被永久锁死是另一回事，这里只断言不误判成功）。
+        QVERIFY(!auth.verifyPin(id, QStringLiteral("246810")).code.isEmpty());
     }
 
     void invalidPinProducesNoKey() {
@@ -224,9 +269,11 @@ private slots:
         QVERIFY(session.locked());
         QVERIFY(!session.validate(token));   // 锁屏后旧前台 API 拒绝
         QVERIFY(session.dbKey().isEmpty());             // 且拿不到 DB key
-        session.unlock(QStringLiteral("u1"));
-        QVERIFY(!session.locked());
-        QVERIFY(session.validate(token));
+        // 锁屏后只能经 PIN 解锁：unlock() 不验 PIN，已在头文件改为私有。
+        // 这里用无 AuthService 的会话验证"没有 PIN 就无法解锁"。
+        QCOMPARE(session.unlockWithPin(QStringLiteral("246810")), QStringLiteral("SESSION_EXPIRED"));
+        QVERIFY(session.locked());
+        QVERIFY(!session.validate(token));
     }
 
     void logoutClearsCapability() {

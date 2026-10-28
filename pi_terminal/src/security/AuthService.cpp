@@ -101,7 +101,7 @@ AuthService::Result AuthService::verifyPin(const QString &userId, const QString 
         return {AuthResult::AuthFailed, 0, {}, {}, false};
     }
 
-    const QByteArray kek = PinPolicy::deriveKek(pin, record.salt, record.iterations);
+    const QByteArray kek = PinPolicy::deriveKek(pin, record.salt, PinPolicy::effectiveIterations(record.iterations));
     if (!PinPolicy::verifyMatches(record.verifier, kek)) {
         ++state.failures;
         if (state.failures >= PinPolicy::kMaxAccountFailures)
@@ -127,7 +127,7 @@ bool AuthService::verifyAdminPin(const QString &userId, const QString &pin) {
     if (!users_.lookup(userId, &record) || !record.admin || record.disabled) return false;
     if (!PinPolicy::validPin(pin)) return false;
     return PinPolicy::verifyMatches(record.verifier,
-                                    PinPolicy::deriveKek(pin, record.salt, record.iterations));
+                                    PinPolicy::deriveKek(pin, record.salt, PinPolicy::effectiveIterations(record.iterations)));
 }
 
 bool AuthService::changePin(const QString &userId, const QString &oldPin, const QString &newPin) {
@@ -135,7 +135,7 @@ bool AuthService::changePin(const QString &userId, const QString &oldPin, const 
     if (!users_.lookup(userId, &record) || record.disabled) return false;
     if (!PinPolicy::validPin(newPin)) return false;
 
-    const QByteArray oldKek = PinPolicy::deriveKek(oldPin, record.salt, record.iterations);
+    const QByteArray oldKek = PinPolicy::deriveKek(oldPin, record.salt, PinPolicy::effectiveIterations(record.iterations));
     if (!PinPolicy::verifyMatches(record.verifier, oldKek)) return false;
 
     // 改 PIN 只重封装 DB key，不重加密整库（f-day1 §5）。

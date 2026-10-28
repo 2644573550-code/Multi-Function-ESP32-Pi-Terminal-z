@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 // 数字键盘：只接受 ASCII 数字，至少 6 位。
@@ -28,6 +29,20 @@ Item {
         id: column
         width: parent.width
         spacing: Theme.gap / 2
+
+        // 校验进行中：给出明确状态，避免用户以为点击丢失。
+        Row {
+            Layout.alignment: Qt.AlignHCenter
+            spacing: Theme.gap / 3
+            visible: pinPad.busy
+            BusyIndicator { running: pinPad.busy; implicitWidth: Theme.icon; implicitHeight: Theme.icon }
+            CarText {
+                anchors.verticalCenter: parent.verticalCenter
+                text: I18n.t("正在验证")
+                color: Theme.outline
+                fontPixelSize: Theme.fontLabel
+            }
+        }
 
         // 位数指示器：只显示圆点，不显示数字。
         Row {

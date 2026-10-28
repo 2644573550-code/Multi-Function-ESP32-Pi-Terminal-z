@@ -25,6 +25,7 @@ class Tests : public QObject {
 private slots:
     void sessions() {
         ConnectionManager manager;
+        manager.setActiveUserId(QStringLiteral("test-user"));
         QVERIFY(manager.configure(qEnvironmentVariable("TEST_CONFIG")));
         provideFakeHotspot(manager);
         connect(&manager, &ConnectionManager::trustRequired, &manager, [&manager](const QString &id, const QString &, const QStringList &) { manager.trust(id, false); });
@@ -54,6 +55,7 @@ private slots:
     }
     void physicalContactRejectsWirelessDisconnect() {
         ConnectionManager manager;
+        manager.setActiveUserId(QStringLiteral("test-user"));
         QVERIFY(manager.configure(qEnvironmentVariable("TEST_CONFIG")));
         provideFakeHotspot(manager);
         connect(&manager,&ConnectionManager::trustRequired,&manager,[&manager](const QString &id,const QString &,const QStringList &){manager.trust(id,false);});
@@ -85,6 +87,7 @@ private slots:
     }
     void reconnectAfterDetachedDisconnect() {
         ConnectionManager manager;
+        manager.setActiveUserId(QStringLiteral("test-user"));
         QVERIFY(manager.configure(qEnvironmentVariable("TEST_CONFIG")));
         provideFakeHotspot(manager);
         connect(&manager, &ConnectionManager::trustRequired, &manager, [&manager](const QString &id, const QString &, const QStringList &) { manager.trust(id, false); });
@@ -132,6 +135,7 @@ private slots:
     }
     void trustGate() {
         ConnectionManager manager;
+        manager.setActiveUserId(QStringLiteral("test-user"));
         QVERIFY(manager.configure(qEnvironmentVariable("TEST_CONFIG")));
         provideFakeHotspot(manager);
         connect(&manager, &ConnectionManager::pageMustClose, &manager, &ConnectionManager::releasePage, Qt::QueuedConnection);
@@ -151,7 +155,8 @@ private slots:
         profile["allow_disconnect"] = false; profiles["80"] = profile; config["modules"] = profiles;
         QTemporaryDir dir; QFile file(dir.filePath("product.json")); QVERIFY(file.open(QIODevice::WriteOnly));
         file.write(QJsonDocument(config).toJson()); file.close();
-        ConnectionManager manager; QVERIFY(manager.configure(file.fileName()));
+        ConnectionManager manager; manager.setActiveUserId(QStringLiteral("test-user"));
+        QVERIFY(manager.configure(file.fileName()));
         provideFakeHotspot(manager);
         connect(&manager, &ConnectionManager::trustRequired, &manager, [&manager](const QString &id, const QString &, const QStringList &) { manager.trust(id, false); });
         connect(&manager, &ConnectionManager::pageMustClose, &manager, &ConnectionManager::releasePage, Qt::QueuedConnection);
@@ -169,7 +174,8 @@ private slots:
         auto config = QJsonDocument::fromJson(source.readAll()).object(); config["python"] = "/nonexistent/opi-python";
         QTemporaryDir dir; QFile file(dir.filePath("product.json")); QVERIFY(file.open(QIODevice::WriteOnly));
         file.write(QJsonDocument(config).toJson()); file.close();
-        ConnectionManager manager; QVERIFY(manager.configure(file.fileName()));
+        ConnectionManager manager; manager.setActiveUserId(QStringLiteral("test-user"));
+        QVERIFY(manager.configure(file.fileName()));
         provideFakeHotspot(manager);
         connect(&manager, &ConnectionManager::trustRequired, &manager, [&manager](const QString &id, const QString &, const QStringList &) { manager.trust(id, false); });
         connect(&manager, &ConnectionManager::pageMustClose, &manager, &ConnectionManager::releasePage, Qt::QueuedConnection);

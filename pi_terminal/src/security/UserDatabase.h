@@ -63,13 +63,6 @@ public:
     QString databasePathFor(const QString &userId) const;
     QString cipherVersion() const;
 
-    // 卡索引：只接受已登录用户的会话（绑卡需已登录 + 重验 PIN + 30 秒窗口，
-    // 窗口由调用方 CardIndex 校验）。
-    bool bindCard(const QByteArray &uidIndex);
-    bool revokeCard(const QByteArray &uidIndex);
-    // 返回该索引是否属于当前打开的用户且未挂失。
-    bool hasCard(const QByteArray &uidIndex) const;
-
 private:
     bool checkCipherMajor(const QString &currentMajor);
 

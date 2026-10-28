@@ -45,7 +45,6 @@ public:
     QString begin(const QString &userId, const QByteArray &dbKey, bool admin);
 
     void lock();
-    void unlock(const QString &wantUserId);
     void logout();
 
     // ---- QML 入口：全部经过服务端校验 ----
@@ -97,6 +96,9 @@ signals:
     void lockStateChanged();
 
 private:
+    // 只能在 unlockWithPin() 成功之后内部调用：本函数不验 PIN。
+    // 公开它会成为锁屏旁路，因此不导出。
+    void unlock(const QString &wantUserId);
     void clear();
     void setMessage(const QString &code, int retryAfterMs = 0);
 

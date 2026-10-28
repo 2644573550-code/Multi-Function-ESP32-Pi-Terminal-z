@@ -1,67 +1,151 @@
 #include "security/CardMatcher.h"
 
-#include "security/UserDatabase.h"
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSaveFile>
+#include <QStandardPaths>
 
 namespace security {
 
 
 namespace {
-// D 未交付前的默认派生：直接判失败，绝不退回明文 UID 比较。
-// 调用方必须注入真实 deriveUidIndex；注入前整条 RFID 路径失败关闭。
+// 未注入派生函数时一律失败关闭，绝不退回明文 UID 比较。
 QByteArray noDerive(const QByteArray &) { return {}; }
+
+bool validUidLength(const QByteArray &rawUid) {
+    return rawUid.size() == 4 || rawUid.size() == 7 || rawUid.size() == 10;
+}
 }  // namespace
 
-CardIndex::CardIndex(UserDatabase *database) : database_(database) {}
+CardIndex::CardIndex(QString mapPath)
+    : mapPath_(mapPath.isEmpty() ? defaultMapPath() : std::move(mapPath)) {}
 
-CardMatch CardIndex::findOwner(const QByteArray &rawUid,
-                                const QVector<QPair<QString, QByteArray>> &keys,
-                                Derive derive) {
+QString CardIndex::defaultMapPath() {
+    // AppConfigLocation 而非 AppLocalDataLocation：后者是交给模块的目录。
+    return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
+        + QStringLiteral("/uid_map.json");
+}
+
+QVector<CardIndex::Entry> CardIndex::load() const {
+    QFile file(mapPath_);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+
+    QJsonParseError parse;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parse);
+    // 损坏的映射表不作为空表处理：那等于静默解除全部绑卡关系。
+    if (parse.error != QJsonParseError::NoError || !document.isObject()) return {};
+    const QJsonObject root = document.object();
+    if (root.value("schema").toString() != QLatin1String("p0-uid-map-v1")) return {};
+
+    QVector<Entry> entries;
+    for (const QJsonValue &value : root.value("cards").toArray()) {
+        const QJsonObject object = value.toObject();
+        Entry entry;
+        entry.index = QByteArray::fromBase64(object.value("index").toString().toLatin1());
+        entry.userId = object.value("user_id").toString();
+        entry.boundAtMs = static_cast<qint64>(object.value("bound_at_ms").toDouble());
+        entry.revoked = object.value("revoked").toBool();
+        // 缺字段/长度不对的记录直接丢弃，不做猜测修复。
+        if (entry.index.size() != 32 || entry.userId.isEmpty()) continue;
+        entries.append(entry);
+    }
+    return entries;
+}
+
+bool CardIndex::save(const QVector<Entry> &entries) const {
+    QJsonArray cards;
+    for (const Entry &entry : entries) {
+        cards.append(QJsonObject{
+            {"index", QString::fromLatin1(entry.index.toBase64())},
+            {"user_id", entry.userId},
+            {"bound_at_ms", static_cast<double>(entry.boundAtMs)},
+            {"revoked", entry.revoked}});
+    }
+    const QJsonObject root{{"schema", "p0-uid-map-v1"}, {"cards", cards}};
+
+    QDir().mkpath(QFileInfo(mapPath_).absolutePath());
+    QSaveFile file(mapPath_);
+    if (!file.open(QIODevice::WriteOnly)) return false;
+    if (file.write(QJsonDocument(root).toJson(QJsonDocument::Compact)) <= 0) {
+        file.cancelWriting();
+        return false;
+    }
+    if (!file.commit()) return false;
+    QFile::setPermissions(mapPath_, QFile::ReadOwner | QFile::WriteOwner);
+    return true;
+}
+
+CardMatch CardIndex::findOwner(const QByteArray &rawUid, Derive derive) {
     CardMatch result;
-    // 长度非法或密钥不可用 → 失败关闭，不退回明文比较（§0.6）。
-    if (rawUid.size() != 4 && rawUid.size() != 7 && rawUid.size() != 10) return result;
+    if (!validUidLength(rawUid)) return result;
 
     const QByteArray index = (derive ? derive : noDerive)(rawUid);
     if (index.size() != 32) return result;   // 派生失败保持 IndexRejected
 
-    if (!database_) { result.verdict = CardMatch::Verdict::NoMatch; return result; }
-
-    // 逐用户试开：正确 key 才能读到 card_index。
-    // 错误 key 返回 26 是这里「不是这个用户」的正常信号，不是异常。
-    for (const auto &entry : keys) {
-        if (entry.second.size() != 32) continue;
-        if (!database_->openForSession(entry.first, entry.second)) continue;
-        const bool owns = database_->hasCard(index);
-        database_->close();
-        if (owns) {
-            result.verdict = CardMatch::Verdict::Matched;
-            result.userId = entry.first;
-            return result;
-        }
+    // 只读整机映射表：不需要任何用户 DB key，未登录时也能选出用户。
+    for (const Entry &entry : load()) {
+        if (entry.revoked || entry.index != index) continue;
+        result.verdict = CardMatch::Verdict::Matched;
+        result.userId = entry.userId;
+        return result;
     }
     result.verdict = CardMatch::Verdict::NoMatch;
     return result;
 }
 
-bool CardIndex::bind(const QString &userId, const QByteArray &dbKey, const QByteArray &rawUid,
-                     Derive derive) {
-    if (rawUid.size() != 4 && rawUid.size() != 7 && rawUid.size() != 10) return false;
+bool CardIndex::bind(const QString &userId, const QByteArray &rawUid, Derive derive) {
+    if (userId.isEmpty() || !validUidLength(rawUid)) return false;
     const QByteArray index = (derive ? derive : noDerive)(rawUid);
-    if (index.size() != 32 || !database_) return false;
-    if (!database_->openForSession(userId, dbKey)) return false;
-    const bool ok = database_->bindCard(index);
-    database_->close();
-    return ok;
+    if (index.size() != 32) return false;
+
+    QVector<Entry> entries = load();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    for (Entry &entry : entries) {
+        if (entry.index != index) continue;
+        // 已绑他人的卡拒绝：必须先由原用户或管理员挂失。
+        if (!entry.revoked && entry.userId != userId) return false;
+        // 同一张卡重绑：覆盖归属并清除挂失标记。
+        entry.userId = userId;
+        entry.boundAtMs = now;
+        entry.revoked = false;
+        return save(entries);
+    }
+    entries.append(Entry{index, userId, now, false});
+    return save(entries);
 }
 
-bool CardIndex::revoke(const QString &userId, const QByteArray &dbKey, const QByteArray &rawUid,
-                       Derive derive) {
-    if (rawUid.size() != 4 && rawUid.size() != 7 && rawUid.size() != 10) return false;
+bool CardIndex::revoke(const QString &userId, const QByteArray &rawUid, Derive derive) {
+    if (userId.isEmpty() || !validUidLength(rawUid)) return false;
     const QByteArray index = (derive ? derive : noDerive)(rawUid);
-    if (index.size() != 32 || !database_) return false;
-    if (!database_->openForSession(userId, dbKey)) return false;
-    const bool ok = database_->revokeCard(index);
-    database_->close();
-    return ok;
+    if (index.size() != 32) return false;
+
+    QVector<Entry> entries = load();
+    bool found = false;
+    for (Entry &entry : entries) {
+        if (entry.index != index || entry.userId != userId) continue;
+        entry.revoked = true;
+        found = true;
+    }
+    // 未命中时不写文件：避免把"没这张卡"变成一次成功的空操作。
+    return found && save(entries);
+}
+
+int CardIndex::revokeAll(const QString &userId) {
+    if (userId.isEmpty()) return 0;
+    QVector<Entry> entries = load();
+    int count = 0;
+    for (Entry &entry : entries) {
+        if (entry.userId != userId || entry.revoked) continue;
+        entry.revoked = true;
+        ++count;
+    }
+    if (count > 0 && !save(entries)) return 0;
+    return count;
 }
 
 // ---- CardBindingWindow ----

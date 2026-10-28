@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import importlib.util
+import hashlib
 import io
 import json
 import os
@@ -45,11 +46,21 @@ def main():
         subprocess.run([sys.executable,str(root/'tools/package_tool.py'),'keys',str(tmp/'keys')],check=True)
         arch=json.loads((plugin/'manifest.json').read_text())['host_arch'][0]
         package_tool.build(plugin,tmp/'http',tmp/'keys/private.pem',arch)
-        tcp,http=services(tmp/'http','desktop-test-only')
+        # §0.8.1：业务面必须走 TLS，Pi 用 SHA-256 指纹固定。
+        # 这里用 openssl 生成一次自签证书，指纹直接算出来写进 profile。
+        cert=tmp/'module-cert.pem'; key=tmp/'module-key.pem'
+        subprocess.run(['openssl','req','-x509','-newkey','ec','-pkeyopt','ec_paramgen_curve:prime256v1',
+                        '-nodes','-keyout',str(key),'-out',str(cert),'-days','2',
+                        '-subj','/CN=80'],check=True,capture_output=True)
+        der=subprocess.run(['openssl','x509','-in',str(cert),'-outform','DER'],
+                           check=True,capture_output=True).stdout
+        pin=hashlib.sha256(der).hexdigest()
+        tcp,http=services(tmp/'http','desktop-test-only',tls=(cert,key))
         url=f'http://127.0.0.1:{http.server_port}'
         config=dict(python=sys.executable,package_tool=str(root/'tools/package_tool.py'),public_key=str(tmp/'keys/public.pem'),cache=str(tmp/'cache'),
                      modules={'80':dict(transport_mode='fixed_ble',package_transport='hotspot_lan',
                                         address='127.0.0.1',port=tcp.server_address[1],token='desktop-test-only',package_url=url,
+                                        pin_sha256=pin,
                                         ble={'device_name':'loopback-not-used','address':'00:00:00:00:00:00',
                                              'service_uuid':'9b860001-214c-4de0-a9f4-f70e6a100001',
                                              'write_uuid':'9b860001-214c-4de0-a9f4-f70e6a100002',

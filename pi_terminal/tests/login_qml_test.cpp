@@ -4,6 +4,8 @@
 // 那种测试是假绿。
 #include <QQmlComponent>
 #include <QQmlEngine>
+#include <QFile>
+#include <QRegularExpression>
 #include <QtTest>
 
 class LoginQmlTest : public QObject {
@@ -106,6 +108,60 @@ QtObject { property string label: I18n.t("登录") }
         QVERIFY2(lock, qPrintable(error));
         QVERIFY(!lock->property("busy").toBool());
     }
+
+    // ---- 设计约束（docs/pi-ui-regression.md）----
+    // 新页面必须走 Theme token，不能出现硬编码颜色/字号，否则主题与
+    // 1.5x DPI 下会与既有界面不一致。
+    void pinPadUsesThemeTokensOnly() {
+        QFile file(QStringLiteral(TERMINAL_QML_DIR "/PinPad.qml"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QString text = QString::fromUtf8(file.readAll());
+        const QRegularExpression hexColor(QStringLiteral("\\\"#[0-9a-fA-F]{3,8}\\\""));
+        QVERIFY2(!hexColor.match(text).hasMatch(),
+                 "PinPad must not hardcode colors; use Theme.*");
+        QVERIFY2(!text.contains(QStringLiteral("pointSize:")),
+                 "PinPad must use Theme pixel sizes, not pointSize");
+    }
+
+    // 触控热区：数字键必须 >= Theme.hit（48px 下限）。
+    void pinPadKeysRespectMinimumHitSize() {
+        QString error;
+        QScopedPointer<QObject> pad(instantiate(QStringLiteral("PinPad.qml"), &error));
+        QVERIFY2(pad, qPrintable(error));
+        // 键盘按钮用 Layout.preferredHeight: Theme.hit，Theme.hit 自身 >= 48。
+        QFile theme(QStringLiteral(TERMINAL_QML_DIR "/Theme.qml"));
+        QVERIFY(theme.open(QIODevice::ReadOnly));
+        const QString themeText = QString::fromUtf8(theme.readAll());
+        QVERIFY2(themeText.contains(QStringLiteral("Math.max(48, 64 * scaleFactor)")),
+                 "Theme.hit must keep the 48px floor");
+    }
+
+    // 所有新页面的 I18n 词条必须已进词表，否则英文界面会漏中文。
+    void newPagesHaveEnglishTranslations() {
+        const QStringList pages{QStringLiteral("LoginPage"), QStringLiteral("LockScreen"),
+                                QStringLiteral("PinPad"), QStringLiteral("UserPicker"),
+                                QStringLiteral("SessionGate"), QStringLiteral("TaskFinishDialog"),
+                                QStringLiteral("AdminPairingPage")};
+        QFile i18n(QStringLiteral(TERMINAL_QML_DIR "/I18n.qml"));
+        QVERIFY(i18n.open(QIODevice::ReadOnly));
+        const QString table = QString::fromUtf8(i18n.readAll());
+
+        QStringList missing;
+        for (const QString &page : pages) {
+            QFile file(QStringLiteral(TERMINAL_QML_DIR "/") + page + QStringLiteral(".qml"));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const QString text = QString::fromUtf8(file.readAll());
+            const QRegularExpression call(QStringLiteral("I18n\\.t\\(\\\"([^\\\"]+)\\\"\\)"));
+            QRegularExpressionMatchIterator it = call.globalMatch(text);
+            while (it.hasNext()) {
+                const QString key = it.next().captured(1);
+                if (!table.contains(QLatin1Char('"') + key + QLatin1Char('"'))) missing.append(key);
+            }
+        }
+        QVERIFY2(missing.isEmpty(),
+                 qPrintable(QStringLiteral("missing I18n entries: ") + missing.join(QStringLiteral(", "))));
+    }
+
 };
 
 QTEST_MAIN(LoginQmlTest)

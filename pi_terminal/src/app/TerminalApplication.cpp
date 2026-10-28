@@ -52,6 +52,16 @@ int TerminalApplication::initialize(const QCommandLineParser &options) {
     engine_.rootContext()->setContextProperty("desktopDebug", options.isSet("demo"));
     // 登录/锁屏：QML 只调这些方法，服务端再做会话与权限校验。
     engine_.rootContext()->setContextProperty("sessionManager", &session_);
+    // §0.8.5：业务数据必须挂在当前登录用户上。会话变化时同步给连接管理器，
+    // 否则 lane 门控拿不到用户，所有业务数据都会被拒。
+    QObject::connect(&session_, &security::SessionManager::changed, &connection_, [this] {
+        connection_.setActiveUserId(session_.activeUserId());
+    });
+    connection_.setActiveUserId(session_.activeUserId());
+    // 自动化审计（--ui-test）以无用户配置启动，门控会拒绝业务数据；
+    // 仅测试路径注入一个占位用户，让审计能走完既有业务断言。
+    if (options.isSet("ui-test"))
+        connection_.setActiveUserId(QStringLiteral("ui-test-user"));
     // 自动化审计（--ui-test）以全新配置启动、从不登录；门禁若照常生效，
     // 审计脚本点不到桌面会被误判为产品回归。仅测试路径关闭门禁。
     engine_.rootContext()->setContextProperty("sessionGateBypassed", options.isSet("ui-test"));

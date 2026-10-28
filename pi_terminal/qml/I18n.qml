@@ -443,5 +443,34 @@ QtObject {
         "圣保罗":"Sao Paulo",
         "悉尼":"Sydney",
         "奥克兰":"Auckland"
-    })
+    ,
+        "PIN 不正确":"Incorrect PIN",
+        "任务":"Task",
+        "会话已失效，请重新登录":"Session expired, please sign in again",
+        "信任存储后端尚未就绪，无法配对或撤销":"Trust store backend not ready; pairing and revocation unavailable",
+        "全部停止":"Stop all",
+        "切换用户前需要结束或停止这些任务，否则数据会归属错误。":"Finish or stop these tasks before switching users, or the data will be attributed to the wrong account.",
+        "删除一位":"Delete one digit",
+        "已停用":"Disabled",
+        "已配对桥板":"Paired bridges",
+        "已配对模块":"Paired modules",
+        "已锁定":"Locked",
+        "操作失败":"Operation failed",
+        "数字 ":"Digit ",
+        "数字 0":"Digit 0",
+        "数据存储不可用":"Storage unavailable",
+        "没有可选用户":"No users available",
+        "没有权限":"No permission",
+        "没有用户，请先在终端执行 --init-admin 创建管理员":"No users yet. Run --init-admin in a terminal to create the administrator.",
+        "设备配对与撤销":"Device pairing and revocation",
+        "请先结束正在进行的任务":"Finish the running task first",
+        "请稍候再试":"Please wait and try again",
+        "请等待":"Please wait",
+        "还有未完成的任务":"There are unfinished tasks",
+        "选择用户":"Choose user",
+        "配对新设备":"Pair new device",
+        "需要管理员权限":"Administrator permission required"
+,
+        "正在验证":"Verifying"
+})
 }

@@ -19,6 +19,12 @@ constexpr int kMaxAccountFailures = 5;
 constexpr int kAccountLockMs = 60 * 1000;
 constexpr int kTerminalMinIntervalMs = 1000;
 
+// 记录里的迭代数只能升不能降：users.json 可被同 OS 用户改写，
+// 若直接采信降到 1 就等于关掉 KDF。§0.2 的"不得由配置降低"落在这里。
+constexpr int effectiveIterations(int recorded) {
+    return recorded < kProductionIterations ? kProductionIterations : recorded;
+}
+
 // 至少 6 位 ASCII 数字。返回 false 时不解释原因，调用方不得回显细节。
 bool validPin(const QString &pin);
 

@@ -283,6 +283,8 @@ void ConnectionManager::attach(const QJsonObject &e) {
         s->lan = new HotspotLanTransport(this);
         connect(s->lan, &TransportBase::connected, this, [this, instance] {
             auto s = sessions_.value(instance); if (!s || s->stopping) return; s->lanConnected = true;
+            // TLS 指纹已比对通过（HotspotLanTransport 只在 pinnedVerified 后 emit connected）。
+            if (s->laneGate) s->laneGate->markAuthenticated(LaneGate::Lane::Lan);
             send(s, "session_open", {{"token", s->profile.value("token")}, {"transport_choice", "hotspot_lan"}}, 2);
         });
         connect(s->lan, &TransportBase::payloadReceived, this, [this, instance](quint8 t, const auto &p) { receive(instance, t, p); });
@@ -297,6 +299,8 @@ void ConnectionManager::attach(const QJsonObject &e) {
         s->ble = new BleTransport(this);
         connect(s->ble, &TransportBase::connected, this, [this, instance] {
             auto s = sessions_.value(instance); if (!s || s->stopping) return; s->bleConnected = true;
+            // 挑战-响应已通过（BleTransport 只在 authenticated 后 emit connected）。
+            if (s->laneGate) s->laneGate->markAuthenticated(LaneGate::Lane::Ble);
             send(s, "session_open", {{"token", s->profile.value("token")}, {"transport_choice", "ble"}}, 1);
         });
         connect(s->ble, &TransportBase::payloadReceived, this, [this, instance](quint8 t, const auto &p) { receive(instance, t, p); });
@@ -304,6 +308,27 @@ void ConnectionManager::attach(const QJsonObject &e) {
         connect(s->ble, &TransportBase::disconnected, this, [this, instance](const auto &m) { auto s = sessions_.value(instance); if (s) transportLost(s, 1, m); });
     }
     s->lostAt = 0; s->retryAt = 0;
+
+    // §0.8.5：本次 attach 的 lane 门控。绑定当前用户；未登录时为匿名会话，
+    // 业务数据在 requestSwitch 时会被 RejectedNoSession/RejectedUnbound 拦下。
+    if (!s->laneGate) {
+        s->laneGate = new LaneGate();
+        const QString gateSession = s->instance;
+        connect(s->laneGate, &LaneGate::invalidated, this, [this, gateSession](const QString &reason) {
+            auto session = sessions_.value(gateSession);
+            if (!session) return;
+            qInfo().noquote() << "lane gate invalidated:" << gateSession << reason;
+        });
+        connect(s->laneGate, &LaneGate::switchRequired, this, [this, gateSession](int lane) {
+            auto session = sessions_.value(gateSession);
+            if (!session) return;
+            // 切换时丢弃未完成分片，不重传；由连接重跑一次 connectData。
+            qInfo().noquote() << "lane switch required:" << gateSession
+                              << (lane == int(LaneGate::Lane::Lan) ? "hotspot_lan" : "ble");
+        });
+    }
+    s->laneGate->beginAttach(activeUserId_, s->instance);
+
     state(s, "connecting", "正在连接模块"); connectData(s);
 }
 void ConnectionManager::connectData(const QSharedPointer<Session> &s) {
@@ -319,11 +344,54 @@ void ConnectionManager::connectData(const QSharedPointer<Session> &s) {
         return;
     }
     if (s->candidateTransport == 2 && s->lan) {
-        s->lan->connectToModule(QHostAddress(s->profile.value("address").toString()), quint16(s->profile.value("port").toInt()));
+        // §0.8.1：LAN 必须指纹固定。profile 里没有 pin_sha256 就不连——
+        // 空指纹等于不校验，宁可连不上也不降级明文。
+        const QByteArray pinned =
+            QByteArray::fromHex(s->profile.value("pin_sha256").toString().toLatin1());
+        if (pinned.size() != 32) {
+            state(s, "error", "LAN 缺少已登记的证书指纹（pin_sha256）");
+            return;
+        }
+        const QString sessionName = s->instance;
+        connect(s->lan, &HotspotLanTransport::identityRejected, this,
+                [this, sessionName](const QString &reason) {
+            auto session = sessions_.value(sessionName);
+            if (!session || session->stopping) return;
+            qWarning().noquote() << "LAN identity rejected:" << sessionName << reason;
+            state(session, "error", "IDENTITY_REJECTED");
+        }, Qt::UniqueConnection);
+        s->lan->connectToModule(QHostAddress(s->profile.value("address").toString()),
+                                quint16(s->profile.value("port").toInt()), pinned,
+                                QString::number(s->id));
     } else if (s->candidateTransport == 1 && s->ble) {
-        s->ble->start(s->profile.value("ble").toObject());
+        QJsonObject bleConfig = s->profile.value("ble").toObject();
+        // §0.8.2 应用层认证参数：密钥来自配对下发（T-03），只在内存里传。
+        bleConfig.insert("module_id", s->id);
+        bleConfig.insert("boot_id", s->profile.value("boot_id").toString());
+        bleConfig.insert("session_key", s->profile.value("session_key").toString());
+        const QString sessionName = s->instance;
+        connect(s->ble, &BleTransport::authenticationFailed, this,
+                [this, sessionName](const QString &reason) {
+            auto session = sessions_.value(sessionName);
+            if (!session || session->stopping) return;
+            qWarning().noquote() << "BLE authentication failed:" << sessionName << reason;
+            state(session, "error", "TRANSPORT_SECURITY_REQUIRED");
+        }, Qt::UniqueConnection);
+        s->ble->start(bleConfig);
     }
 }
+void ConnectionManager::setActiveUserId(const QString &userId) {
+    if (activeUserId_ == userId) return;
+    activeUserId_ = userId;
+    // 切用户/退出：所有已建立的 lane 认证立即作废，业务数据不得继续流入。
+    for (auto it = sessions_.begin(); it != sessions_.end(); ++it) {
+        if (it.value() && it.value()->laneGate)
+            it.value()->laneGate->invalidateAll(
+                userId.isEmpty() ? QStringLiteral("logged out")
+                                 : QStringLiteral("active user changed"));
+    }
+}
+
 void ConnectionManager::requestHotspot(const QSharedPointer<Session> &s, bool forPackage) {
     if (!s || s->stopping || s->hotspotLease || s->hotspotPending) return;
     s->hotspotPending = true;
@@ -444,6 +512,22 @@ void ConnectionManager::receive(const QString &instance, quint8 t, const QByteAr
         if (!LaneGate::payloadAcceptable(decodedPayload.size())) {
             state(s, "error", "INVALID_MESSAGE");
             return;
+        }
+        // §0.8.5：业务数据必须挂在已认证的 lane 与已绑定用户的会话上。
+        // 未通过指纹固定 / 挑战-响应的连接一条数据都不放行。
+        if (s->laneGate) {
+            const auto lane = (t == 2) ? LaneGate::Lane::Lan : LaneGate::Lane::Ble;
+            const auto verdict = s->laneGate->requestSwitch(lane);
+            if (verdict != LaneGate::Verdict::Accepted) {
+                qWarning().noquote() << "business data rejected by lane gate:" << instance
+                                     << s->laneGate->lastReason();
+                state(s, "error",
+                      verdict == LaneGate::Verdict::RejectedNoSession ||
+                              verdict == LaneGate::Verdict::RejectedUnbound
+                          ? "STORAGE_UNAVAILABLE"
+                          : "TRANSPORT_SECURITY_REQUIRED");
+                return;
+            }
         }
         if (!s->firstDataLogged) {
             qInfo().noquote() << "Module data received: module_id=" << s->id

@@ -426,6 +426,11 @@ if(BUILD_TESTING)
     add_executable(card_matcher_test tests/card_matcher_test.cpp)
     target_link_libraries(card_matcher_test PRIVATE terminal_security Qt6::Test)
     add_test(NAME card_index_matching COMMAND card_matcher_test)
+    # T-12 Pi 侧验收（§0.8.7）：未配对拒发、挑战-响应失败拒发、指纹不匹配拒绝。
+    add_executable(business_security_test tests/business_security_test.cpp)
+    target_link_libraries(business_security_test PRIVATE
+        terminal_transports terminal_protocol Qt6::Test Qt6::Network Qt6::Bluetooth)
+    add_test(NAME business_data_security COMMAND business_security_test)
     add_executable(lane_gate_test tests/lane_gate_test.cpp)
     target_link_libraries(lane_gate_test PRIVATE terminal_core Qt6::Test)
     add_test(NAME business_lane_gate COMMAND lane_gate_test)

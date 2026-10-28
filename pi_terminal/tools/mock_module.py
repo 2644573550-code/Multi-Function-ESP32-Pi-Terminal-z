@@ -6,6 +6,7 @@ import binascii
 import hashlib
 import json
 import math
+import ssl
 import socketserver
 import struct
 import threading
@@ -106,9 +107,18 @@ class Handler(socketserver.BaseRequestHandler):
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
-def services(folder, token, tcp_port=0, http_port=0, module_id=80):
+def services(folder, token, tcp_port=0, http_port=0, module_id=80, tls=None):
+    """tls=(certfile, keyfile) 时把业务面升级为 TLS。
+
+    §0.8.1：模块是 TLS server，Pi 是 client；Pi 用 SHA-256 指纹固定。
+    测试必须走真实 TLS 握手，否则"指纹不匹配即拒绝"无法验证。
+    """
     tcp = Server(('127.0.0.1',tcp_port), Handler); tcp.token = token; tcp.folder = folder
     tcp.module_id = module_id
+    if tls:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=str(tls[0]), keyfile=str(tls[1]))
+        tcp.socket = context.wrap_socket(tcp.socket, server_side=True)
     http = ThreadingHTTPServer(('127.0.0.1',http_port), partial(SimpleHTTPRequestHandler,directory=str(folder)))
     for s in (tcp,http): threading.Thread(target=s.serve_forever,daemon=True).start()
     return tcp,http
