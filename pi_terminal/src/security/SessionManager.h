@@ -60,6 +60,23 @@ public:
 
     // 任务能力：由可信侧在 measurement 开始时创建，绑定当前用户与设备。
     QString startTask(const QString &deviceId);
+    // ---- 重启恢复（报告 §5.3）----
+    // 只记录"上次解锁的用户"，**不记录** PIN、KEK、DB key。
+    // 重启后流程：先回到该用户的锁屏（需重输 PIN），再恢复其任务归属。
+    // 不是"重启即登录"——那会绕过 PIN。
+    QString lastUserHint() const;
+    // 由 TerminalApplication 在成功登录后调用。
+    void rememberUserHint(const QString &userId);
+    void clearUserHint();
+    // 是否有可恢复的上次用户（用于显示"上次是 X"）。
+    bool hasUserHint() const;
+
+    // 报告 §5.3：无法确认测量是否完成时，显式取消并标记"不完整"。
+    // 与 finishTask 的区别：finishTask 是正常收尾，本方法是异常收尾。
+    Q_INVOKABLE bool cancelTaskAsIncomplete(const QString &taskId);
+    // 任务是否被标记为不完整。
+    Q_INVOKABLE bool taskIsIncomplete(const QString &taskId) const;
+
     // QML 只读摘要：{taskId, deviceId}，不含 TaskCapability* 指针。
     Q_INVOKABLE QVariantList pendingTaskSummaries() const;
     // QML 用：结束某个任务。服务端校验归属。
@@ -122,6 +139,8 @@ private:
     QString activeDisplayName_;
     QString tokenHex_;   // 与 begin() 返回值同一形态，避免调用侧还去做编码转换
     QByteArray dbKey_;
+    // 上次解锁的用户（仅 userId，不含任何密钥材料）。
+    QString lastUserHintPath_;
     // 可信存储句柄：只在 SessionManager 内部持有，QML 与模块都拿不到。
     UserDatabase *database_ = nullptr;
     bool locked_ = false;

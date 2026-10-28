@@ -76,6 +76,8 @@ public:
                    const QString &generation) const;
 
     Binding binding(int slotId) const;
+    // 所有当前有效绑定（供桥板失联时批量置离线、界面展示）。
+    QVector<Binding> bindings() const;
     bool isBound(int slotId) const;
     void clear();
 

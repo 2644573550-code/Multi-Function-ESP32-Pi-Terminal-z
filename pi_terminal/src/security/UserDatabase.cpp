@@ -1,6 +1,8 @@
 #include "security/UserDatabase.h"
 #include "security/AuditLog.h"
 
+#include <QStringList>
+
 #include <cmath>
 
 #include "security/SqlCipherStore.h"
@@ -38,9 +40,39 @@ CREATE TABLE IF NOT EXISTS samples(
     pressure_hpa REAL,
     light_lux REAL,
     battery_v REAL,
-    battery_pct INTEGER
+    battery_pct INTEGER,
+    -- 报告 §12.1：来源必须可区分，避免手工录入与设备读数重复。
+    source TEXT NOT NULL DEFAULT 'unknown',
+    valid INTEGER NOT NULL DEFAULT 1,
+    invalid_reason TEXT
 );
 CREATE INDEX IF NOT EXISTS samples_by_time ON samples(received_at_ms);
+-- 血压读数（报告 §12）：单独一张表，字段与项目记录 schema 对齐。
+-- 缺失值一律 NULL，不用 0 伪装；invalid 行保留但标注原因。
+CREATE TABLE IF NOT EXISTS readings(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at_ms INTEGER NOT NULL,
+    measured_at_ms INTEGER,
+    source TEXT NOT NULL DEFAULT 'unknown',
+    device_id TEXT NOT NULL,
+    device_model TEXT,
+    metric TEXT NOT NULL,
+    value REAL,
+    unit TEXT,
+    valid INTEGER NOT NULL DEFAULT 1,
+    invalid_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS readings_by_time ON readings(received_at_ms);
+-- 模块页的键值存储（报告 §6.1）：QML 拿不到 DB，只能通过 ModuleStore 门面
+-- 读写自己这一格。作用域 = module_id + instance，随用户库加密。
+CREATE TABLE IF NOT EXISTS module_kv(
+    module_id INTEGER NOT NULL,
+    instance TEXT NOT NULL,
+    kv_key TEXT NOT NULL,
+    kv_value BLOB NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    PRIMARY KEY(module_id, instance, kv_key)
+);
 -- 模块历史的可信聚合（替代模块侧明文 JSON，报告 §6.1）。
 -- 一条记录 = 一个按分钟对齐的桶；模块只发原始观测，聚合在宿主完成。
 CREATE TABLE IF NOT EXISTS module_history(
@@ -68,7 +100,11 @@ CREATE INDEX IF NOT EXISTS audit_by_time ON audit(at_ms);
 
 UserDatabase::UserDatabase(QString root) : root_(root.isEmpty() ? defaultRoot() : std::move(root)) {}
 
-UserDatabase::~UserDatabase() = default;
+UserDatabase::~UserDatabase() {
+    // 必须显式 close：audit_ 持有 store_ 的裸指针，
+    // 先析构 store_ 会让 AuditLog 悬空（实测 SIGSEGV）。
+    close();
+}
 
 QString UserDatabase::databasePathFor(const QString &userId) const {
     return root_ + QLatin1Char('/') + userId + QStringLiteral("/data.db");
@@ -147,8 +183,8 @@ bool UserDatabase::appendSample(const SensorSample &sample) {
     // 归属由打开的会话决定，不接受 sample 里自报的 userId（本类没有这个字段）。
     const QString sql = QStringLiteral(
         "INSERT INTO samples(received_at_ms, sample_seq, device_id, temperature_c, humidity_rh,"
-        " pressure_hpa, light_lux, battery_v, battery_pct)"
-        " VALUES(?,?,?,?,?,?,?,?,?)");
+        " pressure_hpa, light_lux, battery_v, battery_pct, source, valid, invalid_reason)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
     void *stmt = nullptr;
     if (!store_->prepare(sql, &stmt)) return false;
     store_->bindInt(stmt, 1, sample.receivedAtMs);
@@ -161,7 +197,202 @@ bool UserDatabase::appendSample(const SensorSample &sample) {
     if (sample.hasLight) store_->bindDouble(stmt, 7, sample.lightLux); else store_->bindNull(stmt, 7);
     if (sample.hasBatteryV) store_->bindDouble(stmt, 8, sample.batteryV); else store_->bindNull(stmt, 8);
     if (sample.hasBatteryPct) store_->bindInt(stmt, 9, sample.batteryPct); else store_->bindNull(stmt, 9);
+    // 来源与有效性：缺失时写 unknown/invalid，不猜成设备自动读数。
+    const char *sourceName = "unknown";
+    switch (sample.source) {
+    case SampleSource::DeviceAuto: sourceName = "device.auto"; break;
+    case SampleSource::DeviceManual: sourceName = "device.manual"; break;
+    case SampleSource::UserEntry: sourceName = "user.entry"; break;
+    case SampleSource::Unknown: break;
+    }
+    store_->bindText(stmt, 10, QString::fromLatin1(sourceName));
+    store_->bindInt(stmt, 11, sample.valid ? 1 : 0);
+    if (sample.invalidReason.isEmpty()) store_->bindNull(stmt, 12);
+    else store_->bindText(stmt, 12, sample.invalidReason);
     const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;  // 101 = SQLITE_DONE
+    store_->finalize(stmt);
+    return ok;
+}
+
+bool UserDatabase::setModuleValue(int moduleId, const QString &instance, const QString &key,
+                                  const QByteArray &encodedValue) {
+    if (!isOpen() || instance.isEmpty() || key.isEmpty()) return false;
+    // 单值上限：模块页不是文件系统，禁止塞大块数据。
+    if (encodedValue.size() > 64 * 1024) return false;
+
+    void *stmt = nullptr;
+    // SQLCipher 3.4.1 基于 SQLite 3.15.2，不支持 UPSERT，先删后插。
+    if (!store_->prepare(QStringLiteral(
+            "INSERT OR REPLACE INTO module_kv(module_id, instance, kv_key, kv_value,"
+            " updated_at_ms) VALUES(?,?,?,?,?)"), &stmt))
+        return false;
+    store_->bindInt(stmt, 1, moduleId);
+    store_->bindText(stmt, 2, instance);
+    store_->bindText(stmt, 3, key);
+    struct Blob {
+        static bool apply(void *statement, int index, const QByteArray &value) {
+            return sqlite3_bind_blob(static_cast<sqlite3_stmt *>(statement), index,
+                                     value.constData(), value.size(), SQLITE_TRANSIENT)
+                == SQLITE_OK;
+        }
+    };
+    if (!Blob::apply(stmt, 4, encodedValue)) { store_->finalize(stmt); return false; }
+    store_->bindInt(stmt, 5, QDateTime::currentMSecsSinceEpoch());
+    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
+    store_->finalize(stmt);
+    return ok;
+}
+
+QByteArray UserDatabase::moduleValue(int moduleId, const QString &instance,
+                                     const QString &key) const {
+    if (!isOpen() || instance.isEmpty() || key.isEmpty()) return {};
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "SELECT kv_value FROM module_kv WHERE module_id=? AND instance=? AND kv_key=?"),
+            &stmt))
+        return {};
+    store_->bindInt(stmt, 1, moduleId);
+    store_->bindText(stmt, 2, instance);
+    store_->bindText(stmt, 3, key);
+    QByteArray out;
+    if (store_->step(stmt)) {
+        auto *raw = static_cast<sqlite3_stmt *>(stmt);
+        const auto *blob = static_cast<const char *>(sqlite3_column_blob(raw, 0));
+        const int bytes = sqlite3_column_bytes(raw, 0);
+        if (blob && bytes > 0) out = QByteArray(blob, bytes);
+    }
+    store_->finalize(stmt);
+    return out;
+}
+
+bool UserDatabase::removeModuleValue(int moduleId, const QString &instance,
+                                     const QString &key) {
+    if (!isOpen()) return false;
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "DELETE FROM module_kv WHERE module_id=? AND instance=? AND kv_key=?"), &stmt))
+        return false;
+    store_->bindInt(stmt, 1, moduleId);
+    store_->bindText(stmt, 2, instance);
+    store_->bindText(stmt, 3, key);
+    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
+    store_->finalize(stmt);
+    return ok;
+}
+
+QStringList UserDatabase::moduleKeys(int moduleId, const QString &instance) const {
+    QStringList keys;
+    if (!isOpen()) return keys;
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "SELECT kv_key FROM module_kv WHERE module_id=? AND instance=? ORDER BY kv_key"),
+            &stmt))
+        return keys;
+    store_->bindInt(stmt, 1, moduleId);
+    store_->bindText(stmt, 2, instance);
+    while (store_->step(stmt)) keys.append(store_->columnText(stmt, 0));
+    store_->finalize(stmt);
+    return keys;
+}
+
+bool UserDatabase::clearModuleValues(int moduleId, const QString &instance) {
+    if (!isOpen()) return false;
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "DELETE FROM module_kv WHERE module_id=? AND instance=?"), &stmt))
+        return false;
+    store_->bindInt(stmt, 1, moduleId);
+    store_->bindText(stmt, 2, instance);
+    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
+    store_->finalize(stmt);
+    return ok;
+}
+
+bool UserDatabase::appendDeviceReading(double value, const QString &unit,
+                                       const QString &deviceModel, const QString &source,
+                                       const QString &deviceId) {
+    if (!isOpen()) return false;
+    // 设备读数只允许这两个来源；user.entry 必须走 appendManualReading，
+    // 否则界面无法区分"设备测的"与"人填的"（报告 §12.1）。
+    const QString normalized =
+        source == QLatin1String("device.manual") ? QStringLiteral("device.manual")
+                                                 : QStringLiteral("device.auto");
+
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "INSERT INTO readings(received_at_ms, measured_at_ms, source, device_id, device_model,"
+            " metric, value, unit, valid, invalid_reason) VALUES(?,?,?,?,?,?,?,?,?,?)"), &stmt))
+        return false;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    store_->bindInt(stmt, 1, now);
+    store_->bindInt(stmt, 2, now);
+    store_->bindText(stmt, 3, normalized);
+    store_->bindText(stmt, 4, deviceId.isEmpty() ? QStringLiteral("device") : deviceId);
+    store_->bindText(stmt, 5, deviceModel);
+    store_->bindText(stmt, 6, QStringLiteral("pressure"));
+    store_->bindDouble(stmt, 7, value);
+    store_->bindText(stmt, 8, unit);
+    store_->bindInt(stmt, 9, 1);
+    store_->bindNull(stmt, 10);
+    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
+    store_->finalize(stmt);
+    return ok;
+}
+
+QVector<UserDatabase::Reading> UserDatabase::queryReadings(int limit) const {
+    QVector<Reading> out;
+    if (!isOpen() || limit <= 0) return out;
+    const int bounded = limit > 200 ? 200 : limit;
+
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "SELECT received_at_ms, measured_at_ms, source, device_id, device_model,"
+            " metric, value, unit, valid, invalid_reason FROM readings"
+            " ORDER BY received_at_ms DESC LIMIT ?"), &stmt))
+        return out;
+    store_->bindInt(stmt, 1, bounded);
+    while (store_->step(stmt)) {
+        Reading reading;
+        reading.receivedAtMs = store_->columnInt(stmt, 0);
+        reading.measuredAtMs = store_->columnInt(stmt, 1);
+        reading.source = store_->columnText(stmt, 2);
+        reading.deviceId = store_->columnText(stmt, 3);
+        reading.deviceModel = store_->columnText(stmt, 4);
+        reading.metric = store_->columnText(stmt, 5);
+        // 缺失值必须是 null，不能用 0 冒充一次真实测量。
+        reading.hasValue = !store_->columnIsNull(stmt, 6);
+        if (reading.hasValue) reading.value = store_->columnDouble(stmt, 6);
+        reading.unit = store_->columnText(stmt, 7);
+        reading.valid = store_->columnInt(stmt, 8) != 0;
+        reading.invalidReason = store_->columnText(stmt, 9);
+        out.append(reading);
+    }
+    store_->finalize(stmt);
+    return out;
+}
+
+bool UserDatabase::appendManualReading(double value, const QString &unit,
+                                        const QString &deviceModel) {
+    if (!isOpen()) return false;
+    // 手工录入走 readings 表，source 固定 user.entry：与设备来源分开，
+    // UI 据此避免把同一次测量记两遍（§12.1）。
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "INSERT INTO readings(received_at_ms, measured_at_ms, source, device_id, device_model,"
+            " metric, value, unit, valid, invalid_reason) VALUES(?,?,?,?,?,?,?,?,?,?)"), &stmt))
+        return false;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    store_->bindInt(stmt, 1, now);
+    store_->bindInt(stmt, 2, now);
+    store_->bindText(stmt, 3, QStringLiteral("user.entry"));
+    store_->bindText(stmt, 4, QStringLiteral("manual"));
+    store_->bindText(stmt, 5, deviceModel);
+    store_->bindText(stmt, 6, QStringLiteral("pressure"));
+    store_->bindDouble(stmt, 7, value);
+    store_->bindText(stmt, 8, unit);
+    store_->bindInt(stmt, 9, 1);
+    store_->bindNull(stmt, 10);
+    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
     store_->finalize(stmt);
     return ok;
 }
@@ -173,8 +404,8 @@ QVector<UserDatabase::Record> UserDatabase::queryRecent(int limit) const {
     const int bounded = limit > 100 ? 100 : limit;
     void *stmt = nullptr;
     if (!store_->prepare(QStringLiteral(
-            "SELECT received_at_ms, sample_seq, device_id, temperature_c FROM samples"
-            " ORDER BY received_at_ms DESC LIMIT ?"), &stmt))
+            "SELECT received_at_ms, sample_seq, device_id, temperature_c, source, valid"
+            " FROM samples ORDER BY received_at_ms DESC LIMIT ?"), &stmt))
         return records;
     store_->bindInt(stmt, 1, bounded);
     while (store_->step(stmt)) {
@@ -184,6 +415,12 @@ QVector<UserDatabase::Record> UserDatabase::queryRecent(int limit) const {
         record.deviceId = store_->columnText(stmt, 2);
         record.hasTemperature = !store_->columnIsNull(stmt, 3);
         if (record.hasTemperature) record.temperatureC = store_->columnDouble(stmt, 3);
+        // 来源回读：界面据此区分设备读数与手工录入。
+        const QString source = store_->columnText(stmt, 4);
+        if (source == QLatin1String("device.auto")) record.source = SampleSource::DeviceAuto;
+        else if (source == QLatin1String("device.manual")) record.source = SampleSource::DeviceManual;
+        else if (source == QLatin1String("user.entry")) record.source = SampleSource::UserEntry;
+        record.valid = store_->columnInt(stmt, 5) != 0;
         records.append(record);
     }
     store_->finalize(stmt);

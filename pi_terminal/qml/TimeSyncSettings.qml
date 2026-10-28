@@ -197,7 +197,7 @@ SettingsGroup {
             objectName: "timeZoneValue"
             maximumLineCount: 1
             subdued: true
-            text: TimeMath.formatOffset(settings.localOffsetMinutes) + " · " + I18n.t("本机")
+            text: TimeMath.formatOffset(settings.localOffsetMinutes) + "，" + I18n.t("本机")
         }
     }
 

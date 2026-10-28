@@ -17,6 +17,7 @@
 #include <openssl/evp.h>
 
 #include <vector>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -435,6 +436,38 @@ private slots:
         // 永久保留：不删任何东西。
         QVERIFY(session.applyRetention(0));
         QVERIFY(!session.applyRetention(-1));
+    }
+
+
+    // 报告 §5.3：重启后要知道"上次是谁"，但不能是自动登录。
+    void userHintSurvivesRestartAndStoresNoSecrets() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        {
+            SessionManager session(nullptr, nullptr);
+            session.rememberUserHint(QStringLiteral("user-abc"));
+            QVERIFY(session.hasUserHint());
+            QCOMPARE(session.lastUserHint(), QStringLiteral("user-abc"));
+        }
+        // 新实例（模拟重启）仍能读回。
+        SessionManager restarted(nullptr, nullptr);
+        QCOMPARE(restarted.lastUserHint(), QStringLiteral("user-abc"));
+        // 关键：重启后**没有**登录态，必须重新输 PIN。
+        QVERIFY(!restarted.loggedIn());
+
+        // 提示文件里不得含任何密钥材料。
+        const QString path = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
+            + QStringLiteral("/last_user.json");
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QByteArray content = file.readAll();
+        file.close();
+        QVERIFY(content.contains("user-abc"));
+        QVERIFY2(!content.contains("pin") && !content.contains("key"),
+                 "hint file must not carry secrets");
+
+        restarted.clearUserHint();
+        QVERIFY(!restarted.hasUserHint());
     }
 
 };

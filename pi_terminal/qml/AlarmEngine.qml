@@ -284,7 +284,7 @@ Item {
         lastChimeHourEpoch = hourEpoch
         if (!chimeHourAllowed(parts.hour)) return
         if (ringing || snoozedAlarm) return          // 闹钟优先，不抢播报
-        announceRequested(I18n.t("整点报时") + " · " + parts.hour + I18n.t(" 点整"))
+        announceRequested(I18n.t("整点报时") + "，" + parts.hour + I18n.t(" 点整"))
     }
 
     // 时段含起止小时；from > to 视为跨午夜，from === to 视为全天。
@@ -317,7 +317,7 @@ Item {
         ringEndsAtMs = Date.now() + alarm.ringSeconds * 1000
         ringClipLooping = true
         playRingtone(alarm.ringtone, alarm.ringtoneStartMs || 0)
-        notifyRequested(I18n.t("闹钟"), ringingName + " · " + ringingTime, true)
+        notifyRequested(I18n.t("闹钟"), ringingName + "，" + ringingTime, true)
         announceRequested(I18n.t("闹钟时间到了"))
         if (Overlay.overlay) ringDialog.open()
     }

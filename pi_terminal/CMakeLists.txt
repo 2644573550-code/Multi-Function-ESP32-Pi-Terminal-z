@@ -62,7 +62,8 @@ set(TERMINAL_SECURITY_SOURCES
     src/security/UserDatabase.cpp src/security/UserDatabase.h
     src/security/AuditLog.cpp src/security/AuditLog.h
     src/security/PermissionMatrix.cpp src/security/PermissionMatrix.h
-    src/security/Backup.cpp src/security/Backup.h)
+    src/security/Backup.cpp src/security/Backup.h
+    src/security/RecoveryCode.cpp src/security/RecoveryCode.h)
 
 # 只有 HostIdentity（ECDSA P-256）需要 mbedtls。缺失时跳过该文件，
 # 其余安全组件照常构建。CI 上缺 mbedtls 会让身份用例静默消失，需在下游显式断言。
@@ -130,6 +131,8 @@ add_library(terminal_core STATIC
     src/core/LaneGate.cpp src/core/LaneGate.h
     src/core/PowerStatus.cpp src/core/PowerStatus.h
     src/core/SecurityService.cpp src/core/SecurityService.h
+    src/core/ModuleDataApi.cpp src/core/ModuleDataApi.h
+    src/core/FetchBudget.cpp src/core/FetchBudget.h
     src/core/NetworkGate.cpp src/core/NetworkGate.h)
 target_include_directories(terminal_core PUBLIC src src/modules/api)
 target_link_libraries(terminal_core PUBLIC terminal_transports terminal_security terminal_routing Qt6::Core Qt6::Network Qt6::StateMachine Qt6::Qml Qt6::Quick)
@@ -284,6 +287,8 @@ list(APPEND UI_QML_FILES qml/QuickPanelTile.qml)
 list(APPEND UI_QML_FILES qml/KeyboardKey.qml)
 list(APPEND UI_QML_FILES qml/PinPad.qml qml/UserPicker.qml qml/LoginPage.qml qml/LockScreen.qml qml/SessionGate.qml)
 list(APPEND UI_QML_FILES qml/AdminPairingPage.qml qml/TaskFinishDialog.qml)
+# 注意：啸天围界与血压读数的页面属于**模块包**（module-devkit/examples/*/qml），
+# 不注册进宿主资源，由 ModulePageHost 在独立引擎里从模块包加载。
 list(APPEND UI_QML_FILES qml/BlurCache.qml)
 list(APPEND UI_QML_FILES qml/CachedBlur.qml)
 list(APPEND UI_QML_FILES qml/StartupSplash.qml)
@@ -457,6 +462,15 @@ if(BUILD_TESTING)
     target_link_libraries(card_matcher_test PRIVATE terminal_security Qt6::Test)
     add_test(NAME card_index_matching COMMAND card_matcher_test)
     # T-12 Pi 侧验收（§0.8.7）：未配对拒发、挑战-响应失败拒发、指纹不匹配拒绝。
+    add_executable(module_data_api_test tests/module_data_api_test.cpp)
+    target_link_libraries(module_data_api_test PRIVATE terminal_core terminal_security Qt6::Test)
+    add_test(NAME module_data_api_scope COMMAND module_data_api_test)
+    add_executable(card_flow_test tests/card_flow_test.cpp)
+    target_link_libraries(card_flow_test PRIVATE terminal_core terminal_security Qt6::Test)
+    add_test(NAME card_selects_user_only COMMAND card_flow_test)
+    add_executable(recovery_code_test tests/recovery_code_test.cpp)
+    target_link_libraries(recovery_code_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME recovery_code_path COMMAND recovery_code_test)
     add_executable(backup_test tests/backup_test.cpp)
     target_link_libraries(backup_test PRIVATE terminal_security Qt6::Test)
     add_test(NAME backup_restore_roundtrip COMMAND backup_test)

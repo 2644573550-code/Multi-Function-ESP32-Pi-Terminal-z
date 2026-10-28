@@ -1,0 +1,178 @@
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Controls.Material
+
+// 血压读数模块页面（模块自带 QML，由宿主独立引擎加载）。
+//
+// 可用注入项：sessionModel / data / hostTheme。
+// data 是宿主注入的**当前用户**数据接口；本页不持有数据库、密钥或 SQL。
+Rectangle {
+    id: page
+    property var sessionModel: null
+    property real hostUiScale: 1
+    property var hostTheme: ({})
+    property bool english: false
+
+    property string entryValue: ""
+    property string entryUnit: "mmHg"
+    property string message: ""
+    property var rows: []
+
+    readonly property color background: hostTheme.background || "#08121f"
+    readonly property color surface: hostTheme.surface || "#102238"
+    readonly property color foreground: hostTheme.foreground || "#ffffff"
+    readonly property real gap: 16 * hostUiScale
+    readonly property real hit: Math.max(48, 64 * hostUiScale)
+
+    function reload() {
+        if (typeof data === "undefined" || !data) { rows = []; return }
+        rows = data.recentReadings(100)
+    }
+
+    function sourceLabel(source) {
+        const zh = { "user.entry": "手工录入", "device.auto": "设备自动",
+                     "device.manual": "设备手动" }
+        const en = { "user.entry": "Manual", "device.auto": "Device auto",
+                     "device.manual": "Device manual" }
+        const table = page.english ? en : zh
+        return table[source] || (page.english ? "Unknown" : "来源未知")
+    }
+
+    function submit() {
+        if (typeof data === "undefined" || !data) return
+        const text = entryValue.trim()
+        if (text.length === 0) { message = page.english ? "Enter a reading" : "请输入读数"; return }
+        const value = Number(text)
+        if (!isFinite(value) || value <= 0) {
+            message = page.english ? "Invalid reading" : "读数无效"
+            return
+        }
+        // 来源标记为手工录入：与设备上报分开，界面据此区分。
+        const ok = data.appendReading({
+            "value": value,
+            "unit": entryUnit,
+            "source": "user.entry"
+        })
+        if (ok) {
+            entryValue = ""
+            message = page.english ? "Saved" : "已保存"
+            reload()
+        } else {
+            message = page.english ? "Storage unavailable" : "数据存储不可用"
+        }
+    }
+
+    Component.onCompleted: reload()
+
+    Connections {
+        target: typeof data !== "undefined" ? data : null
+        function onDataChanged() { page.reload() }
+    }
+
+    color: page.background
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: page.gap
+        spacing: page.gap
+
+        Text {
+            Layout.fillWidth: true
+            text: page.english
+                  ? "Daily reference only; not for diagnosis"
+                  : "家庭日常参考，不作诊断依据"
+            color: "#6e9abb"
+            font.pixelSize: 12 * page.hostUiScale
+            wrapMode: Text.Wrap
+        }
+
+        // ---- 手工录入 ----
+        Text {
+            text: page.english ? "Manual entry" : "手工录入"
+            color: page.foreground
+            font.pixelSize: 14 * page.hostUiScale
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: page.gap / 2
+            TextField {
+                id: entryField
+                Layout.fillWidth: true
+                Layout.preferredHeight: page.hit
+                placeholderText: page.english ? "Reading" : "收缩压 / 舒张压"
+                text: page.entryValue
+                inputMethodHints: Qt.ImhDigitsOnly
+                onTextChanged: page.entryValue = text
+            }
+            Button {
+                Layout.preferredHeight: page.hit
+                text: page.entryUnit
+                onClicked: page.entryUnit = (page.entryUnit === "mmHg") ? "kPa" : "mmHg"
+            }
+            Button {
+                Layout.preferredHeight: page.hit
+                text: page.english ? "Save" : "保存"
+                enabled: page.entryValue.length > 0
+                onClicked: page.submit()
+            }
+        }
+        Text {
+            Layout.fillWidth: true
+            visible: page.message.length > 0
+            text: page.message
+            color: "#ffdaa0"
+            font.pixelSize: 12 * page.hostUiScale
+            wrapMode: Text.Wrap
+        }
+
+        // ---- 读数列表 ----
+        Text {
+            text: page.english ? "Recent readings" : "最近读数"
+            color: "#6e9abb"
+            font.pixelSize: 14 * page.hostUiScale
+        }
+        Text {
+            Layout.fillWidth: true
+            visible: page.rows.length === 0
+            text: page.english ? "No readings yet" : "还没有读数"
+            color: "#6e9abb"
+            font.pixelSize: 12 * page.hostUiScale
+        }
+        Repeater {
+            model: page.rows
+            delegate: Rectangle {
+                required property var modelData
+                Layout.fillWidth: true
+                Layout.preferredHeight: page.hit
+                radius: 12 * page.hostUiScale
+                color: page.surface
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: page.gap / 2
+                    Text {
+                        Layout.fillWidth: true
+                        // 缺失值显示"未检测"，不显示 0。
+                        text: modelData.has_value
+                              ? String(modelData.value) + " " + (modelData.unit || "")
+                              : (page.english ? "Not detected" : "未检测")
+                        color: modelData.valid ? page.foreground : "#ffdaa0"
+                        font.pixelSize: 14 * page.hostUiScale
+                    }
+                    Text {
+                        text: page.sourceLabel(modelData.source)
+                        color: "#6e9abb"
+                        font.pixelSize: 12 * page.hostUiScale
+                    }
+                    Text {
+                        visible: !modelData.valid
+                        text: page.english ? "Invalid" : "无效"
+                        color: "#ffdaa0"
+                        font.pixelSize: 12 * page.hostUiScale
+                    }
+                }
+            }
+        }
+
+        Item { Layout.fillHeight: true }
+    }
+}

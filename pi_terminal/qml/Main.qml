@@ -427,7 +427,7 @@ ApplicationWindow {
     function connectionStateLabel(state) {
         return ({attached:I18n.t("检测到模块"),connecting:I18n.t("正在连接"),downloading_package:I18n.t("下载功能包"),
             verifying_package:I18n.t("验证签名"),awaiting_trust:I18n.t("等待权限确认"),loading_plugin:I18n.t("加载界面"),
-            ready:I18n.t("已连接"),contact_detached:I18n.t("无线已连接 · 触点已断开"),data_lost:I18n.t("正在重连"),
+            ready:I18n.t("已连接"),contact_detached:I18n.t("无线已连接，触点已断开"),data_lost:I18n.t("正在重连"),
             error:I18n.t("连接失败"),disconnecting:I18n.t("正在断开"),unloading:I18n.t("正在卸载"),closed:I18n.t("已断开")})[state] || state
     }
     property var fileRows: []
@@ -1157,7 +1157,7 @@ ApplicationWindow {
             RowLayout {
                 Layout.fillWidth:true
                 MaterialIcon {name:bannerIconName;Layout.preferredWidth:28*uiScale;Layout.preferredHeight:28*uiScale}
-                CarText {text:bannerAppName+" · "+bannerTime;font.pointSize:Theme.body;font.weight:Font.DemiBold;color:Theme.secondary;Layout.fillWidth:true}
+                CarText {text:bannerAppName+"，"+bannerTime;font.pointSize:Theme.body;font.weight:Font.DemiBold;color:Theme.secondary;Layout.fillWidth:true}
                 IconButton {iconName:"close";label:I18n.t("关闭通知横幅");onClicked:{notificationBanner.close();bannerTimer.stop()}}
             }
             CarText {objectName:"notificationBannerTitle";visible:bannerTitle!=="";text:bannerTitle;color:Theme.foreground;font.pointSize:Theme.body*1.05;font.weight:Font.DemiBold;Layout.fillWidth:true;wrapMode:Text.Wrap}
@@ -1383,7 +1383,7 @@ ApplicationWindow {
                             id:sessionContent; anchors.left:parent.left; anchors.right:parent.right; anchors.top:parent.top
                             anchors.margins:Theme.gap; spacing:Theme.gap
                             CarText { text:cardData.title; heading:true; Layout.fillWidth:true }
-                             CarText { text:cardData.state==="contact_detached"?stateText(cardData.state):stateText(cardData.state)+(cardData.contact ? I18n.t(" · 触点已接入") : I18n.t(" · 无线会话")); subdued:true; Layout.fillWidth:true }
+                             CarText { text:cardData.state==="contact_detached"?stateText(cardData.state):stateText(cardData.state)+(cardData.contact ? I18n.t("，触点已接入") : I18n.t("，无线会话")); subdued:true; Layout.fillWidth:true }
                             ProgressBar { value:cardData.progress/100; Layout.fillWidth:true
                                 contentItem:Rectangle { implicitHeight:8*uiScale; color:Theme.raised
                                     Rectangle { width:parent.width*parent.parent.position; height:parent.height; color:Theme.accent } } }
@@ -1685,7 +1685,7 @@ ApplicationWindow {
                         CarText {visible:win.fileRemovableDevices.length>0;text:I18n.t("USB 设备");subdued:true;Layout.fillWidth:true}
                         Repeater {model:win.fileRemovableDevices
                             Button {required property var modelData;objectName:"usbDeviceButton";Layout.fillWidth:true;Layout.minimumHeight:48;Layout.preferredHeight:48;Layout.maximumHeight:48;leftPadding:4;rightPadding:4;topPadding:4;bottomPadding:4;topInset:0;bottomInset:0
-                                Accessible.name:modelData.name+" · "+(modelData.mounted?I18n.t("已挂载"):I18n.t("点击挂载"))
+                                Accessible.name:modelData.name+"，"+(modelData.mounted?I18n.t("已挂载"):I18n.t("点击挂载"))
                                 background:Rectangle {radius:Theme.shapeSmall;color:folder===modelData.location||folder.indexOf(modelData.location+"/")===0?Theme.raised:"transparent";border.width:parent.activeFocus?2:0;border.color:Theme.accent}
                                 contentItem:RowLayout {spacing:8
                                     MaterialIcon {name:"storage";Layout.preferredWidth:24*uiScale;Layout.preferredHeight:24*uiScale}
@@ -1782,7 +1782,7 @@ ApplicationWindow {
                     }
                     }
                     }
-                    CarText {visible:!filesFlick.compact;text:filteredFileRows.length+I18n.t(" 项")+(fileSelection?I18n.t(" · 已选择 ")+fileSelection:"");subdued:true;Layout.fillWidth:true;elide:Text.ElideMiddle;maximumLineCount:1}
+                    CarText {visible:!filesFlick.compact;text:filteredFileRows.length+I18n.t(" 项")+(fileSelection?I18n.t("，已选择 ")+fileSelection:"");subdued:true;Layout.fillWidth:true;elide:Text.ElideMiddle;maximumLineCount:1}
                 }
             }
         }
@@ -1813,13 +1813,13 @@ ApplicationWindow {
                         petEasterEggMenu.open()
                     }
                     iconName:"image";accentColor:"#ff9d37";title:systemTools.uiLanguage==="en"?"Display & personalization":I18n.t("显示与个性化");subtitle:systemTools.uiLanguage==="en"?"Wallpaper, cards and text":I18n.t("壁纸、应用卡片与屏幕文字")
-                    CarText {text:I18n.t("壁纸 · ")+(systemTools.wallpaper.toString() || I18n.t("默认背景"));subdued:true;Layout.fillWidth:true;maximumLineCount:1;elide:Text.ElideMiddle}
+                    CarText {text:I18n.t("壁纸，")+(systemTools.wallpaper.toString() || I18n.t("默认背景"));subdued:true;Layout.fillWidth:true;maximumLineCount:1;elide:Text.ElideMiddle}
                     Flow {Layout.fillWidth:true;spacing:Theme.gap/2
                         CarButton {objectName:"wallpaperChoose";text:I18n.t("选择图片");onClicked:wallpaperPicker.open()}
                         CarButton {text:I18n.t("恢复默认");enabled:systemTools.wallpaper.toString()!=="";onClicked:systemTools.setWallpaper("")}
                         CarButton {text:I18n.t("界面不透明度");onClicked:opacityDialog.open()}
                     }
-                    CarText {text:I18n.t("界面比例 · ")+Math.round(textScale*100)+"%";subdued:true;Layout.fillWidth:true}
+                    CarText {text:I18n.t("界面比例，")+Math.round(textScale*100)+"%";subdued:true;Layout.fillWidth:true}
                     Flow {Layout.fillWidth:true;spacing:Theme.gap/2
                         CarButton {text:I18n.t("标准");checked:textScale===1;onClicked:{textScale=1;systemTools.setInterfaceScale(1)}}
                         CarButton {text:I18n.t("大字");checked:textScale===1.25;onClicked:{textScale=1.25;systemTools.setInterfaceScale(1.25)}}
@@ -1845,7 +1845,7 @@ ApplicationWindow {
                          Binding {target:energySwitch;property:"checked";value:systemTools.energySaving}
                          onClicked:systemTools.setEnergySaving(!systemTools.energySaving)
                      }
-                    CarText {text:systemTools.energySaving?I18n.t("节能开启 · 简化背景效果"):I18n.t("节能关闭 · FBO多级降采样背景模糊");subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                    CarText {text:systemTools.energySaving?I18n.t("节能开启，简化背景效果"):I18n.t("节能关闭，FBO多级降采样背景模糊");subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
                 }
                 SettingsGroup {
                     Layout.fillWidth:true
@@ -1900,15 +1900,26 @@ ApplicationWindow {
                         Binding {target:networkGateSwitch;property:"checked";value:networkGate.enabled}
                         onClicked:networkGate.setEnabledFromUi(!networkGate.enabled)
                     }
-                    CarText {text:networkGate.enabled?I18n.t("联网已开启"):I18n.t("联网已关闭 · 终端不主动访问外部服务");subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                    CarText {text:networkGate.enabled?I18n.t("联网已开启"):I18n.t("联网已关闭，终端不主动访问外部服务");subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                    // §9.3 第 2 条：分功能开关，只在总开关打开后生效。
+                    Flow {Layout.fillWidth:true;spacing:Theme.gap/2;visible:networkGate.enabled
+                        CarButton {text:I18n.t("浏览器联网");checked:networkGate.browserAllowed;onClicked:networkGate.setBrowserAllowed(!networkGate.browserAllowed)}
+                        CarButton {text:I18n.t("音乐联网");checked:networkGate.musicAllowed;onClicked:networkGate.setMusicAllowed(!networkGate.musicAllowed)}
+                        CarButton {text:I18n.t("更新下载");checked:networkGate.updatesAllowed;onClicked:networkGate.setUpdatesAllowed(!networkGate.updatesAllowed)}
+                    }
+                    // §9.3 第 3 条：三态分开显示，不把"接口有 IP"当成"能上网"。
+                    CarText {text:I18n.t("接口")+": "+(networkGate.interfaceReady?I18n.t("就绪"):I18n.t("未就绪"))
+                                +"  "+I18n.t("模块链路")+": "+(networkGate.moduleLinkReady?I18n.t("就绪"):I18n.t("未就绪"))
+                                +"  "+I18n.t("互联网")+": "+(networkGate.internetReachable?I18n.t("可达"):I18n.t("不可达"))
+                            ;subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap;visible:networkGate.enabled}
                     // §13：供电状态。未知就是未知，不显示假百分比。
-                    CarText {text:I18n.t("供电") + " · " + (powerStatus.known ? powerStatus.source : I18n.t("状态未知"))
+                    CarText {text:I18n.t("供电") + "，" + (powerStatus.known ? powerStatus.source : I18n.t("状态未知"))
                             ;subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
                     Flow {Layout.fillWidth:true;spacing:Theme.gap/2
                         CarButton {text:systemTools.hotspotBusy?I18n.t("处理中"):I18n.t("开启热点");enabled:!systemTools.hotspotBusy && (!systemTools.deviceStatus.hotspotKnown || !systemTools.deviceStatus.hotspotActive);onClicked:systemTools.hotspot(true)}
                         CarButton {text:I18n.t("关闭热点");enabled:!systemTools.hotspotBusy && (!systemTools.deviceStatus.hotspotKnown || systemTools.deviceStatus.hotspotActive);onClicked:systemTools.hotspot(false)}
                     }
-                    CarText {text:I18n.t("热点 · ")+(!systemTools.deviceStatus.hotspotKnown?I18n.t("状态未知"):systemTools.deviceStatus.hotspotActive?I18n.t("已开启"):I18n.t("已关闭"));subdued:true;Layout.fillWidth:true}
+                    CarText {text:I18n.t("热点，")+(!systemTools.deviceStatus.hotspotKnown?I18n.t("状态未知"):systemTools.deviceStatus.hotspotActive?I18n.t("已开启"):I18n.t("已关闭"));subdued:true;Layout.fillWidth:true}
                      CarText {text:I18n.t(systemTools.network);Layout.fillWidth:true;wrapMode:Text.Wrap}
                 }
                 SettingsGroup {
@@ -1936,8 +1947,15 @@ ApplicationWindow {
                     visible:activeActions.some(function(action){return ["open","start","stop","request_disconnect","drop_link","stale_data"].indexOf(action)<0})
                     Repeater {model:activeActions.filter(function(action){return ["start","stop","request_disconnect","drop_link","stale_data"].indexOf(action)<0});IconButton {
                         required property string modelData
-                        iconName:({frame:"photo_camera",reset:"refresh",increment:"add",decrement:"remove"})[modelData] || "extension"
-                        label:({frame:I18n.t("采集单帧"),reset:I18n.t("复位"),increment:I18n.t("加一"),decrement:I18n.t("减一")})[modelData] || modelData
+                        // 模块声明的动作走 GUI 白名单入口（§8.4）：
+                        // 未知动作仍显示原名，但参数范围由模块侧再校验。
+                        iconName:({frame:"photo_camera",reset:"refresh",increment:"add",
+                                   decrement:"remove",arm:"shield",disarm:"shield_outlined",
+                                   mute:"volume_off",unmute:"volume_up"})[modelData] || "extension"
+                        label:({frame:I18n.t("采集单帧"),reset:I18n.t("复位"),
+                                increment:I18n.t("加一"),decrement:I18n.t("减一"),
+                                arm:I18n.t("布防"),disarm:I18n.t("撤防"),
+                                mute:I18n.t("静音"),unmute:I18n.t("取消静音")})[modelData] || modelData
                         visible:modelData!=="open";onClicked:connectionManager.action(activeSession,modelData)
                     }}
                 }
@@ -2200,7 +2218,7 @@ ApplicationWindow {
                                 CarText {text:devicePanel.mediaVideo?videoPage.selectedFile:musicPage.currentTitle;heading:true;Layout.fillWidth:true;maximumLineCount:1;elide:Text.ElideRight}
                                 IconButton {iconName:"chevron_right";label:I18n.t("打开播放器");onClicked:{devicePanel.close();win.auditPage(devicePanel.mediaVideo?10:9)}}
                             }
-                            CarText {text:(devicePanel.media.mediaPlaying?I18n.t("正在播放"):I18n.t("已暂停"))+(devicePanel.mediaVideo?"":" · "+musicPage.currentArtist);subdued:true;Layout.fillWidth:true;maximumLineCount:1;elide:Text.ElideRight}
+                            CarText {text:(devicePanel.media.mediaPlaying?I18n.t("正在播放"):I18n.t("已暂停"))+(devicePanel.mediaVideo?"":"，"+musicPage.currentArtist);subdued:true;Layout.fillWidth:true;maximumLineCount:1;elide:Text.ElideRight}
                             RowLayout {Layout.alignment:Qt.AlignHCenter
                                 IconButton {iconName:"skip_previous";label:devicePanel.mediaVideo?I18n.t("上一个视频"):I18n.t("上一首");onClicked:devicePanel.mediaVideo?videoPage.navigateMedia(-1):musicPage.navigatePlayback(-1,false)}
                                 IconButton {iconName:devicePanel.media.mediaPlaying?"pause":"play_arrow";filled:true;label:I18n.t("播放/暂停");onClicked:devicePanel.media.toggleMedia()}
@@ -2210,7 +2228,7 @@ ApplicationWindow {
                         }
                     }
                     GridLayout {Layout.preferredWidth:quickControlsFlick.width;Layout.minimumWidth:quickControlsFlick.width;Layout.maximumWidth:quickControlsFlick.width;Layout.alignment:Qt.AlignVCenter;columns:2;columnSpacing:quickStatusGrid.columnSpacing;rowSpacing:quickStatusGrid.rowSpacing
-                        QuickPanelTile {blurCacheTexture:win.panelBlurTexture;objectName:"quickHotspotTile";blurObjectName:"quickHotspotBlur";blurEnabled:!repairRawQuickBlur;Layout.fillWidth:true;label:I18n.t("Wi-Fi 热点");iconName:systemTools.deviceStatus.hotspotActive?"wifi":"wifi_off";active:!!systemTools.deviceStatus.hotspotActive;detail:systemTools.hotspotBusy?I18n.t("正在切换…"):!systemTools.deviceStatus.hotspotKnown?I18n.t("状态未知"):active?I18n.t("已开启 · 模块可连接"):I18n.t("未开启 · 点击启用");enabled:!systemTools.hotspotBusy&&!!systemTools.deviceStatus.hotspotKnown;onClicked:systemTools.hotspot(!active)}
+                        QuickPanelTile {blurCacheTexture:win.panelBlurTexture;objectName:"quickHotspotTile";blurObjectName:"quickHotspotBlur";blurEnabled:!repairRawQuickBlur;Layout.fillWidth:true;label:I18n.t("Wi-Fi 热点");iconName:systemTools.deviceStatus.hotspotActive?"wifi":"wifi_off";active:!!systemTools.deviceStatus.hotspotActive;detail:systemTools.hotspotBusy?I18n.t("正在切换…"):!systemTools.deviceStatus.hotspotKnown?I18n.t("状态未知"):active?I18n.t("已开启，模块可连接"):I18n.t("未开启，点击启用");enabled:!systemTools.hotspotBusy&&!!systemTools.deviceStatus.hotspotKnown;onClicked:systemTools.hotspot(!active)}
                         QuickPanelTile {blurCacheTexture:win.panelBlurTexture;objectName:"quickBluetoothTile";blurObjectName:"quickBluetoothBlur";blurEnabled:!repairRawQuickBlur;Layout.fillWidth:true;label:"Bluetooth";iconName:"bluetooth";active:!!systemTools.deviceStatus.bluetoothOn;detail:!systemTools.deviceStatus.bluetoothAvailable?I18n.t("没有适配器"):active?I18n.t("已开启"):I18n.t("已关闭");enabled:!!systemTools.deviceStatus.bluetoothAvailable;onClicked:systemTools.setBluetoothEnabled(!active)}
                         QuickPanelTile {blurCacheTexture:win.panelBlurTexture;objectName:"quickSystemTile";blurObjectName:"quickSystemBlur";blurEnabled:!repairRawQuickBlur;Layout.fillWidth:true;label:I18n.t("系统");detail:I18n.t("重启 / 关机");iconName:"power";onClicked:{devicePanel.close();systemActionsDialog.open()}}
                         QuickPanelTile {blurCacheTexture:win.panelBlurTexture;objectName:"quickVolumeTile";blurObjectName:"quickVolumeBlur";blurEnabled:!repairRawQuickBlur;Layout.fillWidth:true;label:I18n.t("音量");iconName:systemTools.systemVolume.muted||systemTools.systemVolume.volume===0?"volume_off":"volume_up";active:devicePanel.volumeExpanded
@@ -2250,7 +2268,7 @@ ApplicationWindow {
                 GridLayout {
                     id:quickStatusGrid;Layout.fillWidth:true;columns:2;columnSpacing:Theme.gap/2;rowSpacing:Theme.gap/2
                     Repeater {model:[
-                        {icon:"power",title:I18n.t("电源"),value:systemTools.deviceStatus.batteryPresent?systemTools.deviceStatus.batteryPercent+"% · "+(systemTools.deviceStatus.batteryState||I18n.t("电池")):I18n.t("未检测到电池")},
+                        {icon:"power",title:I18n.t("电源"),value:systemTools.deviceStatus.batteryPresent?systemTools.deviceStatus.batteryPercent+"%，"+(systemTools.deviceStatus.batteryState||I18n.t("电池")):I18n.t("未检测到电池")},
                         {icon:"extension",title:I18n.t("模块"),value:connectionManager.cards.length+I18n.t(" 个会话")},
                         {icon:"lan",title:I18n.t("控制桥"),value:!connectionManager.bridgeMonitoring?I18n.t("未配置"):connectionManager.bridgeConnected?I18n.t("USB已连接"):I18n.t("USB未连接")},
                         {icon:"memory",title:I18n.t("内存"),value:systemTools.deviceStatus.memoryLabel||I18n.t("读取中")},
@@ -2299,7 +2317,7 @@ ApplicationWindow {
                         ColumnLayout {id:noticeColumn;x:Theme.gap;y:Theme.gap;width:parent.width-Theme.gap*2
                             RowLayout {Layout.fillWidth:true
                                 MaterialIcon {name:iconName;Layout.preferredWidth:28*uiScale;Layout.preferredHeight:28*uiScale}
-                                CarText {text:appName+" · "+time;font.pointSize:Theme.body*0.95;font.weight:Font.DemiBold;subdued:true;Layout.fillWidth:true;elide:Text.ElideRight;maximumLineCount:1}
+                                CarText {text:appName+"，"+time;font.pointSize:Theme.body*0.95;font.weight:Font.DemiBold;subdued:true;Layout.fillWidth:true;elide:Text.ElideRight;maximumLineCount:1}
                                 IconButton {iconName:"close";label:I18n.t("移除通知");onClicked:{notices.remove(index);win.recountNotifications()}}
                             }
                             CarText {visible:title!=="";text:title;font.pointSize:Theme.body*1.05;font.weight:Font.DemiBold;Layout.fillWidth:true;wrapMode:Text.Wrap}
@@ -2539,7 +2557,7 @@ ApplicationWindow {
                     RowLayout {anchors.fill:parent;anchors.margins:Theme.gap/2;spacing:Theme.gap/2
                         ColumnLayout {Layout.fillWidth:true;spacing:2
                             CarText {text:modelData.name;Layout.fillWidth:true;maximumLineCount:1;elide:Text.ElideMiddle}
-                            CarText {text:modelData.status+(modelData.total>0?" · "+Math.floor(modelData.received*100/modelData.total)+"%":"");subdued:true;Layout.fillWidth:true;maximumLineCount:1}
+                            CarText {text:modelData.status+(modelData.total>0?"，"+Math.floor(modelData.received*100/modelData.total)+"%":"");subdued:true;Layout.fillWidth:true;maximumLineCount:1}
                             ProgressBar {visible:modelData.request!==null;Layout.fillWidth:true;from:0;to:Math.max(1,modelData.total);value:modelData.received}
                         }
                         IconButton {visible:!!downloadRequest&&!downloadRequest.isFinished;iconName:downloadRequest&&downloadRequest.isPaused?"play_arrow":"pause";label:downloadRequest&&downloadRequest.isPaused?I18n.t("继续"):I18n.t("暂停");onClicked:if(downloadRequest){if(downloadRequest.isPaused)downloadRequest.resume();else downloadRequest.pause()}}
@@ -2602,7 +2620,7 @@ ApplicationWindow {
                         RowLayout {
                             anchors.fill:parent;anchors.margins:Theme.gap/2;spacing:Theme.gap/2
                             MaterialIcon {name:"language";Layout.preferredWidth:Theme.icon;Layout.preferredHeight:Theme.icon}
-                            CarText {text:bookmarkEntry.modelData.title+" · "+bookmarkEntry.modelData.url;Layout.fillWidth:true;elide:Text.ElideMiddle;maximumLineCount:1}
+                            CarText {text:bookmarkEntry.modelData.title+"，"+bookmarkEntry.modelData.url;Layout.fillWidth:true;elide:Text.ElideMiddle;maximumLineCount:1}
                             IconButton {iconName:"language";label:I18n.t("打开书签");onClicked:{
                                 if(activeBrowser)activeBrowser.url=bookmarkEntry.modelData.url
                                 bookmarkDialog.close();go(2)
@@ -2711,8 +2729,8 @@ ApplicationWindow {
                             radius:Theme.shapeSmall;color:Theme.surfaceContainer
                             RowLayout {anchors.fill:parent;anchors.margins:Theme.gap/2
                                 ColumnLayout {Layout.fillWidth:true;spacing:0
-                                    CarText {text:modelData.name+" · "+modelData.domain;Layout.fillWidth:true;maximumLineCount:1;elide:Text.ElideRight}
-                                    CarText {text:modelData.path+(modelData.secure?" · Secure":"")+(modelData.httpOnly?" · HttpOnly":"");subdued:true;Layout.fillWidth:true;maximumLineCount:1}
+                                    CarText {text:modelData.name+"，"+modelData.domain;Layout.fillWidth:true;maximumLineCount:1;elide:Text.ElideRight}
+                                    CarText {text:modelData.path+(modelData.secure?"，Secure":"")+(modelData.httpOnly?"，HttpOnly":"");subdued:true;Layout.fillWidth:true;maximumLineCount:1}
                                 }
                                 IconButton {iconName:"delete";label:I18n.t("删除 Cookie");onClicked:viperBrowser.deleteCookie(index)}
                             }
@@ -2729,7 +2747,7 @@ ApplicationWindow {
         background:GlassSurface {color:Theme.surface;radius:Theme.shapeExtraLarge;borderColor:Theme.outline}
         contentItem:ColumnLayout {spacing:Theme.gap
             CarText {text:I18n.t("需要网站身份验证");heading:true;Layout.fillWidth:true}
-            CarText {text:browserAuthDialog.url+" · "+browserAuthDialog.realm;subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
+            CarText {text:browserAuthDialog.url+"，"+browserAuthDialog.realm;subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
             CarField {id:browserAuthUser;Layout.fillWidth:true;placeholderText:I18n.t("用户名");onAccepted:browserAuthPassword.forceActiveFocus()}
             CarField {id:browserAuthPassword;Layout.fillWidth:true;placeholderText:I18n.t("密码");echoMode:TextInput.Password;onAccepted:acceptBrowserAuth()}
             Flow {Layout.fillWidth:true;spacing:Theme.gap

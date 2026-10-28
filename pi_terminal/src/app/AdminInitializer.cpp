@@ -1,5 +1,6 @@
 #include "app/AdminInitializer.h"
 
+#include "security/RecoveryCode.h"
 #include "security/UserService.h"
 
 #include <QCommandLineParser>
@@ -41,12 +42,21 @@ int run(const QCommandLineParser &options) {
     }
     pin = pin.trimmed();
 
-    const QString userId = users.createInitialAdmin(displayName, pin);
+    // 报告 §6.2 / §7.2：首次初始化必须给用户一条离线恢复路径，
+    // 否则丢 PIN 就等于丢数据。恢复码只在这里显示一次，不落盘明文。
+    const QString recoveryCode = RecoveryCode::generate();
+    const QString userId = users.createInitialAdmin(displayName, pin, recoveryCode);
     if (userId.isEmpty()) {
         QTextStream(stderr) << "init-admin: failed (PIN must be at least 6 ASCII digits).\n";
         return 3;
     }
     out << "created administrator " << displayName << " (" << userId << ")\n";
+    out << "\n";
+    out << "Recovery code (shown only once, write it down and keep it offline):\n";
+    out << "    " << recoveryCode << "\n";
+    out << "\n";
+    out << "Without this code, a forgotten PIN means the data cannot be recovered.\n";
+    out.flush();
     return 0;
 }
 

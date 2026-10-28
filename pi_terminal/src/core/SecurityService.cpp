@@ -9,6 +9,8 @@
 #include "security/UserDatabase.h"
 #include "protocol/uid_index.h"
 
+#include <cmath>
+
 #include <QDateTime>
 #include <QFile>
 #include <QJsonArray>
@@ -176,6 +178,57 @@ bool SecurityService::revokeBridge(const QString &fingerprintHex) {
     return true;
 }
 
+// ---- 刷卡选用户 ----
+
+void SecurityService::setBridgeAvailable(bool available) {
+    if (bridgeAvailable_ == available) return;
+    bridgeAvailable_ = available;
+    emit changed();
+}
+
+QVariantMap SecurityService::resolveCard(const QString &uidHex) {
+    QVariantMap result;
+    result.insert(QStringLiteral("matched"), false);
+
+    // §10.3：桥板失联时位置未知，禁止新的刷卡。
+    if (!bridgeAvailable_) {
+        setMessage(QStringLiteral("POSITION_UNKNOWN"));
+        result.insert(QStringLiteral("error"), QStringLiteral("POSITION_UNKNOWN"));
+        return result;
+    }
+
+    const QByteArray raw = QByteArray::fromHex(uidHex.toLatin1());
+    // 只接受 4/7/10 字节；其他长度一律失败关闭。
+    if (raw.size() != 4 && raw.size() != 7 && raw.size() != 10) {
+        setMessage(QStringLiteral("INVALID_MESSAGE"));
+        result.insert(QStringLiteral("error"), QStringLiteral("INVALID_MESSAGE"));
+        return result;
+    }
+
+    if (!cards_) cards_ = new security::CardIndex();
+    // raw UID 只在这里短暂存在：派生成为 HMAC 索引后立即丢弃。
+    const auto match = cards_->findOwner(raw, &deriveUidIndex);
+    switch (match.verdict) {
+    case security::CardMatch::Verdict::Matched:
+        result.insert(QStringLiteral("matched"), true);
+        // 只回 userId：调用方据此跳 PIN 页，**不得**直接登录。
+        result.insert(QStringLiteral("userId"), match.userId);
+        audit(QString::fromLatin1(security::AuditAction::GrantDevice),
+              QStringLiteral("card.matched"), QString::fromLatin1(security::AuditResult::Ok));
+        break;
+    case security::CardMatch::Verdict::NoMatch:
+        result.insert(QStringLiteral("error"), QStringLiteral("NO_MATCH"));
+        audit(QString::fromLatin1(security::AuditAction::GrantDevice),
+              QStringLiteral("card.unmatched"), QString::fromLatin1(security::AuditResult::Denied));
+        break;
+    case security::CardMatch::Verdict::IndexRejected:
+        // 密钥不可用或长度非法：失败关闭，不退回明文 UID 比较。
+        result.insert(QStringLiteral("error"), QStringLiteral("INVALID_MESSAGE"));
+        break;
+    }
+    return result;
+}
+
 // ---- 卡绑定 ----
 
 QVariantList SecurityService::boundCards() const {
@@ -260,6 +313,27 @@ QVariantList SecurityService::capabilities(int moduleId) const {
     return list;
 }
 
+void SecurityService::noteRequestedCapabilities(int moduleId, const QStringList &capabilities) {
+    requested_.insert(moduleId, capabilities);
+    emit changed();
+}
+
+QVariantList SecurityService::requestedCapabilities(int moduleId) const {
+    QVariantList list;
+    const QString userId = activeUserId();
+    const QStringList requested = requested_.value(moduleId);
+    for (const QString &capability : requested) {
+        QVariantMap entry;
+        entry.insert(QStringLiteral("capability"), capability);
+        // manifest 的声明与用户授予是两件事：这里如实分开报告。
+        entry.insert(QStringLiteral("requested"), true);
+        entry.insert(QStringLiteral("granted"),
+                     !userId.isEmpty() && permissions()->has(userId, moduleId, capability));
+        list.append(entry);
+    }
+    return list;
+}
+
 bool SecurityService::grantCapability(const QString &targetUserId, int moduleId,
                                       const QString &capability) {
     if (!requireAdmin(QStringLiteral("device.grant"))) return false;
@@ -307,6 +381,44 @@ QVariantList SecurityService::recentAudit(int limit) const {
 }
 
 // ---- 导出 / 删除 ----
+
+bool SecurityService::addManualReading(double value, const QString &unit,
+                                       const QString &deviceModel) {
+    if (!requireUser(QStringLiteral("data.manualEntry"))) return false;
+    // 报告 §12.3：边界值必须校验，不能补造数据。
+    if (!std::isfinite(value) || value <= 0 || value > 400) {
+        setMessage(QStringLiteral("INVALID_MESSAGE"));
+        return false;
+    }
+    const bool ok = database_->appendManualReading(value, unit, deviceModel);
+    audit(QStringLiteral("data.manualEntry"), QStringLiteral("own"),
+          ok ? QString::fromLatin1(security::AuditResult::Ok)
+             : QString::fromLatin1(security::AuditResult::Failed));
+    setMessage(ok ? QString() : QStringLiteral("STORAGE_UNAVAILABLE"));
+    emit changed();
+    return ok;
+}
+
+QVariantList SecurityService::readings(int limit) const {
+    QVariantList list;
+    if (!database_ || !database_->isOpen()) return list;
+    for (const auto &reading : database_->queryReadings(limit)) {
+        QVariantMap item;
+        item.insert(QStringLiteral("receivedAtMs"), reading.receivedAtMs);
+        item.insert(QStringLiteral("measuredAtMs"), reading.measuredAtMs);
+        item.insert(QStringLiteral("source"), reading.source);
+        item.insert(QStringLiteral("deviceModel"), reading.deviceModel);
+        item.insert(QStringLiteral("metric"), reading.metric);
+        // 缺失值用 isValid=false 表达，不塞 0。
+        item.insert(QStringLiteral("hasValue"), reading.hasValue);
+        if (reading.hasValue) item.insert(QStringLiteral("value"), reading.value);
+        item.insert(QStringLiteral("unit"), reading.unit);
+        item.insert(QStringLiteral("valid"), reading.valid);
+        item.insert(QStringLiteral("invalidReason"), reading.invalidReason);
+        list.append(item);
+    }
+    return list;
+}
 
 bool SecurityService::exportEncrypted(const QString &path, const QString &password) {
     if (!requireUser(QString::fromLatin1(security::AuditAction::ExportData))) return false;

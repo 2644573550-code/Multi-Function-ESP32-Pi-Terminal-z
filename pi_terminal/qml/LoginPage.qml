@@ -8,6 +8,14 @@ Item {
     property var users: []
     property string selectedUserId: ""
     property string selectedDisplayName: ""
+    // 刷卡选中的用户：进入本页时直接预选，但仍必须输入 PIN。
+    property string preSelectedUserId: ""
+    property string preSelectedDisplayName: ""
+    onPreSelectedUserIdChanged: {
+        if (preSelectedUserId === "") return
+        selectedUserId = preSelectedUserId
+        selectedDisplayName = preSelectedDisplayName
+    }
     property string message: ""
     property bool messageIsError: false
     property bool busy: false

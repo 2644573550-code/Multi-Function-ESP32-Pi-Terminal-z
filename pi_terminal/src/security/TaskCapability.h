@@ -33,6 +33,11 @@ public:
     void revoke() { revoked_ = true; }
     bool revoked() const { return revoked_; }
 
+    // 报告 §5.3：无法确认测量是否完成时，允许用户显式取消并把记录
+    // 标记为"不完整"，而不是猜测为正常。标记后任务仍可读，但不再是有效记录。
+    void markIncomplete() { incomplete_ = true; }
+    bool incomplete() const { return incomplete_; }
+
     // 锁屏/切用户会推进代次，旧代次的迟到回调一律拒绝。
     void bumpGeneration() { ++generation_; }
 
@@ -53,6 +58,7 @@ private:
     QString deviceId_;
     qint64 generation_ = 0;
     bool revoked_ = false;
+    bool incomplete_ = false;
 };
 
 }  // namespace security

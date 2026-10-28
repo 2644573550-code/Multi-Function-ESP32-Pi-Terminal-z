@@ -100,6 +100,37 @@ private slots:
         QVERIFY(!client.errorCode().isEmpty());
         client.stop(QStringLiteral("ipc-missing"));
     }
+
+    // §8.4：模块自定义动作必须能经 IPC 传到模块（自定义模块页的按钮）。
+    void moduleActionReachesWorker()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        qputenv("ORANGE_PI_WORKER_SOCKET", dir.filePath(QStringLiteral("ipc.sock")).toUtf8());
+        qputenv("ORANGE_PI_MODULE_WORKER", workerBinary().toUtf8());
+
+        const QString moduleDir = QDir(QCoreApplication::applicationDirPath())
+            .filePath(QStringLiteral("modules/example"));
+        const QString libraryPath = moduleDir + QStringLiteral("/libexample_module.so");
+        QVERIFY(QFile::exists(libraryPath));
+
+        security::ModuleWorkerClient client;
+        QVERIFY2(client.start(QStringLiteral("action-test"), libraryPath,
+                              QJsonObject{{"transport_mode", "fixed_hotspot_lan"}}),
+                 qPrintable(client.errorCode() + QLatin1Char(' ') + client.lastError()));
+
+        // manifest 里声明的动作（example 模块有 "open"/"start"/"stop" 等）。
+        QVERIFY2(client.invokeAction(QStringLiteral("start")),
+                 qPrintable(client.errorCode()));
+
+        // 非法动作名在客户端就被拒（不把任意字符串传进模块）。
+        QVERIFY(!client.invokeAction(QString()));
+        QCOMPARE(client.errorCode(), QStringLiteral("INVALID_MESSAGE"));
+        QVERIFY(!client.invokeAction(QString(65, 'a')));
+
+        client.stop(QStringLiteral("action-test"));
+    }
+
 };
 
 QTEST_GUILESS_MAIN(ModuleWorkerIpcTest)

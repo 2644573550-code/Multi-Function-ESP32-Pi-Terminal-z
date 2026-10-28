@@ -1,5 +1,12 @@
 #include "security/SessionManager.h"
 #include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSaveFile>
+#include <QStandardPaths>
 
 #include "security/AuditLog.h"
 #include "security/UserDatabase.h"
@@ -14,6 +21,8 @@ namespace security {
 
 SessionManager::SessionManager(UserService *users, AuthService *auth, QObject *parent)
     : QObject(parent), usersService_(users), authService_(auth) {
+    lastUserHintPath_ = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
+        + QStringLiteral("/last_user.json");
     refreshUsers();
 }
 
@@ -110,6 +119,7 @@ QString SessionManager::login(const QString &userId, const QString &pin) {
 }
 
 QString SessionManager::unlockWithPin(const QString &pin) {
+    // 解锁成功后同样刷新"上次用户"，保证重启提示指向最近使用者。
     if (!locked_) return QString();
     if (!authService_ || activeUserId_.isEmpty()) return QStringLiteral("SESSION_EXPIRED");
     const AuthService::Result result = authService_->verifyPin(activeUserId_, pin);
@@ -142,6 +152,62 @@ void SessionManager::setMessage(const QString &code, int retryAfterMs) {
     message_ = code;
     retryAfterMs_ = retryAfterMs;
     emit messageChanged();
+}
+
+QString SessionManager::lastUserHint() const {
+    QFile file(lastUserHintPath_);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    const QJsonObject object = QJsonDocument::fromJson(file.readAll()).object();
+    // 只接受看起来像 userId 的不透明 ID；其他一律忽略。
+    const QString userId = object.value(QStringLiteral("last_user_id")).toString();
+    if (userId.isEmpty() || userId.size() > 64) return {};
+    for (const QChar c : userId)
+        if (!(c.isLetterOrNumber() || c == QLatin1Char('-') || c == QLatin1Char('_')))
+            return {};
+    return userId;
+}
+
+void SessionManager::rememberUserHint(const QString &userId) {
+    if (userId.isEmpty()) return;
+    QDir().mkpath(QFileInfo(lastUserHintPath_).absolutePath());
+    QSaveFile file(lastUserHintPath_);
+    if (!file.open(QIODevice::WriteOnly)) return;
+    const QJsonObject object{{QStringLiteral("schema"), QStringLiteral("p0-session-hint-v1")},
+                             {QStringLiteral("last_user_id"), userId}};
+    if (file.write(QJsonDocument(object).toJson(QJsonDocument::Compact)) <= 0) {
+        file.cancelWriting();
+        return;
+    }
+    file.commit();
+    // 0600：虽然不含密钥，但"谁在使用这台终端"本身是低敏隐私。
+    QFile::setPermissions(lastUserHintPath_, QFile::ReadOwner | QFile::WriteOwner);
+}
+
+void SessionManager::clearUserHint() {
+    QFile::remove(lastUserHintPath_);
+}
+
+bool SessionManager::hasUserHint() const {
+    return !lastUserHint().isEmpty();
+}
+
+bool SessionManager::cancelTaskAsIncomplete(const QString &taskId) {
+    TaskCapability *task = tasks_.take(taskId);
+    if (!task) return false;
+    // 显式取消：标记不完整后按正常收尾路径推进代次，
+    // 保证此后任何迟到回调仍被拒绝。
+    task->markIncomplete();
+    task->revoke();
+    taskGenerations_[taskId] = task->generation() + 1;
+    delete task;
+    emit changed();
+    return true;
+}
+
+bool SessionManager::taskIsIncomplete(const QString &taskId) const {
+    // 已收尾的任务不在表里；调用方按"已结束"处理即可。
+    const TaskCapability *task = tasks_.value(taskId);
+    return task && task->incomplete();
 }
 
 QString SessionManager::startTask(const QString &deviceId) {

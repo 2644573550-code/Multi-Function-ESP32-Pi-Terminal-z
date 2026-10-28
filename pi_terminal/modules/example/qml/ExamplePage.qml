@@ -76,10 +76,10 @@ Rectangle {
         Repeater {
             id: metrics
             model: [
-                {title:"温度",value:page.sensorValue("temperature_C",2,"°C"),detail:"BME280 · GPIO38/39",tint:"#82e3ff"},
-                {title:"湿度",value:page.sensorValue("humidity_RH",2,"%RH"),detail:"BME280 · 相对湿度",tint:"#98e7c1"},
-                {title:"气压",value:page.sensorValue("pressure_hPa",2,"hPa"),detail:"BME280 · 实测气压",tint:"#ffd68c"},
-                {title:"光照",value:page.sensorValue("light_lux",1,"lx"),detail:"BH1750 · GPIO4/5",tint:"#ccb7ff"}
+                {title:"温度",value:page.sensorValue("temperature_C",2,"°C"),detail:"BME280，GPIO38/39",tint:"#82e3ff"},
+                {title:"湿度",value:page.sensorValue("humidity_RH",2,"%RH"),detail:"BME280，相对湿度",tint:"#98e7c1"},
+                {title:"气压",value:page.sensorValue("pressure_hPa",2,"hPa"),detail:"BME280，实测气压",tint:"#ffd68c"},
+                {title:"光照",value:page.sensorValue("light_lux",1,"lx"),detail:"BH1750，GPIO4/5",tint:"#ccb7ff"}
             ]
             delegate: Rectangle {
                 id: card
@@ -101,7 +101,7 @@ Rectangle {
             x:0; y:Math.ceil(4 / page.columns) * (page.metricHeight + page.gap)
             width:dashboard.width; height:trendTitle.height + 144 * page.uiScale
             color: "#102738"; radius: 10 * page.uiScale; border.color: "#46657c"
-            Text { id:trendTitle; x:12*page.uiScale; y:8*page.uiScale; width:Math.max(0,parent.width-24*page.uiScale); text:"心跳趋势 · 实际收到的数据"; color:"#e4eff8"; font.pointSize:18*page.uiScale; wrapMode:Text.Wrap }
+            Text { id:trendTitle; x:12*page.uiScale; y:8*page.uiScale; width:Math.max(0,parent.width-24*page.uiScale); text:"心跳趋势，实际收到的数据"; color:"#e4eff8"; font.pointSize:18*page.uiScale; wrapMode:Text.Wrap }
             Canvas {
                 id: chart
                 x:12*page.uiScale; y:trendTitle.y+trendTitle.height+8*page.uiScale

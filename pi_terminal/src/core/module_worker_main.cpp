@@ -46,6 +46,8 @@ public:
         onData_ = reinterpret_cast<decltype(&pi_module_on_data)>(library_.resolve("pi_module_on_data"));
         onDetach_ = reinterpret_cast<decltype(&pi_module_on_detach)>(library_.resolve("pi_module_on_detach"));
         stop_ = reinterpret_cast<decltype(&pi_module_stop)>(library_.resolve("pi_module_stop"));
+        // 可选入口：没有导出 action 的模块不报错，只是 action 无效。
+        onAction_ = reinterpret_cast<decltype(onAction_)>(library_.resolve("pi_module_action"));
         return true;
     }
 
@@ -60,6 +62,11 @@ public:
         services_.publish_action = &Worker::publishAction;
         services_.emit_event = &Worker::emitEvent;
         services_.log = &Worker::logMessage;
+        // 模块回传数据与读取自身目录：worker 迁移时漏了这三个，
+        // 导致模块的 send_data 恒返回 -1、action 全部失效。
+        services_.send_data = &Worker::sendDataCallback;
+        services_.send_control = &Worker::sendControlCallback;
+        services_.data_directory = &Worker::dataDirectoryCallback;
         handle_ = create_(&services_);
         if (!handle_) return false;
         const QByteArray json = QJsonDocument(transport).toJson(QJsonDocument::Compact);
@@ -74,6 +81,39 @@ public:
     }
 
     bool isLoaded() const { return library_.isLoaded(); }
+
+    // 模块经 pi_host_services.send_data 回传业务数据：转成 reportState 帧
+    // 发给宿主（宿主按 event 处理），而不是直接写网络。
+    static int sendDataCallback(void *context, uint8_t /*transport*/,
+                                const uint8_t *payload, uint32_t length) {
+        auto *self = static_cast<Worker *>(context);
+        if (!self || !payload || length == 0 || length > 65536) return -1;
+        const QByteArray raw(reinterpret_cast<const char *>(payload), int(length));
+        emitEventFrame("sample", QString::fromUtf8(raw).toUtf8().constData());
+        return int(length);
+    }
+
+    // 控制面回传：P0 的 worker 不直接拿控制通道，明确拒绝而不是假装成功。
+    static int sendControlCallback(void *, uint8_t, const uint8_t *, uint16_t, uint16_t *) {
+        return -1;
+    }
+
+    // 模块的私有数据目录：由宿主经环境变量指定；未指定时返回空串，
+    // 模块据此走"无持久化"路径，而不是写到任意位置。
+    static const char *dataDirectoryCallback() {
+        static const QByteArray dir = qEnvironmentVariable("ORANGE_PI_WORKER_DATA_DIR").toUtf8();
+        return dir.constData();
+    }
+
+    // 调用模块导出的 pi_module_action。动作名必须由宿主按 manifest 白名单
+    // 预校验过；这里再挡一次空值与超长，避免把任意字符串传进模块。
+    bool invokeAction(const QString &action) {
+        if (!handle_ || !onAction_ || action.isEmpty() || action.size() > 64) return false;
+        for (const QChar c : action)
+            if (!c.isLetterOrNumber() && c != QLatin1Char('_') && c != QLatin1Char('-'))
+                return false;
+        return onAction_(handle_, action.toUtf8().constData()) >= 0;
+    }
 
     void shutdown() {
         if (handle_ && onDetach_) onDetach_(handle_);
@@ -117,6 +157,7 @@ private:
     decltype(&pi_module_on_data) onData_ = nullptr;
     decltype(&pi_module_on_detach) onDetach_ = nullptr;
     decltype(&pi_module_stop) stop_ = nullptr;
+    int (*onAction_)(pi_module_handle_t *, const char *) = nullptr;
 };
 
 QLocalSocket *Worker::peer = nullptr;
@@ -214,6 +255,10 @@ int main(int argc, char **argv) {
                     }
                 } else if (op == QLatin1String("readOwnRecords")) {
                     if (!worker.data(QByteArray::fromBase64(body.value("payload").toString().toLatin1())))
+                        code = QStringLiteral("INVALID_MESSAGE");
+                } else if (op == QLatin1String("invokeAction")) {
+                    const QString action = body.value("action").toString();
+                    if (!worker.invokeAction(action))
                         code = QStringLiteral("INVALID_MESSAGE");
                 } else if (op == QLatin1String("stop")) {
                     worker.shutdown();

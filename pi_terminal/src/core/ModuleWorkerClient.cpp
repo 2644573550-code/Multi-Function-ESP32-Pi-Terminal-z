@@ -164,6 +164,16 @@ bool ModuleWorkerClient::sendData(const QByteArray &payload) {
         && response.value("code").toString() == QLatin1String("OK");
 }
 
+bool ModuleWorkerClient::invokeAction(const QString &action) {
+    if (!isRunning() || action.isEmpty() || action.size() > 64) {
+        errorCode_ = QStringLiteral("INVALID_MESSAGE");
+        return false;
+    }
+    QJsonObject response;
+    return request(QStringLiteral("invokeAction"), {{"action", action}}, &response)
+        && response.value("code").toString() == QLatin1String("OK");
+}
+
 bool ModuleWorkerClient::request(const QString &op, const QJsonObject &body, QJsonObject *response) {
     if (!isRunning() || response == nullptr) {
         errorCode_ = QStringLiteral("WORKER_UNAVAILABLE");

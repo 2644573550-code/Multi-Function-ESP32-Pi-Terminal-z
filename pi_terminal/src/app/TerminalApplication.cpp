@@ -67,6 +67,34 @@ int TerminalApplication::initialize(const QCommandLineParser &options) {
     connection_.observationSink = [this](const QString &, double value) {
         return session_.recordObservation(QStringLiteral("module"), value);
     };
+    // T-08：刷卡事件接到安全服务，只解析出"该跳到哪个用户的 PIN 页"。
+    // raw UID 不进 QML、不落盘；派生在 C++ 内部完成。
+    QObject::connect(&connection_, &ConnectionManager::cardPresented,
+                     &securityService_, [this](const QString &uidHex, int) {
+        const QVariantMap result = securityService_.resolveCard(uidHex);
+        if (result.value(QStringLiteral("matched")).toBool())
+            emit securityService_.cardUserSelected(result.value(QStringLiteral("userId")).toString());
+    });
+    QObject::connect(&connection_, &ConnectionManager::bridgeAvailabilityChanged,
+                     &securityService_, [this](bool available) {
+        securityService_.setBridgeAvailable(available);
+    });
+
+    // 模块页的数据接口（§6.1）：每次加载页面按当前会话新建一个，
+    // 作用域是 moduleId + instance + 当前登录用户。
+    connection_.moduleDataApiFactory = [this](int moduleId, const QString &instance) -> QObject * {
+        delete moduleDataApi_;
+        // TerminalApplication 不是 QObject，父对象挂在 modulePageHost_ 上。
+        moduleDataApi_ = new ModuleDataApi(moduleId, instance, &modulePageHost_);
+        moduleDataApi_->setDatabase(session_.database());
+        modulePageHost_.setModuleDataApi(moduleDataApi_);
+        return moduleDataApi_;
+    };
+
+    // manifest 的 permissions 只记录为"请求"，授予仍须用户/管理员操作。
+    connection_.requestedCapabilitiesSink = [this](int moduleId, const QStringList &capabilities) {
+        securityService_.noteRequestedCapabilities(moduleId, capabilities);
+    };
     });
     connection_.setActiveUserId(session_.activeUserId());
     // 自动化审计（--ui-test）以无用户配置启动，门控会拒绝业务数据；

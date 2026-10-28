@@ -4,6 +4,7 @@
 
 #include "core/ConnectionManager.h"
 #include "core/ModulePageHost.h"
+#include "core/ModuleDataApi.h"
 #include "core/NetworkGate.h"
 #include "core/PowerStatus.h"
 #include "core/SecurityService.h"
@@ -51,6 +52,8 @@ private:
 
     // 模块页沙箱（§0.7）：独立 QQmlEngine，宿主对象不可见。
     ModulePageHost modulePageHost_;
+    // 当前模块页的数据接口（每实例一个，随会话重建）。
+    ModuleDataApi *moduleDataApi_ = nullptr;
 
     QQmlApplicationEngine engine_;
 };

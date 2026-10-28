@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QHash>
+
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -51,6 +53,17 @@ public:
     // 撤销：按指纹前缀（16 hex）定位。需要管理员。
     Q_INVOKABLE bool revokeBridge(const QString &fingerprintHex);
 
+    // ---- 刷卡选用户（T-08 / 报告 §5.1）----
+    // 输入是桥板级 rfid_card 事件的 uid（hex）。raw UID 只在本调用内存活：
+    // 立即做 HMAC 派生，不落盘、不记录、不回传。
+    // 返回：matched=true + userId（只可跳 PIN 页，**不直接登录**）；
+    //       matched=false 表示无归属或派生失败。
+    // 桥板失联时位置未知，一律拒绝新的刷卡（§10.3）。
+    Q_INVOKABLE QVariantMap resolveCard(const QString &uidHex);
+    // 桥板在线状态（由 ConnectionManager 同步）。离线时 resolveCard 恒失败。
+    void setBridgeAvailable(bool available);
+    bool bridgeAvailable() const { return bridgeAvailable_; }
+
     // ---- 卡绑定（T-08 Z 侧）----
     Q_INVOKABLE QVariantList boundCards() const;
     // 绑卡：需要已登录 + 30 秒窗口由调用方持有时序；这里只做归属校验。
@@ -60,6 +73,12 @@ public:
 
     // ---- 用户级能力授权（§8.2）----
     Q_INVOKABLE QVariantList capabilities(int moduleId) const;
+    // manifest 声明的能力只是"请求"，不自动授予。
+    // 返回：已授予 / 被请求但未授予 / 互斥被拒。供信任弹窗与授权页展示。
+    Q_INVOKABLE QVariantList requestedCapabilities(int moduleId) const;
+    // 记录当前模块在 manifest 里请求了哪些能力（由 ConnectionManager 在
+    // 校验通过后调用）。不授予任何权限。
+    Q_INVOKABLE void noteRequestedCapabilities(int moduleId, const QStringList &capabilities);
     // 授予/撤销：互斥冲突时返回 false 并给出原因（不部分授予）。
     Q_INVOKABLE bool grantCapability(const QString &targetUserId, int moduleId,
                                      const QString &capability);
@@ -69,6 +88,13 @@ public:
     // ---- 审计（§3.2）----
     // 只返回本用户可见的最近记录；不含任何值。
     Q_INVOKABLE QVariantList recentAudit(int limit = 50) const;
+
+    // ---- 手工录入（报告 §12.1）----
+    // 只写当前用户库，来源标记为 user.entry，与设备读数分开。
+    Q_INVOKABLE bool addManualReading(double value, const QString &unit,
+                                      const QString &deviceModel);
+    // 只读：当前用户的读数列表（含来源、单位、有效性）。
+    Q_INVOKABLE QVariantList readings(int limit = 50) const;
 
     // ---- 数据生命周期（§6.4 / §7）----
     // 导出：加密写出到 path，密码由用户提供。返回 false 表示失败。
@@ -81,6 +107,8 @@ public:
 
 signals:
     void changed();
+    // 刷卡选中用户：QML 据此只跳 PIN 页，不得直接登录。
+    void cardUserSelected(QString userId);
 
 private:
     // 当前登录用户；未登录返回空。所有写操作先过这一步。
@@ -98,6 +126,9 @@ private:
     mutable ::TrustStore *trustStore_ = nullptr;
     mutable security::PermissionMatrix *permissions_ = nullptr;
     mutable security::CardIndex *cards_ = nullptr;
+    // moduleId → manifest 请求的能力。只表示"请求"，授予状态在 PermissionMatrix。
+    QHash<int, QStringList> requested_;
     bool ready_ = false;
+    bool bridgeAvailable_ = false;
     QString lastMessage_;
 };

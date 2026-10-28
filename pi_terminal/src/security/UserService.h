@@ -22,6 +22,14 @@ struct UserRecord {
     QByteArray wrappedDbKey; // AES-256-GCM(KEK, dbKey)
     QByteArray dbKeyNonce;   // 12B
     int iterations = 0;      // 建档时的迭代数，用于将来升级参数
+
+    // 离线恢复码（报告 §6.2 / §7.2）：与 PIN 完全独立的一条解封路径。
+    // 用户丢 PIN 时用恢复码取回同一个 dbKey；两者都丢才需要销毁数据。
+    // 只保存 REK 封装后的密文，不保存恢复码本身。
+    QByteArray recoverySalt;        // 16B
+    QByteArray wrappedDbKeyByCode;  // AES-256-GCM(REK, dbKey)
+    QByteArray dbKeyByCodeNonce;    // 12B
+    bool hasRecoveryCode = false;   // false 时该用户没有恢复路径
 };
 
 class UserService {
@@ -31,12 +39,27 @@ public:
     QString path() const;
 
     // 首次初始化：注册表里已有任何用户则拒绝，且不覆盖。
+    // recoveryCode 由调用方生成并展示给用户一次；传入空则建不带恢复路径的账户。
     // 返回新建的 userId；失败返回空。
-    QString createInitialAdmin(const QString &displayName, const QString &pin);
+    QString createInitialAdmin(const QString &displayName, const QString &pin,
+                               const QString &recoveryCode = QString());
 
     // 管理员建普通用户。非管理员调用返回空。
     QString createUser(const QString &actorUserId, const QString &displayName, const QString &pin,
-                       bool admin = false);
+                       bool admin = false, const QString &recoveryCode = QString());
+
+    // 用恢复码解出 DB key（丢 PIN 时的唯一自救路径）。
+    // 成功后不自动改 PIN；调用方应引导用户设置新 PIN。
+    bool openWithRecoveryCode(const QString &userId, const QString &recoveryCode,
+                              QByteArray *dbKeyOut) const;
+
+    // 为已存在的用户补发恢复码（需要当前 PIN 验证后由调用方触发）。
+    // 返回 false 表示用户不存在或参数不合法。
+    bool setRecoveryCode(const QString &userId, const QByteArray &dbKey,
+                         const QString &recoveryCode);
+
+    // 用户是否有可用的恢复路径。
+    bool hasRecoveryCode(const QString &userId) const;
 
     bool disableUser(const QString &actorUserId, const QString &targetUserId);
 

@@ -60,9 +60,20 @@ public:
     void setActiveUserId(const QString &userId);
     QString activeUserId() const { return activeUserId_; }
 
+    // 报告 §10.3：桥板失联时位置未知，禁止新的刷卡/绑卡/物理插入确认。
+    // 已授权任务不因此中断（用户仍可 PIN 解锁查看/停止/撤权）。
+    bool positionOpsAllowed() const;
+    bool bridgeLost() const { return bridgeUnavailable_; }
+
+    // 模块页的数据接口工厂（§6.1）。由 TerminalApplication 接到
+    // 当前打开的用户库；返回 nullptr 时模块页拿不到数据接口。
+    std::function<QObject *(int moduleId, const QString &instance)> moduleDataApiFactory;
     // 观测值写入可信存储（报告 §6.1）。由 TerminalApplication 接到
     // SessionManager；未设置时不写历史，绝不退回模块侧明文 JSON。
     std::function<bool(const QString &instance, double value)> observationSink;
+    // manifest 请求的能力（只请求，不授予）。由 TerminalApplication 接到
+    // SecurityService::noteRequestedCapabilities。
+    std::function<void(int moduleId, const QStringList &capabilities)> requestedCapabilitiesSink;
 
     // 模块页热更新：包版本变化后重新加载模块与页面，不重启终端。
     // 返回 true 表示已按新版本重建（旧 worker 先停、旧页面先卸）。
@@ -80,10 +91,19 @@ signals:
     void hotspotLeaseRequested(QString instance);
     void hotspotLeaseReleased(QString instance);
     void moduleRefreshed(QString instance, QString version);
+    // 桥板级 RFID 事件（T-08）。raw UID 只在信号参数里短暂存在，
+    // 接收方必须立即派生索引并丢弃原文。
+    void cardPresented(QString uidHex, int uidLen);
+    // 桥板可用性变化（§10.3）：离线时禁止新的刷卡/绑卡。
+    void bridgeAvailabilityChanged(bool available);
     void bridgeConnectionChanged();
     void bridgeUnavailable();
 public slots:
     void hotspotLeaseReady(const QString &instance, bool ready);
+private:
+    void handleBridgeUnavailable();
+    void handleBridgeRestored();
+public:
 private:
     struct Session {
         int id = 0;
@@ -103,6 +123,8 @@ private:
         qint64 lastSeen = 0, lostAt = 0, retryAt = 0;
         int progress = 0;
         bool contact = true, ready = false, loaded = false, stopping = false, bleConnected = false, lanConnected = false;
+        // 模块页数据接口：每实例一个，生命周期随会话。
+        QObject *moduleDataApi = nullptr;
         bool hotspotPending = false, hotspotLease = false, packageNeedsHotspot = false;
         bool firstDataLogged = false;
         quint8 activeTransport = 0;
@@ -128,6 +150,7 @@ private:
     QJsonObject profiles_, config_;
     QString status_ = QStringLiteral("等待模块");
     QString activeUserId_;
+    bool bridgeUnavailable_ = false;
     void state(const QSharedPointer<Session> &, const QString &, const QString &);
     void connectData(const QSharedPointer<Session> &);
     void requestHotspot(const QSharedPointer<Session> &, bool forPackage);

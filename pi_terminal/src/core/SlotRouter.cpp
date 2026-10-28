@@ -38,6 +38,15 @@ void SlotRouter::setBridgeOnline(const QString &bridgeId, bool online)
     bridgeOnline_[bridgeId] = online;
 }
 
+QVector<SlotRouter::Binding> SlotRouter::bindings() const
+{
+    QVector<Binding> out;
+    for (auto it = current_.cbegin(); it != current_.cend(); ++it) {
+        if (it.value().valid()) out.append(it.value());
+    }
+    return out;
+}
+
 bool SlotRouter::bridgeOnline(const QString &bridgeId) const
 {
     // 未登记过的桥板默认视为在线：首次 bring-up 时调用方可能还没上报状态，

@@ -91,12 +91,12 @@ Item {
             const current = providerIndex >= 0 && providerIndex < providerQueue.length
                 ? providerLabel(providerQueue[providerIndex].id) : ""
             return I18n.t("同步中") + " " + syncedCount + "/" + cities.length +
-                (current === "" ? "" : " · " + current)
+                (current === "" ? "" : "，" + current)
         }
         if (error !== "") return error
         if (syncedOnce) {
-            return I18n.t("已校时") + " · " + provider + " · " + I18n.t("偏差") + " " +
-                TimeMath.formatSkew(skewMs) + " · " + syncedAt
+            return I18n.t("已校时") + "，" + provider + "，" + I18n.t("偏差") + " " +
+                TimeMath.formatSkew(skewMs) + "，" + syncedAt
         }
         if (apiMode === "custom")
             return I18n.t("自定义模式：只使用你填写的服务器，失败不会自动改用公共接口。")
@@ -362,10 +362,10 @@ Item {
             // 换线路时要清掉这一路的半截结果，避免半新半旧的偏移混用。
             syncedOffsets = ({})
             syncedCount = 0
-            error = label + " · " + reason
+            error = label + "，" + reason
             // 手动校时时，每条线路失效都要弹出来；自动校时保持无感，只记结果。
             if (!silentSync)
-                alertText = label + " · " + reason + "\n" + I18n.t("已切换到下一个校时接口。")
+                alertText = label + "，" + reason + "\n" + I18n.t("已切换到下一个校时接口。")
             requestNextProvider()
             return
         }
@@ -374,7 +374,7 @@ Item {
         syncing = false
         lastAttemptOk = false
         if (!silentSync)
-            alertText = label + " · " + reason + "\n" +
+            alertText = label + "，" + reason + "\n" +
                 (apiMode === "custom" ? I18n.t("自定义模式不会自动改用公共接口，可切回自动后重试。")
                                       : I18n.t("所有校时接口均不可用，仍显示内置时区。"))
     }

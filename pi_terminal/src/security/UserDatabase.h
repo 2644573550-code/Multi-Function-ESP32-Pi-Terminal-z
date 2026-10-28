@@ -8,6 +8,14 @@ namespace security {
 
 class SqlCipherStore;
 
+// 数据来源（报告 §12.1：UI 与存储必须区分来源，避免重复记录）。
+enum class SampleSource {
+    Unknown,
+    DeviceAuto,   // 设备自动测量
+    DeviceManual, // 设备上手动触发
+    UserEntry,    // 用户在终端手工录入
+};
+
 // 一条传感器样本。字段与 f-day1 §6 一致：缺失值必须是 null，不能用 0 伪造。
 struct SensorSample {
     qint64 receivedAtMs = 0;    // Pi 侧单调时间，由可信宿主填，不接受模块自报
@@ -25,6 +33,10 @@ struct SensorSample {
     double batteryV = 0;
     bool hasBatteryPct = false;
     int batteryPct = 0;
+    // 来源与有效性（§12.1 / §12.3）：异常读数标无效，不补造数据。
+    SampleSource source = SampleSource::Unknown;
+    bool valid = true;
+    QString invalidReason;   // 仅 valid=false 时有意义
 };
 
 // 每用户独立 SQLCipher DB。userId 由可信会话决定，不接受 worker/调用方自报。
@@ -49,8 +61,44 @@ public:
     // 写入归属当前打开的用户；userId 参数不存在，防止越权写入他人库。
     bool appendSample(const SensorSample &sample);
 
+    // ---- 模块页的键值存储（报告 §6.1：QML 不持有 DB/SQL）----
+    // 作用域由宿主给定：moduleId + instance。QML 只能读写自己这一格。
+    bool setModuleValue(int moduleId, const QString &instance, const QString &key,
+                        const QByteArray &encodedValue);
+    QByteArray moduleValue(int moduleId, const QString &instance, const QString &key) const;
+    bool removeModuleValue(int moduleId, const QString &instance, const QString &key);
+    QStringList moduleKeys(int moduleId, const QString &instance) const;
+    bool clearModuleValues(int moduleId, const QString &instance);
+
+    // 一条读数记录（报告 §12.1：保留型号、来源、单位、时间、有效性）。
+    struct Reading {
+        qint64 receivedAtMs = 0;
+        qint64 measuredAtMs = 0;
+        QString source;        // device.auto / device.manual / user.entry
+        QString deviceId;
+        QString deviceModel;
+        QString metric;        // pressure / ...
+        bool hasValue = false;
+        double value = 0;
+        QString unit;
+        bool valid = true;
+        QString invalidReason;
+    };
+    QVector<Reading> queryReadings(int limit = 50) const;
+
+    // 手工录入（报告 §12.1）：与设备来源分开记录，UI 据此避免重复录入。
+    // 只写当前打开的用户库；未登录/库未打开时返回 false。
+    bool appendManualReading(double value, const QString &unit, const QString &deviceModel);
+
+    // 设备上报的读数（报告 §12.1）：来源由调用方给定，与手工录入分开。
+    // source 只接受 device.auto / device.manual，其它值按 device.auto 处理。
+    bool appendDeviceReading(double value, const QString &unit, const QString &deviceModel,
+                             const QString &source, const QString &deviceId);
+
     struct Record {
         qint64 receivedAtMs = 0;
+        SampleSource source = SampleSource::Unknown;
+        bool valid = true;
         qint64 sampleSeq = 0;
         QString deviceId;
         double temperatureC = 0;

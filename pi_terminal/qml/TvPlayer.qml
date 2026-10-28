@@ -61,7 +61,7 @@ Item {
     property bool browsing: false
     readonly property bool drilldown: browsing || searchText.trim() !== ""
     readonly property string drilldownTitle:
-        searchText.trim() !== "" ? I18n.t("搜索") + " · " + searchText.trim()
+        searchText.trim() !== "" ? I18n.t("搜索") + "，" + searchText.trim()
                                  : (categoryIndex >= 0 && categoryIndex < categories.length
                                     ? categories[categoryIndex].title : "")
 
@@ -161,7 +161,7 @@ Item {
     function sourceEntry(index, height, width, bitrate) {
         const rate = bitrate > 0 ? (bitrate / 1000).toFixed(1) + " Mbps" : ""
         const res = width > 0 ? width + "×" + height : ""
-        const detail = [res, rate].filter(function(part) { return part !== "" }).join(" · ")
+        const detail = [res, rate].filter(function(part) { return part !== "" }).join("，")
         return { index: index, height: height, width: width, bitrate: bitrate,
                  label: height > 0 ? height + "P" : I18n.t("线路") + (index + 1),
                  detail: detail }
@@ -265,12 +265,12 @@ Item {
         return source.height > 0 ? source.height + "P" : I18n.t("线路") + (source.index + 1)
     }
 
-    // 弹窗里的第二行：分辨率 · 码率（频道数据里没有码率时只显示分辨率）
+    // 弹窗里的第二行：分辨率，码率（频道数据里没有码率时只显示分辨率）
     function sourceSummary(source) {
         const parts = []
         if (source.width > 0 && source.height > 0) parts.push(source.width + "×" + source.height)
         if (source.bitrate > 0) parts.push((source.bitrate / 1000).toFixed(1) + "\u00a0Mbps")
-        return parts.join(" · ")
+        return parts.join("，")
     }
 
     // 点选线路：更高码率先弹确认（Pi 3B 带宽/解码余量有限，切上去可能卡）
@@ -812,7 +812,7 @@ Item {
                         model: root.sourceOptions
                         textRole: "label"
                         font.pointSize: Theme.body
-                        Accessible.name: I18n.t("选择线路") + " · " + currentText
+                        Accessible.name: I18n.t("选择线路") + "，" + currentText
                         onActivated: function(index) {
                             root.requestSource(root.sourceOptions[index].index)
                         }

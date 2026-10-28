@@ -211,7 +211,7 @@ Item {
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
                             text: modelData.bound
-                                  ? qsTr("槽 %1：%2 · 设备 %3 · 代次 %4…")
+                                  ? qsTr("槽 %1：%2，设备 %3，代次 %4…")
                                         .arg(modelData.slot)
                                         .arg(modelData.bridgeId)
                                         .arg(modelData.deviceId)

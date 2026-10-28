@@ -195,6 +195,42 @@ Item {
                  "reload must not reuse the previous page's state");
     }
 
+
+    // §8.4：模块页不得 import 能访问文件/网络/设置的模块。
+    void dangerousImportsAreNotAllowed()
+    {
+        const QStringList allowed = ModulePageHost::allowedImports();
+        // 明确禁止的几类。
+        for (const char *forbidden : {"Qt.labs.platform", "Qt.labs.settings",
+                                      "QtQuick.LocalStorage", "QtWebView",
+                                      "QtWebEngine", "Qt.labs.folderlistmodel"}) {
+            QVERIFY2(!allowed.contains(QLatin1String(forbidden)),
+                     qPrintable(QStringLiteral("must not allow %1").arg(QLatin1String(forbidden))));
+        }
+        // 纯 UI 模块必须允许。
+        QVERIFY(allowed.contains(QStringLiteral("QtQuick")));
+        QVERIFY(allowed.contains(QStringLiteral("QtQuick.Controls")));
+    }
+
+    // 用 Qt.labs.settings 的页面必须加载失败，而不是"加载成功但越权"。
+    void pageImportingSettingsFailsToLoad()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QFile page(dir.filePath("Leak.qml"));
+        QVERIFY(page.open(QIODevice::WriteOnly));
+        page.write("import QtQuick\nimport Qt.labs.settings\n"
+                   "Rectangle { Settings { category: \"host\" } }\n");
+        page.close();
+
+        ModulePageHost host;
+        QObject model;
+        const bool loaded = host.load(QUrl::fromLocalFile(dir.filePath("Leak.qml")), &model, {});
+        QVERIFY2(!loaded, "a page importing Qt.labs.settings must not load");
+        QVERIFY(!host.hasPage());
+        QVERIFY(!host.lastError().isEmpty());
+    }
+
 };
 
 QTEST_MAIN(ModulePageHostTest)

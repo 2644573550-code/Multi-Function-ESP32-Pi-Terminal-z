@@ -41,6 +41,10 @@ public:
     // 业务数据（≤512 字节，由调用方 LaneGate 先判）。
     bool sendData(const QByteArray &payload);
 
+    // 模块自定义动作（§8.4 白名单 ID）。调用方必须先用 manifest 的
+    // actions 白名单校验过；本方法只保证传输与长度。
+    bool invokeAction(const QString &action);
+
     QString errorCode() const { return errorCode_; }
     QString lastError() const { return lastError_; }
 

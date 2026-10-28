@@ -203,7 +203,9 @@ void ModuleManager::action(const QString &session, const QString &action) {
     if (!i || i->stopping) return;
     if (!i->manifest.value("actions").toArray().contains(action)) return;
     if (i->worker) {
-        // IPC op 白名单里没有 action；P0 不转发模块自定义 action。
+        // §8.4：动作名已在上面按 manifest 的 actions 白名单校验过；
+        // 这里只做转发，不把任意字符串传进模块。
+        i->worker->invokeAction(action);
         return;
     }
     auto *onAction = reinterpret_cast<int (*)(pi_module_handle_t *, const char *)>(

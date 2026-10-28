@@ -1,0 +1,24 @@
+#pragma once
+static constexpr const char MODULE_MANIFEST_JSON[] = R"p0({
+  "id": "xiaotian.fence",
+  "name": "啸天红外围界",
+  "version": "0.1.0",
+  "module_id": 82,
+  "package_id": "xiaotian.fence-0.1.0-arm64",
+  "package_version": "0.1.0",
+  "host_arch": ["aarch64", "arm64"],
+  "library": "libmodule.so",
+  "qml_page": "qml/ModulePage.qml",
+  "abi_version": 1,
+  "min_host_api": 1,
+  "qt_major": 6,
+  "qml_schema_version": 1,
+  "unload_contract": "synchronous-stop-v1",
+  "max_payload": 65532,
+  "control_protocol": "pogo-control-v1",
+  "data_protocol": "module-defined-v1",
+  "capabilities": ["fence.segments", "fence.arm"],
+  "permissions": ["transport.hotspot_lan"],
+  "actions": ["arm", "disarm", "request_disconnect"]
+}
+)p0";

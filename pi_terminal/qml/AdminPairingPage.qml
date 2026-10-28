@@ -97,7 +97,7 @@ Item {
                 Layout.fillWidth: true
                 CarText {
                     Layout.fillWidth: true
-                    text: modelData.bridgeId + "  ·  " + modelData.fingerprint
+                    text: modelData.bridgeId + " ， " + modelData.fingerprint
                     color: Theme.foreground
                     fontPixelSize: Theme.fontLabel
                     elide: Text.ElideMiddle
@@ -168,7 +168,7 @@ Item {
             delegate: CarText {
                 required property var modelData
                 Layout.fillWidth: true
-                text: modelData.action + "  ·  " + modelData.result
+                text: modelData.action + " ， " + modelData.result
                 color: modelData.result === "ok" ? Theme.foreground : Theme.warning
                 fontPixelSize: Theme.fontCaption
                 elide: Text.ElideRight

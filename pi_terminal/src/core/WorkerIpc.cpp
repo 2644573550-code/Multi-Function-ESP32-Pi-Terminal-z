@@ -70,9 +70,12 @@ QJsonObject decode(const QByteArray &frame) {
 }
 
 bool opAllowed(const QString &op) {
-    // 白名单固定四条；任何扩展都要改这里并走 PR 审核。
+    // 白名单固定五条；任何扩展都要改这里并走 PR 审核。
+    // invokeAction：模块自定义动作（模块页按钮）。参数只允许白名单 ID，
+    // 不做任意字符串透传（§8.4 动作采用白名单 ID）。
     return op == QLatin1String("publishSample") || op == QLatin1String("readOwnRecords")
-        || op == QLatin1String("reportState") || op == QLatin1String("stop");
+        || op == QLatin1String("reportState") || op == QLatin1String("stop")
+        || op == QLatin1String("invokeAction");
 }
 
 QJsonObject request(quint64 requestId, const QString &op, const QJsonObject &body) {

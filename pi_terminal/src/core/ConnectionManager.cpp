@@ -47,9 +47,30 @@ ConnectionManager::ConnectionManager(QObject *parent) : QObject(parent), modules
     connect(&pogo_, &TransportBase::connected, &hostEvents_, &HostEventDetector::reset);
     connect(&pogo_, &TransportBase::connected, this, [this] { bridgeMonitor_.setConnected(true); });
     connect(&bridgeMonitor_, &BridgeConnectionMonitor::connectionChanged, this, [this](bool) { emit bridgeConnectionChanged(); });
-    connect(&bridgeMonitor_, &BridgeConnectionMonitor::unavailable, this, &ConnectionManager::bridgeUnavailable);
+    connect(&bridgeMonitor_, &BridgeConnectionMonitor::unavailable, this, [this] {
+        handleBridgeUnavailable();
+    });
+    // 桥板重新连上：解除位置 unknown 并允许新的物理插入判定。
+    connect(&bridgeMonitor_, &BridgeConnectionMonitor::connectionChanged, this,
+            [this](bool connected) {
+        if (connected) handleBridgeRestored();
+    });
     connect(&pogo_, &TransportBase::controlEvent, &hostEvents_, &HostEventDetector::consume);
-    connect(&hostEvents_, &HostEventDetector::detected, this, &ConnectionManager::attach);
+    connect(&hostEvents_, &HostEventDetector::detected, this, [this](const QJsonObject &event) {
+        // T-08：RC522 是桥板级事件，不进入 attach 路径。
+        if (event.value("event").toString() == QLatin1String("rfid_card")) {
+            if (!positionOpsAllowed()) {
+                // §10.3：桥板失联时位置未知，禁止新的刷卡。
+                qWarning().noquote() << "rfid_card dropped: bridge unavailable";
+                return;
+            }
+            // raw UID 只经信号传递一次，接收方必须立即派生并丢弃。
+            emit cardPresented(event.value("uid").toString(),
+                               event.value("uid_len").toInt(-1));
+            return;
+        }
+        attach(event);
+    });
     connect(&pogo_, &TransportBase::disconnected, this, [this](const auto &reason) {
         bridgeMonitor_.setConnected(false);
         status_ = "控制桥断开：" + reason;
@@ -390,6 +411,40 @@ void ConnectionManager::connectData(const QSharedPointer<Session> &s) {
         s->ble->start(bleConfig);
     }
 }
+void ConnectionManager::handleBridgeUnavailable() {
+    // 报告 §10.3：桥板 USB 失联只使位置变为 unknown 并禁止**新的**
+    // 刷卡/绑卡/物理接入确认；已登记用户仍可用本机 PIN 解锁查看、停止或撤权。
+    // 已认证且仍有效的无线业务**不因此中断**。
+    bridgeUnavailable_ = true;
+    // 把当前所有已绑定桥板在 SlotRouter 里标成离线，位置判定转 unknown。
+    for (const auto &binding : slotRouter_.bindings()) {
+        if (binding.valid()) slotRouter_.setBridgeOnline(binding.bridgeId, false);
+    }
+    status_ = "控制桥失联：位置未知，禁止新的刷卡/绑卡";
+    qWarning().noquote() << "bridge unavailable; position-based operations blocked";
+    emit bridgeUnavailable();
+    emit bridgeAvailabilityChanged(false);
+    emit cardsChanged();
+}
+
+void ConnectionManager::handleBridgeRestored() {
+    if (!bridgeUnavailable_) return;
+    bridgeUnavailable_ = false;
+    for (const auto &binding : slotRouter_.bindings()) {
+        if (binding.valid()) slotRouter_.setBridgeOnline(binding.bridgeId, true);
+    }
+    // 恢复后仍须重新认证与核对位置；这里不重建任何旧业务会话。
+    status_ = "控制桥已恢复：需重新认证与核对位置";
+    qInfo().noquote() << "bridge restored; re-authentication required";
+    emit bridgeAvailabilityChanged(true);
+    emit cardsChanged();
+}
+
+bool ConnectionManager::positionOpsAllowed() const {
+    // 桥板在线才允许基于物理位置的新操作。
+    return !bridgeUnavailable_;
+}
+
 void ConnectionManager::setActiveUserId(const QString &userId) {
     if (activeUserId_ == userId) return;
     activeUserId_ = userId;
@@ -620,6 +675,9 @@ void ConnectionManager::install(const QSharedPointer<Session> &s) {
             state(s, "awaiting_trust", "签名验证通过，请确认模块权限");
             QStringList permissions;
             for (const auto &v : s->verifiedManifest.value("permissions").toArray()) permissions.append(v.toString());
+            // manifest 的 permissions 只是请求；把请求记录给安全服务，
+            // 由授权页展示"请求了什么 / 实际授予了什么"，不自动授予。
+            if (requestedCapabilitiesSink) requestedCapabilitiesSink(id.toInt(), permissions);
             emit trustRequired(id, s->verifiedManifest.value("name").toString(), permissions);
         }
     });

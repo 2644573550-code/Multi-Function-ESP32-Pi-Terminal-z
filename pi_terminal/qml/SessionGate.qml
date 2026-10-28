@@ -99,6 +99,20 @@ Item {
             sessionManager.finishTask(task.taskId)
     }
 
+    // 报告 §5.1：刷卡只跳到该用户的 PIN 页，**不直接登录**。
+    Connections {
+        target: securityService
+        function onCardUserSelected(userId) {
+            if (!gate.needLogin) return
+            gate.preSelectedUserId = userId
+            // 让登录页直接进入 PIN 输入状态（免去手动选人）。
+            for (const user of sessionManager.users)
+                if (user.userId === userId) gate.preSelectedName = user.displayName
+        }
+    }
+    property string preSelectedUserId: ""
+    property string preSelectedName: ""
+
     // ---- 登录 / 锁屏内容 ----
     Loader {
         anchors.centerIn: gate
@@ -112,6 +126,9 @@ Item {
         id: loginComponent
         LoginPage {
             users: sessionManager.users
+            // 刷卡选中的用户优先：仍须输入 PIN 才登录。
+            preSelectedUserId: gate.preSelectedUserId
+            preSelectedDisplayName: gate.preSelectedName
             message: gate.localizedMessage(sessionManager.message)
             messageIsError: sessionManager.message.length > 0
             retryAfterMs: sessionManager.retryAfterMs
