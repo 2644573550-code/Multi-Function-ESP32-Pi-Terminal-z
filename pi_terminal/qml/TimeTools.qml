@@ -150,7 +150,15 @@ Item {
         timerHours = TimeMath.clamp(Number(preset[0]) || 0, 0, 23)
         timerMinutes = TimeMath.clamp(Number(preset[1]) || 0, 0, 59)
         timerSeconds = TimeMath.clamp(Number(preset[2]) || 0, 0, 59)
-        if (alarmEngine) alarmEngine.resetTimer(timerTotalMs)
+        // 历史上的轮盘抖动会把预设写成 0,0,0；0 时长没有可开始/可复位的目标，
+        // 读回时回到默认 5 分钟，避免用户看到“开始/重置都没反应”。
+        if (timerInputTotal() <= 0) {
+            timerHours = 0
+            timerMinutes = 5
+            timerSeconds = 0
+            persistTimerPreset()
+        }
+        if (alarmEngine) alarmEngine.resetTimer(timerInputTotal())
         loadingSettings = false
     }
 
@@ -234,8 +242,14 @@ Item {
         tab = TimeMath.clamp(next, 0, 3)
     }
 
+    // 从输入框直接算总时长。不要在变更信号里读 timerTotalMs：那一刻依赖它的绑定
+    // 还没重算，会拿到上一档的值，表现为“轮盘已经改了、右侧倒计时还是旧数字”。
+    function timerInputTotal() {
+        return TimeMath.hoursMinutesSecondsToMs(timerHours, timerMinutes, timerSeconds)
+    }
+
     function startCountdown() {
-        if (alarmEngine) alarmEngine.startTimer(timerTotalMs)
+        if (alarmEngine) alarmEngine.startTimer(timerInputTotal())
     }
 
     function pauseCountdown() {
@@ -243,7 +257,7 @@ Item {
     }
 
     function resetCountdown() {
-        if (alarmEngine) alarmEngine.resetTimer(timerTotalMs)
+        if (alarmEngine) alarmEngine.resetTimer(timerInputTotal())
     }
 
     function applyPreset(minutes) {
@@ -251,18 +265,20 @@ Item {
         timerHours = Math.floor(minutes / 60)
         timerMinutes = minutes % 60
         timerSeconds = 0
-        if (alarmEngine) alarmEngine.resetTimer(timerTotalMs)
+        if (alarmEngine) alarmEngine.resetTimer(timerInputTotal())
         scheduleTimerPresetSave()
     }
 
     // 轮盘/预设改过时/分/秒后：没在跑就按新时长复位，并合并写入设置。
-    onTimerHoursChanged: root.timerPartsEdited()
-    onTimerMinutesChanged: root.timerPartsEdited()
-    onTimerSecondsChanged: root.timerPartsEdited()
+    // 参数由信号处理函数显式传入，避免在通知过程中读到尚未重算的 timerTotalMs。
+    onTimerHoursChanged: root.timerPartsEdited(root.timerHours, root.timerMinutes, root.timerSeconds)
+    onTimerMinutesChanged: root.timerPartsEdited(root.timerHours, root.timerMinutes, root.timerSeconds)
+    onTimerSecondsChanged: root.timerPartsEdited(root.timerHours, root.timerMinutes, root.timerSeconds)
 
-    function timerPartsEdited() {
+    function timerPartsEdited(hours, minutes, seconds) {
         if (loadingSettings) return
-        if (alarmEngine && !timerRunning) alarmEngine.resetTimer(timerTotalMs)
+        if (alarmEngine && !timerRunning)
+            alarmEngine.resetTimer(TimeMath.hoursMinutesSecondsToMs(hours, minutes, seconds))
         scheduleTimerPresetSave()
     }
 
@@ -509,6 +525,23 @@ Item {
                 title: I18n.t("中国时间")
                 subtitle: I18n.t("系统时钟") + " · " + TimeMath.formatOffset(root.localOffset)
 
+                // 报时入口放在卡片头部右上角：不再占正文一行，也不会像整卡热区那样
+                // 盖住其它控件。按钮按 48px 下限定尺寸，避免把头部撑得比一行还高。
+                headerAction: Component {
+                    IconButton {
+                        objectName: "clockAnnounce"
+                        iconName: "volume_up"
+                        label: I18n.t("报时")
+                        filled: true
+                        accentColor: "#8f7bff"
+                        implicitWidth: Math.max(48, 48 * Theme.scaleFactor)
+                        implicitHeight: implicitWidth
+                        onClicked: root.announceRequested(
+                            I18n.t("中国时间") + " " + root.clockTime + " " +
+                            TimeMath.formatOffset(root.localOffset))
+                    }
+                }
+
                 // 表盘、数字钟、日期直接作为正文列的居中对齐子项，不再套一层
                 // "Item + 锚定 Column"：那种写法里父项高度来自子项隐式高度、子项又
                 // 跟随父项宽度换行，首帧容易互相推（Qt 报 polish loop）。
@@ -566,19 +599,6 @@ Item {
                     text: (root.timeFormat === "12"
                            ? (root.clockAfternoon ? I18n.t("下午") : I18n.t("上午")) + "  " : "")
                           + root.clockDate + "  " + root.clockWeekday
-                }
-                // 报时按钮：原来整卡可点，但热区压在样式按钮上面，点一下只会播报。
-                // 现在是表盘旁的 48px 小喇叭按钮。
-                IconButton {
-                    objectName: "clockAnnounce"
-                    Layout.alignment: Qt.AlignRight
-                    iconName: "volume_up"
-                    label: I18n.t("报时")
-                    filled: true
-                    accentColor: "#8f7bff"
-                    onClicked: root.announceRequested(
-                        I18n.t("中国时间") + " " + root.clockTime + " " +
-                        TimeMath.formatOffset(root.localOffset))
                 }
             }
 
@@ -866,6 +886,7 @@ Item {
                         onClicked: root.timerRunning ? root.pauseCountdown() : root.startCountdown()
                     }
                     CarButton {
+                        objectName: "timerReset"
                         text: I18n.t("重置")
                         onClicked: root.resetCountdown()
                     }
@@ -1601,22 +1622,63 @@ Item {
         visibleItemCount: 3
         wrap: true
         model: maximum + 1
-        // 初值走绑定，用户滚动后绑定会断，再由 onValueChanged 补上程序性变化。
-        currentIndex: value
-        // 轮盘首次布局时会自己滚一下（currentIndex 抖动），那不是用户操作，
-        // 不能回写模型——否则预设 5 分钟会被改成 3 分钟。
-        property bool ready: false
-        Component.onCompleted: currentIndex = value
+
+        // 程序性同步（预设/读设置/复位）期间抑制回写，避免“模型 → 轮盘 → 模型”抖动。
+        property bool applyingValue: false
+        // 只有用手真的滚过才回写；首次布局、卡片改尺寸引起的自动居中都不算。
+        property bool userScrolled: false
+
+        function applyValue(next) {
+            const clamped = Math.max(0, Math.min(maximum, Number(next) || 0))
+            if (currentIndex === clamped) return
+            applyingValue = true
+            currentIndex = clamped
+            applyingValue = false
+        }
+
+        // 甩动结束后可能还有一次“吸附到整项”，所以等 80ms 没有新的位移再提交最终值。
+        // 提交走 scrolled() → 模型 → value → applyValue()，轮盘与读数保持同一份真值。
+        function commitUserScroll() {
+            if (!userScrolled || applyingValue) return
+            // 还在甩动/吸附：80ms 后再看一次，别把中间项当成用户选择。
+            if (moving) { settleTimer.restart(); return }
+            userScrolled = false
+            const index = Math.max(0, Math.min(maximum, currentIndex))
+            if (index !== value) wheel.scrolled(index)
+            else wheel.applyValue(value)
+        }
+
+        Component.onCompleted: applyValue(value)
+        onValueChanged: applyValue(value)
+        onCurrentIndexChanged: {
+            if (applyingValue) return
+            if (moving) userScrolled = true
+            if (userScrolled) settleTimer.restart()
+        }
+        onMovingChanged: if (userScrolled) settleTimer.restart()
+        // 布局变化后重新对齐一次：Tumbler 首次布局会自己滚一下，光挡住回写不够，
+        // 否则轮盘会停在和右侧读数不同的数字上（真机出现过 09 分钟配 05:00）。
+        onWidthChanged: layoutTimer.restart()
+        onHeightChanged: layoutTimer.restart()
+        Timer {
+            id: settleTimer
+            interval: 80
+            repeat: false
+            onTriggered: wheel.commitUserScroll()
+        }
+        Timer {
+            id: layoutTimer
+            interval: 120
+            repeat: false
+            onTriggered: if (!wheel.moving && !wheel.userScrolled)
+                              wheel.applyValue(wheel.value)
+        }
         Timer {
             interval: 600
             running: true
-            onTriggered: wheel.ready = true
+            onTriggered: if (!wheel.moving && !wheel.userScrolled)
+                              wheel.applyValue(wheel.value)
         }
-        onValueChanged: if (currentIndex !== value) currentIndex = value
-        // 只有用户真的在滚（moving/flicking）才回写模型：首次布局的自动居中、
-        // 卡片尺寸变化引起的重新居中都不是用户操作，回写会把 5 分钟改成乱值。
-        onCurrentIndexChanged: if (wheel.ready && (wheel.moving || wheel.flicking))
-                                   wheel.scrolled(currentIndex)
         background: Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             y: (parent.height - wheel.itemHeight) / 2

@@ -207,6 +207,45 @@ private slots:
         QCOMPARE(page->property("timerLabel").toString(), QStringLiteral("01:00"));
     }
 
+    void timerInputDrivesTheReadoutImmediately() {
+        TimeToolsHost host;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("systemTools", &host);
+        QQmlComponent alarmComponent(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/AlarmEngine.qml")));
+        QScopedPointer<QObject> alarmObject(alarmComponent.create());
+        QVERIFY(alarmObject);
+        QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/OrangePiTerminal/TimeTools.qml")));
+        QScopedPointer<QObject> object(component.createWithInitialProperties(
+            {{"width", 1024}, {"height", 600}, {"uiScale", 1.0},
+             {"alarmEngine", QVariant::fromValue(alarmObject.data())}}));
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *page = qobject_cast<QQuickItem *>(object.data());
+        QVERIFY(page);
+
+        QMetaObject::invokeMethod(page, "setTab", Q_ARG(QVariant, 1));
+        QTest::qWait(120);
+
+        // 回归：变更信号里读 timerTotalMs 会拿到上一档的值，右侧倒计时因此慢一拍，
+        // 轮盘与读数对不上；现在按显式输入重算，改完立刻同步。
+        page->setProperty("timerMinutes", 9);
+        QCOMPARE(page->property("timerTotalMs").toDouble(), 540000.0);
+        QCOMPARE(page->property("timerLabel").toString(), QStringLiteral("09:00"));
+        QCOMPARE(alarmObject->property("timerRemainingMs").toDouble(), 540000.0);
+
+        // 轮盘与右侧读数使用同一份真值。
+        auto *minuteWheel = page->findChild<QQuickItem *>(QStringLiteral("timerMinuteWheel"));
+        QVERIFY(minuteWheel);
+        QCOMPARE(minuteWheel->property("currentIndex").toInt(), 9);
+
+        // 复位按当前输入回到 09:00，并停掉任何在跑的倒计时。
+        QMetaObject::invokeMethod(page, "startCountdown");
+        QVERIFY(alarmObject->property("timerRunning").toBool());
+        QMetaObject::invokeMethod(page, "resetCountdown");
+        QVERIFY(!alarmObject->property("timerRunning").toBool());
+        QCOMPARE(page->property("timerLabel").toString(), QStringLiteral("09:00"));
+        QCOMPARE(alarmObject->property("timerRemainingMs").toDouble(), 540000.0);
+    }
+
     void clockFacesAndRingtoneDefaults() {
         TimeToolsHost host;
         QQmlEngine engine;
@@ -228,7 +267,21 @@ private slots:
         auto *analog = page->findChild<QQuickItem *>(QStringLiteral("analogClock"));
         QVERIFY(analog);
         QVERIFY(analog->height() > 0);
-        QVERIFY(page->findChild<QQuickItem *>(QStringLiteral("clockAnnounce")));
+        auto *announce = page->findChild<QQuickItem *>(QStringLiteral("clockAnnounce"));
+        QVERIFY(announce);
+        // 报时入口必须在卡片头部右上角：正文第一行不再给它留位置。
+        auto *clockPane = page->findChild<QQuickItem *>(QStringLiteral("clockLocalPane"));
+        auto *clockBody = page->findChild<QQuickItem *>(QStringLiteral("clockLocalPaneBody"));
+        QVERIFY(clockPane);
+        QVERIFY(clockBody);
+        QVERIFY2(!clockBody->isAncestorOf(announce), "announce button must not sit in the card body");
+        const QPointF announceInPane = announce->mapToItem(clockPane, QPointF(0, 0));
+        const qreal headerHeight = clockPane->property("headerHeight").toDouble();
+        QVERIFY2(announceInPane.y() >= 0 && announceInPane.y() < headerHeight + 1,
+                 qPrintable(QStringLiteral("y=%1 header=%2")
+                                .arg(announceInPane.y()).arg(headerHeight)));
+        QVERIFY2(announceInPane.x() + announce->width() >= clockPane->width() - 24,
+                 qPrintable(QString::number(announceInPane.x())));
         QCOMPARE(page->property("clockTime").toString().size(), 8);
 
         // 试听按钮：无论默认还是自选铃声都走引擎的同一个入口，且可安全停止。

@@ -16,6 +16,10 @@ Rectangle {
     property color accentColor: Theme.accent
     // true：撑满容器高度，正文内部滚动；false：按内容高度。
     property bool scrollBody: false
+    // 卡片头部右上角的操作位（时间页的“报时”）。为空时不占位，其它页面头高不变。
+    property Component headerAction: null
+    readonly property real headerActionWidth: headerActionLoader.active && headerActionLoader.item
+        ? headerActionLoader.item.implicitWidth + Theme.gap / 2 : 0
     default property alias content: body.data
 
     radius: Theme.shapeLarge
@@ -26,7 +30,9 @@ Rectangle {
     // 「副标题显隐 → 行内容 → 行高」会回到 headerHeight 上，日志里能直接看到
     // 「Binding loop detected for property "headerHeight"」。
     readonly property real headerHeight: Math.max(48 * Theme.scaleFactor,
-                                                  Math.round(1.5 * Theme.title))
+                                                  Math.round(1.5 * Theme.title),
+                                                  headerActionLoader.item
+                                                      ? headerActionLoader.item.implicitHeight : 0)
     // 副标题的测量探针：与副标题同字体、不参与布局。
     CarText {
         id: subtitleProbe
@@ -94,11 +100,17 @@ Rectangle {
                     elide: Text.ElideRight
                     // 标题优先：主标题 + 副标题 + 间距放不下时，副标题整条不显示，
                     // 而不是把主标题挤成「中国…」。宽度用隐藏探针量，避免在布局过程中
-                    // 读正在被布局的副标题自身宽度。
-                    Layout.maximumWidth: card.width * 0.55
+                    // 读正在被布局的副标题自身宽度；右侧操作位占的宽度要先扣掉。
+                    Layout.maximumWidth: Math.max(0, card.width * 0.55 - card.headerActionWidth)
                     visible: card.subtitle !== ""
                              && titleText.implicitWidth + subtitleProbe.implicitWidth
-                                + headingRow.spacing <= headingRow.width
+                                + headingRow.spacing + card.headerActionWidth <= headingRow.width
+                }
+                Loader {
+                    id: headerActionLoader
+                    Layout.alignment: Qt.AlignVCenter
+                    active: card.headerAction !== null
+                    sourceComponent: card.headerAction
                 }
             }
         }
