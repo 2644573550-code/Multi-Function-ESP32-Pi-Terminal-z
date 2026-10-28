@@ -50,6 +50,13 @@ int TerminalApplication::initialize(const QCommandLineParser &options) {
     engine_.rootContext()->setContextProperty("viperBrowser", &browserController_);
     engine_.rootContext()->setContextProperty("desktopShell", &desktopShell_);
     engine_.rootContext()->setContextProperty("desktopDebug", options.isSet("demo"));
+    // 登录/锁屏：QML 只调这些方法，服务端再做会话与权限校验。
+    engine_.rootContext()->setContextProperty("sessionManager", &session_);
+    // 自动化审计（--ui-test）以全新配置启动、从不登录；门禁若照常生效，
+    // 审计脚本点不到桌面会被误判为产品回归。仅测试路径关闭门禁。
+    engine_.rootContext()->setContextProperty("sessionGateBypassed", options.isSet("ui-test"));
+    // §0.7：模块页用独立引擎，宿主对象不在它的 context 里。
+    engine_.rootContext()->setContextProperty("modulePageHost", &modulePageHost_);
     // QML binds directly to the persisted setting; never freeze it at startup.
     engine_.rootContext()->setContextProperty("efficientRendering", systemTools().energySaving());
     engine_.load(QUrl("qrc:/qt/qml/OrangePiTerminal/Main.qml"));

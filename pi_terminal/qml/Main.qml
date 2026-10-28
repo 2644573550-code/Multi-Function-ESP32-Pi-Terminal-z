@@ -37,6 +37,25 @@ ApplicationWindow {
     property bool blurInputReady:false
     property bool startupInterfaceReady:false
     property bool startupComplete:false
+    // 登入门禁 + 锁屏 + 无交互自动锁：未登录时挡住整个桌面。
+    SessionGate {
+        id:sessionGate
+        parent:Overlay.overlay
+        z:20000
+        inputSource:win
+    }
+    // 锁屏即撤销前台读取（f-day1 §2）：模块页可能显示传感器读数，必须卸载。
+    // 不用 visible:false —— 那只是不画，数据仍在内存里可读。
+    Connections {
+        target: sessionManager
+        function onLockStateChanged() {
+            if (sessionManager.locked) {
+                modulePageHost.unload()
+                activeSession=""
+                activeActions=[]
+            }
+        }
+    }
     Loader {
         id:startupLoader
         parent:Overlay.overlay
@@ -288,7 +307,10 @@ ApplicationWindow {
     readonly property bool shortScreen: height < 760 * uiScale
     readonly property real edge: width < 600 ? Theme.gap : Theme.margin
     font.pointSize: Theme.body
+    // 有输入就重置锁屏计时（5 分钟无交互自动锁）。
+    onActiveChanged: if(sessionGate) sessionGate.noteInput()
     onActiveFocusItemChanged: {
+        if(sessionGate) sessionGate.noteInput()
         const target=activeFocusItem
         if(target && target.inputMethodHints!==undefined && target.text!==undefined && !target.readOnly)
             systemTools.captureKeyboardTargetItem(target)
@@ -364,7 +386,7 @@ ApplicationWindow {
         notificationBanner.open();bannerTimer.interval=important?10000:5000;bannerTimer.restart()
     }
     property string activeSession: ""
-    readonly property bool modulePageLoaded: moduleLoader.item !== null
+    readonly property bool modulePageLoaded: modulePageHost.hasPage
     property bool bridgeConnectedPromptShown: false
     property string moduleMessage: ""
     property var activeActions: []
@@ -513,7 +535,7 @@ ApplicationWindow {
     function clearForegroundModulePage() {
         if (activeSession !== "") {
             closeModulePopups()
-            moduleLoader.source=""; activeSession=""; activeActions=[]; moduleMessage=""
+            modulePageHost.unload(); activeSession=""; activeActions=[]; moduleMessage=""
         }
     }
     function closeModulePopups() {
@@ -526,9 +548,9 @@ ApplicationWindow {
                 if (list && typeof list.length==="number")
                     for(let n=0;n<list.length;++n) visit(list[n])
             }
-            if (object!==moduleLoader.item && object.opened!==undefined && typeof object.close==="function") object.close()
+            if (object!==modulePageHost.page && object.opened!==undefined && typeof object.close==="function") object.close()
         }
-        visit(moduleLoader.item)
+        visit(modulePageHost.page)
     }
     function announce(text) { if(systemTools.speechEnabled) systemTools.speak(text) }
     function refreshFiles() {
@@ -682,7 +704,12 @@ ApplicationWindow {
             for(let card of connectionManager.cards)if(card.instance===entry.instance)session=card
             if(!session || !session.ready){showDevicePanel(false);return false}
             activeSession=entry.instance;activeActions=session.actions;moduleMessage=session.message
-            moduleLoader.setSource(connectionManager.pageProvider.page(entry.instance),{sessionModel:connectionManager.pageProvider.model(entry.instance)})
+            // §0.7：模块页在独立引擎里加载，只注入 sessionModel 与只读 userContext。
+            modulePageHost.load(Qt.url(connectionManager.pageProvider.page(entry.instance)),
+                                connectionManager.pageProvider.model(entry.instance),
+                                {background:Theme.background, surface:Theme.surface,
+                                 foreground:Theme.foreground, accent:Theme.accent,
+                                 scale:win.uiScale})
         }
         section=entry.route;appTitle=entry.title;appIcon=entry.iconName;appEntryId=entry.entryId
         if(section===3)refreshFiles()
@@ -725,7 +752,7 @@ ApplicationWindow {
     }
     function finishMinimizeAnimation() {
         if(phase!=="minimizing")return
-        appMinimized=true;appMinimizeAnimating=false;phase="home";moduleLoader.source="";updateTaskState()
+        appMinimized=true;appMinimizeAnimating=false;phase="home";modulePageHost.unload();updateTaskState()
         let releases=releaseQueue;releaseQueue=[];Qt.callLater(function(){for(let instance of releases)connectionManager.releasePage(instance)})
     }
     function restoreApp() {
@@ -735,7 +762,9 @@ ApplicationWindow {
         if(activeSession!=="") {
             const page=connectionManager.pageProvider.page(activeSession)
             const model=connectionManager.pageProvider.model(activeSession)
-            if(page!=="" && model) moduleLoader.setSource(page,{sessionModel:model})
+            if(page!=="" && model) modulePageHost.load(Qt.url(page), model,
+                {background:Theme.background, surface:Theme.surface,
+                 foreground:Theme.foreground, accent:Theme.accent, scale:win.uiScale})
             else { activeSession="";activeActions=[];moduleMessage="";section=0;phase="home";updateTaskState();return }
         }
         appMinimizeAnimating=true;phase="restoring";updateTaskState()
@@ -772,7 +801,7 @@ ApplicationWindow {
     function finishTransition() {
         if(phase==="opening"){phase="open";return}
         if(phase!=="closing")return
-        moduleLoader.source="";activeSession="";activeActions=[];moduleMessage="";section=0;phase="home";appMinimized=false;appMaximized=false
+        modulePageHost.unload();activeSession="";activeActions=[];moduleMessage="";section=0;phase="home";appMinimized=false;appMaximized=false
         const closingId=appEntryId;openTaskIds=openTaskIds.filter(function(id){return id!==closingId})
         for(let i=openTasks.count-1;i>=0;--i)if(openTasks.get(i).entryId===closingId)openTasks.remove(i)
         removeRecent(appEntryId);appEntryId=""
@@ -1109,7 +1138,7 @@ ApplicationWindow {
     }
     Timer { id:bannerTimer; onTriggered:notificationBanner.close() }
     Popup {
-        id:notificationBanner;objectName:"notificationBanner";parent:Overlay.overlay
+        id:notificationBanner;objectName:"notificationBanner";parent:Overlay.overlay;visible:!sessionManager.locked
         x:(win.width-width)/2;y:Theme.gap;width:Math.min(win.width-Theme.gap*2,720*uiScale)
         padding:Theme.gap;modal:false;closePolicy:Popup.NoAutoClose
         background:GlassSurface {color:Theme.surface;radius:Theme.shapeLarge;borderColor:bannerImportant?"#ffc66d":Theme.outline;borderWidth:2}
@@ -1280,7 +1309,7 @@ ApplicationWindow {
         hostWindow:win
     }
     Item {
-        id:homePane;objectName:"homePane";anchors.fill:parent;anchors.margins:win.edge;visible:phase!=="open"&&!repairBackdropOnly;enabled:phase==="home"
+        id:homePane;objectName:"homePane";anchors.fill:parent;anchors.margins:win.edge;visible:phase!=="open"&&!repairBackdropOnly;enabled:phase==="home" && !sessionManager.locked
         opacity:phase==="home"?1:1-openProgress*0.3
             RowLayout {id:homeHeader;anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;height:Theme.hit;spacing:Theme.gap
                 CarText {text:I18n.t("应用");heading:true;Layout.fillWidth:true}
@@ -1862,14 +1891,19 @@ ApplicationWindow {
                         visible:modelData!=="open";onClicked:connectionManager.action(activeSession,modelData)
                     }}
                 }
-                Loader {
+                // §0.7：模块页由 modulePageHost 在独立 QQmlEngine 里创建，
+                // 根对象以子项形式挂进这个容器，宿主对象不在它的 context 里。
+                Item {
                     id:moduleLoader;objectName:"moduleFunctionLoader"
                     Layout.fillWidth:true
-                    Layout.preferredHeight:item ? Math.max(item.implicitHeight, 1) : 0
-                    asynchronous:false
-                    onLoaded: {
-                        if (item && item.hostUiScale !== undefined)
-                            item.hostUiScale = Qt.binding(function() { return win.uiScale })
+                    Layout.preferredHeight:Math.max(childrenRect.height, 1)
+                    Component.onCompleted:modulePageHost.setContainer(moduleLoader)
+                    Connections {
+                        target:modulePageHost
+                        function onPageChanged() {
+                            if (modulePageHost.page)
+                                modulePageHost.setContainer(moduleLoader)
+                        }
                     }
                 }
             }

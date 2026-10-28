@@ -25,7 +25,11 @@ void configure(QCommandLineParser &parser) {
                        {"open-module", "Open this ready module session in the foreground", "instance"},
                        {"invoke-action", "Invoke an available action after opening the module", "action"},
                        {"ui-audit", "Run responsive layout and injected touch tests", "directory"},
-                       {"ui-test", "Exercise dynamic page/actions/disconnect automatically"}});
+                       {"ui-test", "Exercise dynamic page/actions/disconnect automatically"},
+                       // 首次管理员初始化：本地受控、无默认 PIN。注册表非空时拒绝。
+                       {"init-admin", "Create the first administrator (local initialisation only); "
+                                      "asks for PIN on stdin unless --init-pin-stdin is given", "display-name"},
+                       {"init-pin-stdin", "Read the initial administrator PIN from stdin instead of a TTY prompt"}});
 }
 
 } // namespace TerminalOptions

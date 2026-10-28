@@ -41,15 +41,23 @@ target_link_libraries(terminal_routing PUBLIC Qt6::Core)
 target_compile_options(terminal_routing PRIVATE -Wall -Wextra -Wpedantic)
 
 set(TERMINAL_SECURITY_SOURCES
+    # D 侧：身份、信任库、UID 索引
     src/security/TrustStore.cpp src/security/TrustStore.h
-    src/security/uid_index_key.h src/security/uid_index_key_default.cpp
-    # UID 索引实现依赖 uidIndexKey()，因此放在安全层而不是协议层，
-    # 避免 protocol → security 的反向依赖。
-    src/protocol/uid_index.cpp src/protocol/uid_index.h)
+    src/protocol/uid_index.cpp src/protocol/uid_index.h
+    # Z 侧：用户/PIN/会话/存储/卡匹配（uid_index_key.cpp 为 uidIndexKey 的唯一实现）
+    src/security/uid_index_key.cpp src/security/uid_index_key.h
+    src/security/PinPolicy.cpp src/security/PinPolicy.h
+    src/security/KeyWrap.cpp src/security/KeyWrap.h
+    src/security/UserService.cpp src/security/UserService.h
+    src/security/AuthService.cpp src/security/AuthService.h
+    src/security/SessionManager.cpp src/security/SessionManager.h
+    src/security/TaskCapability.cpp src/security/TaskCapability.h
+    src/security/CardMatcher.cpp src/security/CardMatcher.h src/security/CardIndex.h
+    src/security/SqlCipherStore.cpp src/security/SqlCipherStore.h
+    src/security/UserDatabase.cpp src/security/UserDatabase.h)
 
-# 只有 HostIdentity（ECDSA P-256）需要 mbedtls。缺失时**跳过该文件**，
-# 其余安全组件照常构建——否则会把一个可选依赖变成所有人的构建前置。
-# 无头文件时可用 -DMBEDTLS_ROOT=/path/to/mbedtls 指定。
+# 只有 HostIdentity（ECDSA P-256）需要 mbedtls。缺失时跳过该文件，
+# 其余安全组件照常构建。CI 上缺 mbedtls 会让身份用例静默消失，需在下游显式断言。
 set(MBEDTLS_ROOT "" CACHE PATH "mbedtls install prefix (contains include/ and lib/)")
 find_path(MBEDTLS_INCLUDE_DIR mbedtls/ecdsa.h HINTS "${MBEDTLS_ROOT}/include")
 find_library(MBEDTLS_CRYPTO_LIBRARY NAMES mbedcrypto HINTS "${MBEDTLS_ROOT}/lib")
@@ -62,9 +70,27 @@ else()
     set(TERMINAL_SECURITY_HAVE_MBEDTLS OFF)
 endif()
 
+# SQLCipher 路线由 F 裁决（§0.1）：直接调 C API，不走 Qt SQL 插件。
+# 找不到库时必须 FATAL_ERROR —— 不得静默降级成普通 SQLite。
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+find_library(SQLCIPHER_LIB NAMES sqlcipher
+    HINTS ${SQLCIPHER_ROOT}/lib ${SQLCIPHER_ROOT}/lib/x86_64-linux-gnu)
+find_path(SQLCIPHER_INCLUDE_DIR sqlite3.h
+    HINTS ${SQLCIPHER_ROOT}/include ${SQLCIPHER_ROOT}/include/sqlcipher
+    PATH_SUFFIXES sqlcipher)
+if(NOT SQLCIPHER_LIB OR NOT SQLCIPHER_INCLUDE_DIR)
+    message(FATAL_ERROR
+        "SQLCipher not found. Install libsqlcipher-dev or set SQLCIPHER_ROOT. "
+        "Refusing to fall back to plain SQLite (T-10 requires encryption).")
+endif()
+message(STATUS "SQLCipher: ${SQLCIPHER_LIB} (headers ${SQLCIPHER_INCLUDE_DIR})")
+
 add_library(terminal_security STATIC ${TERMINAL_SECURITY_SOURCES})
 target_include_directories(terminal_security PUBLIC src)
-target_link_libraries(terminal_security PUBLIC Qt6::Core)
+target_link_libraries(terminal_security
+    PUBLIC Qt6::Core Qt6::Network OpenSSL::Crypto ${SQLCIPHER_LIB})
+target_compile_definitions(terminal_security PRIVATE SQLITE_HAS_CODEC)
+target_include_directories(terminal_security PRIVATE ${SQLCIPHER_INCLUDE_DIR})
 target_compile_options(terminal_security PRIVATE -Wall -Wextra -Wpedantic)
 if(TERMINAL_SECURITY_HAVE_MBEDTLS)
     target_include_directories(terminal_security PRIVATE ${MBEDTLS_INCLUDE_DIR})
@@ -89,9 +115,14 @@ add_library(terminal_core STATIC
     src/core/PageProvider.cpp src/core/PageProvider.h
     src/core/SessionStateMachine.cpp src/core/SessionStateMachine.h
     src/core/PackageReceiver.cpp src/core/PackageReceiver.h
-    src/core/SecurityStatus.cpp src/core/SecurityStatus.h)
+    src/core/SecurityStatus.cpp src/core/SecurityStatus.h
+    src/core/WorkerIpc.cpp src/core/WorkerIpc.h
+    src/core/ModuleWorkerLauncher.cpp src/core/ModuleWorkerLauncher.h
+    src/core/ModuleWorkerClient.cpp src/core/ModuleWorkerClient.h
+    src/core/ModulePageHost.cpp src/core/ModulePageHost.h
+    src/core/LaneGate.cpp src/core/LaneGate.h)
 target_include_directories(terminal_core PUBLIC src src/modules/api)
-target_link_libraries(terminal_core PUBLIC terminal_transports terminal_security terminal_routing Qt6::Core Qt6::Network Qt6::StateMachine)
+target_link_libraries(terminal_core PUBLIC terminal_transports terminal_security terminal_routing Qt6::Core Qt6::Network Qt6::StateMachine Qt6::Qml Qt6::Quick)
 target_compile_definitions(terminal_core PRIVATE PI_PACKAGE_TOOL="${CMAKE_INSTALL_PREFIX}/libexec/orange-pi-terminal/package_tool.py")
 target_compile_options(terminal_core PRIVATE -Wall -Wextra -Wpedantic)
 # 界面接点需要在没有 mbedtls 的构建里也能编译：身份那一块按此宏降级为
@@ -197,6 +228,15 @@ target_include_directories(terminal_ui PUBLIC
 target_link_libraries(terminal_ui PRIVATE gstreamer-1.0 gstapp-1.0 gstvideo-1.0 gobject-2.0 glib-2.0)
 
 # 最小视频探针（开发/性能测试用，不参与安装）
+# 模块 worker 入口（T-11）：独立进程加载模块 .so，由 systemd unit 约束沙箱。
+qt_add_executable(module_worker src/core/module_worker_main.cpp src/core/WorkerIpc.cpp)
+target_include_directories(module_worker PRIVATE src)
+target_link_libraries(module_worker PRIVATE Qt6::Core)
+target_compile_options(module_worker PRIVATE -Wall -Wextra -Wpedantic)
+
+qt_add_executable(kdf_bench tools/kdf_bench.cpp)
+target_link_libraries(kdf_bench PRIVATE terminal_security Qt6::Core)
+
 qt_add_executable(tv_probe tools/tv_probe.cpp)
 target_link_libraries(tv_probe PRIVATE terminal_ui Qt6::Quick)
 
@@ -205,8 +245,10 @@ qt_add_executable(orange_pi_terminal
     src/main.cpp src/app/TerminalApplication.cpp src/app/TerminalApplication.h
     src/app/TerminalOptions.cpp src/app/TerminalOptions.h
     src/app/TerminalRuntime.cpp src/app/TerminalRuntime.h
-    src/app/DiagnosticRunner.cpp src/app/DiagnosticRunner.h)
+    src/app/DiagnosticRunner.cpp src/app/DiagnosticRunner.h
+    src/app/AdminInitializer.cpp src/app/AdminInitializer.h)
 target_include_directories(orange_pi_terminal PRIVATE ../third_party/Viper-Browser/src/core/network)
+target_link_libraries(orange_pi_terminal PRIVATE terminal_security terminal_core)
 
 set(TERMINAL_LIBRARY_DIR "${CMAKE_INSTALL_LIBDIR}/orange-pi-terminal")
 foreach(module IN ITEMS terminal_music terminal_system terminal_ui)
@@ -230,6 +272,8 @@ list(APPEND UI_QML_FILES qml/PictureViewer.qml qml/FileThumbnail.qml)
 list(APPEND UI_QML_FILES qml/QuickToggle.qml qml/EditorToolbar.qml)
 list(APPEND UI_QML_FILES qml/QuickPanelTile.qml)
 list(APPEND UI_QML_FILES qml/KeyboardKey.qml)
+list(APPEND UI_QML_FILES qml/PinPad.qml qml/UserPicker.qml qml/LoginPage.qml qml/LockScreen.qml qml/SessionGate.qml)
+list(APPEND UI_QML_FILES qml/AdminPairingPage.qml qml/TaskFinishDialog.qml)
 list(APPEND UI_QML_FILES qml/BlurCache.qml)
 list(APPEND UI_QML_FILES qml/CachedBlur.qml)
 list(APPEND UI_QML_FILES qml/StartupSplash.qml)
@@ -327,8 +371,10 @@ if(BUILD_TESTING)
     target_include_directories(uid_index_test PRIVATE src)
     target_link_libraries(uid_index_test PRIVATE Qt6::Core)
     add_test(NAME pbr_uid_index COMMAND uid_index_test)
+    # 产品当前只有 Z 的真实实现（uid_index_key.cpp）。这条用例改为验证
+    # deriveUidIndex() 在密钥缺失时失败关闭：用测试替身控制"有/无密钥"两态。
     add_executable(uid_index_default_key_test tests/uid_index_default_key_test.cpp
-        src/protocol/uid_index.cpp src/security/uid_index_key_default.cpp)
+        src/protocol/uid_index.cpp tests/support/uid_index_key_fixed.cpp)
     target_include_directories(uid_index_default_key_test PRIVATE src)
     target_link_libraries(uid_index_default_key_test PRIVATE Qt6::Core)
     add_test(NAME pbr_uid_index_fail_closed COMMAND uid_index_default_key_test)
@@ -337,6 +383,63 @@ if(BUILD_TESTING)
         target_link_libraries(host_identity_test PRIVATE terminal_security)
         add_test(NAME pbr_host_identity COMMAND host_identity_test)
     endif()
+    add_executable(uid_index_key_test tests/uid_index_key_test.cpp)
+    target_link_libraries(uid_index_key_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME uid_index_key_lifecycle COMMAND uid_index_key_test)
+    add_executable(auth_service_test tests/auth_service_test.cpp)
+    target_link_libraries(auth_service_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME user_pin_session COMMAND auth_service_test)
+    add_executable(user_database_test tests/user_database_test.cpp)
+    target_link_libraries(user_database_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME sqlcipher_user_isolation COMMAND user_database_test)
+    add_executable(login_qml_test tests/login_qml_test.cpp)
+    target_link_libraries(login_qml_test PRIVATE Qt6::Test Qt6::Quick Qt6::Qml Qt6::QuickControls2)
+    target_compile_definitions(login_qml_test PRIVATE
+        TERMINAL_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml")
+    # Theme/I18n 是 pragma Singleton，必须通过 qml module 注册，否则 I18n.t 是 undefined，
+    # 组件照样"实例化成功"但每个绑定都报错 —— 那种测试是假绿。
+    set(login_test_qml
+        qml/Theme.qml qml/I18n.qml qml/CarText.qml qml/CarButton.qml qml/CarField.qml
+        qml/MaterialIcon.qml qml/IconButton.qml qml/PinPad.qml qml/UserPicker.qml
+        qml/LoginPage.qml qml/LockScreen.qml)
+    set_source_files_properties(qml/Theme.qml qml/I18n.qml
+        PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+    foreach(file IN LISTS login_test_qml)
+        get_filename_component(alias "${file}" NAME)
+        set_source_files_properties("${file}" PROPERTIES QT_RESOURCE_ALIAS "${alias}")
+    endforeach()
+    # 独立 URI，避免与 terminal_ui 共用输出目录（Qt 不允许两个模块同目录）。
+    qt_add_qml_module(login_qml_test URI OrangePiTerminal.LoginTest VERSION 1.0
+        RESOURCE_PREFIX /qt/qml OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/LoginTestQml"
+        QML_FILES ${login_test_qml})
+    add_test(NAME login_lock_user_pages COMMAND login_qml_test)
+    set_tests_properties(login_lock_user_pages PROPERTIES LABELS "interface"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software" TIMEOUT 60)
+    add_executable(module_worker_async_test tests/module_worker_async_test.cpp)
+    target_include_directories(module_worker_async_test PRIVATE src)
+    target_link_libraries(module_worker_async_test PRIVATE terminal_core Qt6::Test)
+    add_dependencies(module_worker_async_test module_worker example_module)
+    add_test(NAME module_worker_async COMMAND module_worker_async_test)
+    add_executable(session_gate_test tests/session_gate_test.cpp)
+    target_link_libraries(session_gate_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME session_gate_flow COMMAND session_gate_test)
+    add_executable(card_matcher_test tests/card_matcher_test.cpp)
+    target_link_libraries(card_matcher_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME card_index_matching COMMAND card_matcher_test)
+    add_executable(lane_gate_test tests/lane_gate_test.cpp)
+    target_link_libraries(lane_gate_test PRIVATE terminal_core Qt6::Test)
+    add_test(NAME business_lane_gate COMMAND lane_gate_test)
+    add_executable(module_page_host_test tests/module_page_host_test.cpp)
+    target_link_libraries(module_page_host_test PRIVATE terminal_core Qt6::Test Qt6::Qml Qt6::Quick)
+    add_test(NAME module_page_engine_isolation COMMAND module_page_host_test)
+    set_tests_properties(module_page_engine_isolation PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+    add_executable(worker_isolation_test tests/worker_isolation_test.cpp)
+    target_include_directories(worker_isolation_test PRIVATE src)
+    target_compile_definitions(worker_isolation_test PRIVATE
+        WORKER_UNIT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/packaging/orange-pi-worker@.service")
+    target_link_libraries(worker_isolation_test PRIVATE terminal_core Qt6::Test)
+    add_test(NAME worker_ipc_contract COMMAND worker_isolation_test)
     add_executable(session_test tests/session_test.cpp)
     add_dependencies(session_test example_module)
     target_link_libraries(session_test PRIVATE terminal_core Qt6::Test)
