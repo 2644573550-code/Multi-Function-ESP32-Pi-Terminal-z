@@ -20,6 +20,11 @@
 #include <QNetworkReply>
 #include <QHash>
 #include <QGuiApplication>
+#include <QCoreApplication>
+#include <QSoundEffect>
+#include <QMediaDevices>
+#include <QAudioDevice>
+#include <QProcessEnvironment>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QTextStream>
@@ -309,7 +314,8 @@ bool SystemTools::settingsWrite(const QString &key, const QString &value) {
 void SystemTools::setUiLanguage(const QString &language) {
     const auto normalized = language == QStringLiteral("en") ? QStringLiteral("en") : QStringLiteral("zh");
     if (uiLanguage() == normalized) return;
-    settings_.setValue("uiLanguage", normalized); settings_.sync(); emit changed();
+    settings_.setValue("uiLanguage", normalized); settings_.sync();
+    emit changed();
 }
 SystemTools::SystemTools(QObject *p) : QObject(p), speech_(this) {
     qApp->installEventFilter(this);
@@ -329,10 +335,44 @@ SystemTools::SystemTools(QObject *p) : QObject(p), speech_(this) {
         if (qtChineseVoice_) setSpeechActive(state == QTextToSpeech::Speaking);
     });
     speechTimeout_.setSingleShot(true); speechTimeout_.setInterval(15000);
-    connect(&speechTimeout_, &QTimer::timeout, this, [this] { speechProcess_.kill(); });
+    auto *mediaDevices = new QMediaDevices(this);
+    connect(mediaDevices, &QMediaDevices::audioOutputsChanged, this, [this] {
+        const QString wanted = audioOutputDevice();
+        if (!wanted.isEmpty()) {
+            bool found = false;
+            for (const auto &device : QMediaDevices::audioOutputs()) {
+                if (QString::fromUtf8(device.id()) == wanted) { found = true; break; }
+            }
+            if (!found) {
+                settings_.remove("ttsOutputDevice");
+                settings_.sync();
+                log(QStringLiteral("所选播报输出设备已断开，改回跟随系统"));
+            }
+        }
+        emit audioOutputsChanged();
+    });
+    connect(&speechTimeout_, &QTimer::timeout, this, [this] {
+        speechProcess_.kill();
+        if (speechSound_) speechSound_->stop();
+        pendingSpeech_.clear();
+        if (!speechWavePath_.isEmpty()) QFile::remove(speechWavePath_);
+        setSpeechActive(false);
+    });
     connect(&speechProcess_, qOverload<int,QProcess::ExitStatus>(&QProcess::finished), this, [this](int code, QProcess::ExitStatus) {
         speechTimeout_.stop();
         if (code != 0) log("语音播报失败，请检查音频输出：" + QString::fromUtf8(speechProcess_.readAllStandardError()).left(160));
+        if (speechEngine_ == SpeechFlite) {
+            const QString wav = speechWavePath_;
+            if (code == 0 && !wav.isEmpty() && QFileInfo::exists(wav)) {
+                playSpeechWave(wav);
+            } else {
+                if (!wav.isEmpty()) QFile::remove(wav);
+                speechWavePath_.clear();
+                if (!pendingSpeech_.isEmpty()) startPendingSpeech();
+                else setSpeechActive(false);
+            }
+            return;
+        }
         startPendingSpeech();
         if (speechProcess_.state() == QProcess::NotRunning) setSpeechActive(false);
     });
@@ -628,6 +668,8 @@ QString SystemTools::filesRoot() const {
 }
 SystemTools::~SystemTools() {
     pendingSpeech_.clear(); speechTimeout_.stop();
+    if (speechSound_ != nullptr) speechSound_->stop();
+    if (!speechWavePath_.isEmpty()) QFile::remove(speechWavePath_);
     speechProcess_.disconnect(this);
     if (speechProcess_.state()!=QProcess::NotRunning) {
         speechProcess_.kill(); speechProcess_.waitForFinished(1000);
@@ -839,36 +881,313 @@ QString SystemTools::network() const {
         out.append(i.humanReadableName() + ": " + a.ip().toString());
     return out.join('\n');
 }
+
+// ---------------------------------------------------------------- 语音音色
+namespace {
+struct VoiceCatalogEntry {
+    const char *id;
+    const char *zh;
+    const char *en;
+    bool testOnly;
+};
+// 常驻的是微软三套；BanG Dream 六套属于测试模式（彩蛋）。
+const VoiceCatalogEntry kVoiceCatalog[] = {
+    {"xiaoxiao", "晓晓", "Xiaoxiao", false},
+    {"yunyang",  "云扬", "Yunyang",  false},
+    {"yunxi",    "云希", "Yunxi",    false},
+    {"kasumi",   "香澄", "Kasumi",   true},
+    {"tae",      "多惠", "Tae",      true},
+    {"rimi",     "里美", "Rimi",     true},
+    {"saaya",    "沙绫", "Saaya",    true},
+    {"arisa",    "有咲", "Arisa",    true},
+    {"aya",      "彩",   "Aya",      true},
+};
+bool containsHan(const QString &text) {
+    for (const QChar ch : text) {
+        const ushort code = ch.unicode();
+        if (code >= 0x4E00 && code <= 0x9FFF) return true;
+    }
+    return false;
+}
+}
+QStringList SystemTools::ttsDataRoots() const {
+    QStringList roots;
+    const QString override = qEnvironmentVariable("TERMINAL_TTS_ROOT");
+    if (!override.isEmpty()) roots << override;
+    // AppData 覆盖优先：voice-packs/<id>/units、tts/zh_dict.bin
+    roots << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString appDir = QCoreApplication::applicationDirPath();
+    roots << QDir::cleanPath(appDir + "/../share/orange-pi-terminal");
+    roots << QDir::cleanPath(appDir + "/../share/orange-pi-terminal/tts");
+#ifdef TERMINAL_TTS_ASSET_DIR
+    roots << QStringLiteral(TERMINAL_TTS_ASSET_DIR);
+#endif
+    roots.removeDuplicates();
+    return roots;
+}
+QString SystemTools::voiceUnitsDir(const QString &id) const {
+    for (const QString &root : ttsDataRoots()) {
+        const QStringList forms{root + "/voice-packs/" + id + "/units", root + "/voices/" + id + "/units"};
+        for (const QString &form : forms)
+            if (QDir(form).exists()) return form;
+    }
+    return {};
+}
+QString SystemTools::voiceBankFile(const QString &id) const {
+    for (const QString &root : ttsDataRoots()) {
+        const QStringList forms{root + "/voice-packs/" + id + "/voice.zhvox",
+                                root + "/voices/" + id + "/voice.zhvox"};
+        for (const QString &form : forms)
+            if (QFileInfo::exists(form)) return form;
+    }
+    return {};
+}
+QString SystemTools::englishVoiceFile() const {
+    for (const QString &root : ttsDataRoots()) {
+        const QString form = root + "/tts/cmu_us_slt.flitevox";
+        if (QFileInfo::exists(form)) return form;
+    }
+    return {};
+}
+QString SystemTools::fliteDataDir() const {
+    for (const QString &root : ttsDataRoots()) {
+        if (QFileInfo::exists(root + "/tts/zh_dict.bin")) return root + "/tts";
+        if (QFileInfo::exists(root + "/zh_dict.bin")) return root;
+    }
+    return {};
+}
+QString SystemTools::fliteBinary() const {
+    const QString override = qEnvironmentVariable("TERMINAL_FLITE_BIN");
+    if (!override.isEmpty() && QFileInfo::exists(override)) return override;
+    const QString appDir = QCoreApplication::applicationDirPath();
+    // 构建树里可执行文件叫 terminal_flite_zh，安装后改名 flite_zh，两个名字都要认。
+    const QStringList forms{appDir + "/flite_zh", appDir + "/terminal_flite_zh",
+                            appDir + "/../bin/flite_zh", appDir + "/../bin/terminal_flite_zh",
+                            appDir + "/../libexec/orange-pi-terminal/flite_zh"};
+    for (const QString &form : forms)
+        if (QFileInfo::exists(form)) return QDir::cleanPath(form);
+    return {};
+}
+bool SystemTools::fliteReady(const QString &id) const {
+    const auto cached = voiceReadyCache_.constFind(id);
+    if (cached != voiceReadyCache_.constEnd()) return cached.value();
+    const bool ready = !id.isEmpty() && !fliteBinary().isEmpty() && !fliteDataDir().isEmpty()
+        && (!voiceBankFile(id).isEmpty() || !voiceUnitsDir(id).isEmpty());
+    voiceReadyCache_.insert(id, ready);
+    return ready;
+}
+QVariantList SystemTools::voiceOptions() const {
+    QVariantList list;
+    for (const auto &entry : kVoiceCatalog) {
+        const QString id = QString::fromLatin1(entry.id);
+        QVariantMap row;
+        row.insert("id", id);
+        // 规范名固定为中文；英文界面由 QML 侧 I18n.t() 映射，列表本身不随语言重建。
+        row.insert("name", QString::fromUtf8(entry.zh));
+        row.insert("family", entry.testOnly ? QStringLiteral("bangdream") : QStringLiteral("microsoft"));
+        row.insert("testOnly", entry.testOnly);
+        row.insert("available", fliteReady(id));
+        list.append(row);
+    }
+    return list;
+}
+QString SystemTools::voiceName() const { return voiceDisplayName(voiceId()); }
+QString SystemTools::voiceDisplayName(const QString &id) const {
+    for (const auto &entry : kVoiceCatalog) {
+        if (id == QLatin1String(entry.id)) return QString::fromUtf8(entry.zh);
+    }
+    return id;
+}
+bool SystemTools::voiceAvailable(const QString &id) const { return fliteReady(id); }
+void SystemTools::setVoice(const QString &id) {
+    if (!fliteReady(id)) { log(QStringLiteral("语音音色不可用：") + id); return; }
+    if (voiceId() == id) return;
+    settings_.setValue("ttsVoice", id);
+    settings_.sync();
+    log(QStringLiteral("语音播报已切换到 ") + voiceDisplayName(id));
+    emit voiceChanged();
+}
+void SystemTools::setVoiceTestMode(bool enabled) {
+    if (voiceTestMode() == enabled) return;
+    settings_.setValue("ttsVoiceTestMode", enabled);
+    if (!enabled) {
+        for (const auto &entry : kVoiceCatalog) {
+            if (entry.testOnly && voiceId() == QLatin1String(entry.id)) {
+                settings_.setValue("ttsVoice", QStringLiteral("xiaoxiao"));
+                break;
+            }
+        }
+    }
+    settings_.sync();
+    log(enabled ? QStringLiteral("已开启语音播报测试模式") : QStringLiteral("已关闭语音播报测试模式"));
+    emit voiceChanged();
+}
+void SystemTools::speakWithVoice(const QString &text, const QString &id) {
+    if (!settings_.value("speech", true).toBool()) return;
+    const QString trimmed = text.left(300);
+    if (trimmed.trimmed().isEmpty()) return;
+    if (!fliteReady(id)) { log(QStringLiteral("语音音色不可用：") + id); return; }
+    if (speechProcess_.state() != QProcess::NotRunning) {
+        speechProcess_.kill();
+        speechProcess_.waitForFinished(500);
+    }
+    if (speechSound_ != nullptr) speechSound_->stop();
+    pendingSpeech_.clear();
+    auto environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(QStringLiteral("FLITECN_DATA"), fliteDataDir());
+    const QString enVoice = englishVoiceFile();
+    if (!enVoice.isEmpty()) environment.insert(QStringLiteral("FLITECN_EN_VOICE"), enVoice);
+    const QString bank = voiceBankFile(id);
+    if (!bank.isEmpty()) {
+        environment.insert(QStringLiteral("FLITECN_BANK"), bank);
+    } else {
+        environment.insert(QStringLiteral("FLITECN_UNITS"), voiceUnitsDir(id));
+        const QString fallback = voiceUnitsDir(QStringLiteral("xiaoxiao"));
+        if (!fallback.isEmpty()) environment.insert(QStringLiteral("FLITECN_FALLBACK"), fallback);
+    }
+    speechProcess_.setProcessEnvironment(environment);
+    if (!speechWavePath_.isEmpty()) QFile::remove(speechWavePath_);
+    speechWavePath_ = QDir(QDir::tempPath()).filePath(
+        QStringLiteral("terminal-speech-%1.wav").arg(++speechSerial_));
+    speechEngine_ = SpeechFlite;
+    setSpeechActive(true);
+    speechTimeout_.start();
+    speechProcess_.start(fliteBinary(), {QStringLiteral("-o"), speechWavePath_,
+                                         QStringLiteral("-t"), trimmed});
+}
+void SystemTools::previewVoice(const QString &id) {
+    speakWithVoice(QStringLiteral("你好，这是当前音色试听效果。"), id);
+}
+bool SystemTools::speechReady() const { return fliteReady(voiceId()); }
+
 void SystemTools::speak(const QString &s) {
     if (!settings_.value("speech",true).toBool() || s.trimmed().isEmpty()) return;
+    const QString text = s.left(300);
+    if ((containsHan(text) || !englishVoiceFile().isEmpty()) && fliteReady(voiceId())) {
+        pendingSpeech_ = text; startPendingSpeech(); return;
+    }
+    if (!speechProgram_.isEmpty()) { pendingSpeech_ = text; startPendingSpeech(); return; }
     if (qtChineseVoice_) {
         setSpeechActive(true);
-        speech_.say(s.left(300));
+        speech_.say(text);
         if (speech_.state() == QTextToSpeech::Error || speech_.state() == QTextToSpeech::Ready) setSpeechActive(false);
         return;
     }
-    if (!speechProgram_.isEmpty()) {
-        // Coalesce rapid status changes rather than spawning concurrent players
-        // or growing an unbounded queue. No shell interpolation of message text.
-        pendingSpeech_ = s.left(300); startPendingSpeech(); return;
+    log("中文语音引擎不可用：缺少 flite 音色或 espeak-ng");
+}
+void SystemTools::playSpeechWave(const QString &path) {
+    if (speechSound_ == nullptr) {
+        speechSound_ = new QSoundEffect(this);
+        speechSound_->setVolume(1.0);
+        connect(speechSound_, &QSoundEffect::playingChanged, this, [this] {
+            if (speechSound_ != nullptr && !speechSound_->isPlaying()) finishSpeechAudio();
+        });
+        connect(speechSound_, &QSoundEffect::statusChanged, this, [this] {
+            if (speechSound_ != nullptr && speechSound_->status() == QSoundEffect::Error) finishSpeechAudio();
+        });
     }
-    log("中文语音引擎不可用，请安装 espeak-ng 或支持中文的 Qt TTS 插件");
+    bindDefaultAudioOutput();
+    // 播放期间重新计时：进程已退出，15 s 超时只用于兜底卡住的音频设备。
+    speechTimeout_.start();
+    speechSound_->setSource(QUrl::fromLocalFile(path));
+    speechSound_->play();
+}
+QVariantList SystemTools::audioOutputs() const {
+    QVariantList list;
+    const QString current = audioOutputDevice();
+    for (const auto &device : QMediaDevices::audioOutputs()) {
+        QVariantMap row;
+        row.insert("id", QString::fromUtf8(device.id()));
+        row.insert("name", device.description());
+        row.insert("selected", QString::fromUtf8(device.id()) == current);
+        list.append(row);
+    }
+    return list;
+}
+static QAudioDevice resolveAudioOutput(const QString &wanted) {
+    if (!wanted.isEmpty()) {
+        for (const auto &device : QMediaDevices::audioOutputs()) {
+            if (QString::fromUtf8(device.id()) == wanted) return device;
+        }
+    }
+    return QMediaDevices::defaultAudioOutput();
+}
+QString SystemTools::audioOutputName() const {
+    // 只返回设备本身的名字；"跟随系统"等文案由 QML 走 I18n 组合。
+    return resolveAudioOutput(audioOutputDevice()).description();
+}
+void SystemTools::setAudioOutputDevice(const QString &id) {
+    if (id == audioOutputDevice()) return;
+    if (id.isEmpty()) settings_.remove("ttsOutputDevice");
+    else settings_.setValue("ttsOutputDevice", id);
+    settings_.sync();
+    log(id.isEmpty() ? QStringLiteral("播报输出跟随系统") : QStringLiteral("播报输出已选择 ") + audioOutputName());
+    emit audioOutputsChanged();
+}
+void SystemTools::bindDefaultAudioOutput() {
+    if (speechSound_ == nullptr) return;
+    // 每次都重新取系统当前选择的输出：QSoundEffect 会停在首次枚举的设备上，
+    // 而 PipeWire/PulseAudio 的默认 sink 会随 USB/HDMI/蓝牙插拔或用户切换而变。
+    const QAudioDevice output = resolveAudioOutput(audioOutputDevice());
+    if (output.isNull()) return;  // 设备切换瞬间可能为空，保留上一次绑定
+    if (speechSound_->audioDevice().id() == output.id()) return;
+    speechSound_->setAudioDevice(output);
+    log(QStringLiteral("语音输出切换到 ") + output.description());
+}
+void SystemTools::finishSpeechAudio() {
+    if (!speechWavePath_.isEmpty()) {
+        QFile::remove(speechWavePath_);
+        speechWavePath_.clear();
+    }
+    if (!pendingSpeech_.isEmpty()) { startPendingSpeech(); return; }
+    setSpeechActive(false);
 }
 void SystemTools::startPendingSpeech() {
     if (speechProcess_.state() != QProcess::NotRunning || pendingSpeech_.isEmpty()) return;
+    if (speechSound_ != nullptr && speechSound_->isPlaying()) return;
     if (!settings_.value("speech",true).toBool()) { pendingSpeech_.clear(); return; }
     const auto text = pendingSpeech_; pendingSpeech_.clear();
     setSpeechActive(true);
+    if ((containsHan(text) || !englishVoiceFile().isEmpty()) && fliteReady(voiceId())) {
+        auto environment = QProcessEnvironment::systemEnvironment();
+        environment.insert(QStringLiteral("FLITECN_DATA"), fliteDataDir());
+        const QString enVoice = englishVoiceFile();
+        if (!enVoice.isEmpty()) environment.insert(QStringLiteral("FLITECN_EN_VOICE"), enVoice);
+        const QString bank = voiceBankFile(voiceId());
+        if (!bank.isEmpty()) {
+            environment.insert(QStringLiteral("FLITECN_BANK"), bank);
+        } else {
+            environment.insert(QStringLiteral("FLITECN_UNITS"), voiceUnitsDir(voiceId()));
+            const QString fallback = voiceUnitsDir(QStringLiteral("xiaoxiao"));
+            if (!fallback.isEmpty()) environment.insert(QStringLiteral("FLITECN_FALLBACK"), fallback);
+        }
+        speechProcess_.setProcessEnvironment(environment);
+        if (!speechWavePath_.isEmpty()) QFile::remove(speechWavePath_);
+        speechWavePath_ = QDir(QDir::tempPath()).filePath(
+            QStringLiteral("terminal-speech-%1.wav").arg(++speechSerial_));
+        speechEngine_ = SpeechFlite;
+        speechTimeout_.start();
+        speechProcess_.start(fliteBinary(), {QStringLiteral("-o"), speechWavePath_,
+                                             QStringLiteral("-t"), text});
+        return;
+    }
     // Debian's cmn voice enables "latin as English"; its Han dictionary may
     // emit pinyin that is then read as English. Use the Mandarin pinyin variant
     // for both Han input and dictionary expansion, with explicit UTF-8 bytes.
+    speechEngine_ = SpeechEspeak;
+    speechProcess_.setProcessEnvironment(QProcessEnvironment::systemEnvironment());
     speechProcess_.start(speechProgram_, {"-v", "cmn-latn-pinyin", "-b", "1", "-s", "150", "--stdin"});
     speechProcess_.write(text.toUtf8()); speechProcess_.closeWriteChannel();
     speechTimeout_.start();
 }
 void SystemTools::setSpeechEnabled(bool e) {
     settings_.setValue("speech",e);
-    if(!e) { pendingSpeech_.clear(); speech_.stop(); speechTimeout_.stop(); speechProcess_.kill(); setSpeechActive(false); }
+    if(!e) {
+        pendingSpeech_.clear(); speech_.stop(); speechTimeout_.stop(); speechProcess_.kill();
+        if (speechSound_ != nullptr) speechSound_->stop();
+        if (!speechWavePath_.isEmpty()) { QFile::remove(speechWavePath_); speechWavePath_.clear(); }
+        setSpeechActive(false);
+    }
     emit changed();
 }
 void SystemTools::setSpeechActive(bool active) {

@@ -19,6 +19,8 @@
 #include "MusicPlayback.h"
 #include "RemovableStorage.h"
 #include "SystemVolume.h"
+class QSoundEffect;
+
 class SystemTools : public QObject {
     Q_OBJECT
     Q_PROPERTY(QStringList logs READ logs NOTIFY changed)
@@ -27,6 +29,13 @@ class SystemTools : public QObject {
     Q_PROPERTY(QVariantList removableDevices READ removableDevices NOTIFY removableDevicesChanged)
     Q_PROPERTY(bool speechEnabled READ speechEnabled NOTIFY changed)
     Q_PROPERTY(SystemVolume* systemVolume READ systemVolume CONSTANT)
+    Q_PROPERTY(QString voiceId READ voiceId NOTIFY voiceChanged)
+    Q_PROPERTY(QString voiceName READ voiceName NOTIFY voiceChanged)
+    Q_PROPERTY(QVariantList voiceOptions READ voiceOptions NOTIFY voiceChanged)
+    Q_PROPERTY(bool voiceTestMode READ voiceTestMode NOTIFY voiceChanged)
+    Q_PROPERTY(QVariantList audioOutputs READ audioOutputs NOTIFY audioOutputsChanged)
+    Q_PROPERTY(QString audioOutputDevice READ audioOutputDevice NOTIFY audioOutputsChanged)
+    Q_PROPERTY(QString audioOutputName READ audioOutputName NOTIFY audioOutputsChanged)
     Q_PROPERTY(bool duckMediaForSpeech READ duckMediaForSpeech NOTIFY audioFocusChanged)
     Q_PROPERTY(bool speechActive READ speechActive NOTIFY audioFocusChanged)
     Q_PROPERTY(double mediaGain READ mediaGain NOTIFY audioFocusChanged)
@@ -136,6 +145,25 @@ public:
     bool speechActive() const { return speechActive_; }
     double mediaGain() const { return duckMediaForSpeech() && speechActive_ ? 0.2 : 1.0; }
     Q_INVOKABLE void setDuckMediaForSpeech(bool enabled);
+    // 语音音色：微软音色常驻；BanG Dream 六套只在测试模式（彩蛋）里出现。
+    QString voiceId() const { return settings_.value("ttsVoice", QStringLiteral("xiaoxiao")).toString(); }
+    bool voiceTestMode() const { return settings_.value("ttsVoiceTestMode", false).toBool(); }
+    QVariantList voiceOptions() const;
+    QString voiceName() const;
+    Q_INVOKABLE QString voiceDisplayName(const QString &id) const;
+    Q_INVOKABLE bool voiceAvailable(const QString &id) const;
+    Q_INVOKABLE void setVoice(const QString &id);
+    Q_INVOKABLE void previewVoice(const QString &id);
+    // 给后续功能用：用指定音色播报任意文本（同样走 300 字上限/单槽合并/降音）。
+    Q_INVOKABLE void speakWithVoice(const QString &text, const QString &id);
+    // 当前引擎与声库是否可用；UI/新功能可用它决定是否给播报入口。
+    Q_INVOKABLE bool speechReady() const;
+    Q_INVOKABLE void setVoiceTestMode(bool enabled);
+    // 播报输出设备：空串 = 跟随系统；列表来自 Qt Multimedia 当前可见的输出设备。
+    QVariantList audioOutputs() const;
+    QString audioOutputDevice() const { return settings_.value("ttsOutputDevice").toString(); }
+    QString audioOutputName() const;
+    Q_INVOKABLE void setAudioOutputDevice(const QString &id);
     double interfaceScale() const { return qBound(1.0, settings_.value("interface_scale", 1.0).toDouble(), 1.5); }
     Q_INVOKABLE void setInterfaceScale(double scale);
     QVariantMap deviceStatus() const { return deviceStatus_; }
@@ -168,6 +196,8 @@ public:
     bool hotspotBusy() const { return hotspotBusy_; }
     void log(const QString &text);
 signals:
+    void voiceChanged();
+    void audioOutputsChanged();
     void audioFocusChanged();
     void changed();
     void removableDevicesChanged();
@@ -192,6 +222,14 @@ private:
     void loadPinyinDictionaries();
     QTextToSpeech speech_;
     QProcess speechProcess_;
+    QSoundEffect *speechSound_ = nullptr;
+    enum SpeechEngine { SpeechNone, SpeechFlite, SpeechEspeak };
+    SpeechEngine speechEngine_ = SpeechNone;
+    QString speechWavePath_;
+    int speechSerial_ = 0;
+    void playSpeechWave(const QString &path);
+    void bindDefaultAudioOutput();
+    void finishSpeechAudio();
     QProcess musicCliProcess_;
     MusicPlayback musicPlayback_;
     QString musicCliAction_, musicCliOutput_, musicCliError_, musicCliSearchType_;
@@ -208,6 +246,15 @@ private:
     QString speechProgram_, pendingSpeech_;
     bool qtChineseVoice_ = false;
     void startPendingSpeech();
+    // flite 中文引擎：外部进程 + 音色单元目录；不可用时静默回退旧引擎。
+    QStringList ttsDataRoots() const;
+    QString voiceUnitsDir(const QString &id) const;
+    QString voiceBankFile(const QString &id) const;
+    QString englishVoiceFile() const;
+    QString fliteDataDir() const;
+    QString fliteBinary() const;
+    bool fliteReady(const QString &id) const;
+    mutable QHash<QString, bool> voiceReadyCache_;
     QStringList logs_;
     QSettings settings_;
     QBluetoothLocalDevice bluetooth_;

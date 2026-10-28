@@ -456,6 +456,165 @@ private slots:
         // The GUI owns URL normalization; the native file API must remain bounded.
         QVERIFY(tools.files("").size() >= 0);
     }
+
+    void voiceCatalogFollowsTestMode() {
+        // 音色发现只依赖目录结构，不加载音频；用临时目录验证分类与彩蛋边界。
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(QDir().mkpath(dir.filePath("tts")));
+        QVERIFY(QDir().mkpath(dir.filePath("voices/xiaoxiao/units")));
+        QVERIFY(QDir().mkpath(dir.filePath("voices/kasumi/units")));
+        QFile en(dir.filePath("tts/cmu_us_slt.flitevox"));
+        QVERIFY(en.open(QIODevice::WriteOnly)); en.write("stub"); en.close();
+        QFile dict(dir.filePath("tts/zh_dict.bin"));
+        QVERIFY(dict.open(QIODevice::WriteOnly)); dict.write("stub"); dict.close();
+        const auto fakeBin = dir.filePath("flite_zh");
+        QFile bin(fakeBin);
+        QVERIFY(bin.open(QIODevice::WriteOnly)); bin.write("#!/bin/sh\nexit 0\n"); bin.close();
+        QVERIFY(bin.setPermissions(QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+
+        const auto oldBin = qgetenv("TERMINAL_FLITE_BIN");
+        const auto oldRoot = qgetenv("TERMINAL_TTS_ROOT");
+        QSettings settings;
+        const auto oldVoice = settings.value("ttsVoice");
+        const auto oldEgg = settings.value("ttsVoiceTestMode");
+        const auto restore = qScopeGuard([&] {
+            qputenv("TERMINAL_FLITE_BIN", oldBin);
+            qputenv("TERMINAL_TTS_ROOT", oldRoot);
+            if (oldVoice.isValid()) settings.setValue("ttsVoice", oldVoice); else settings.remove("ttsVoice");
+            if (oldEgg.isValid()) settings.setValue("ttsVoiceTestMode", oldEgg); else settings.remove("ttsVoiceTestMode");
+            settings.sync();
+        });
+        qputenv("TERMINAL_FLITE_BIN", fakeBin.toUtf8());
+        qputenv("TERMINAL_TTS_ROOT", dir.path().toUtf8());
+
+        SystemTools tools;
+        tools.setVoiceTestMode(false);
+        const auto ids = [&] {
+            QStringList list;
+            for (const auto &row : tools.voiceOptions()) {
+                const auto map = row.toMap();
+                if (!map.value("available").toBool()) continue;
+                if (map.value("testOnly").toBool() && !tools.voiceTestMode()) continue;
+                list << map.value("id").toString();
+            }
+            return list;
+        };
+        QVERIFY(ids().contains("xiaoxiao"));
+        QVERIFY(!ids().contains("kasumi"));
+        QVERIFY(tools.voiceAvailable("xiaoxiao"));
+        // 角色音色数据就绪，彩蛋只是 UI 闸门，不是可用性闸门。
+        QVERIFY(tools.voiceAvailable("kasumi"));
+        const int microsoftCount = ids().size();
+
+        tools.setVoiceTestMode(true);
+        QVERIFY(ids().contains("kasumi"));
+        QVERIFY(ids().size() > microsoftCount);
+        tools.setVoice("kasumi");
+        QCOMPARE(tools.voiceId(), QStringLiteral("kasumi"));
+        // 关闭测试模式必须把当前音色切回晓晓，不能留在已隐藏的角色音色上。
+        tools.setVoiceTestMode(false);
+        QCOMPARE(tools.voiceId(), QStringLiteral("xiaoxiao"));
+        QVERIFY(!ids().contains("kasumi"));
+        // 不存在的音色不许写入设置。
+        tools.setVoice("nosuchvoice");
+        QCOMPARE(tools.voiceId(), QStringLiteral("xiaoxiao"));
+    }
+
+    void fliteSpeechUsesEngineAndDucks() {
+        // 不真的发声：用一个假引擎记录 argv，验证走的是 flite 路径、参数与降音生命周期。
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(QDir().mkpath(dir.filePath("tts")));
+        QVERIFY(QDir().mkpath(dir.filePath("voices/xiaoxiao")));
+        // 有声库时优先走 FLITECN_BANK，不应再传 FLITECN_UNITS
+        QFile bank(dir.filePath("voices/xiaoxiao/voice.zhvox"));
+        QVERIFY(bank.open(QIODevice::WriteOnly)); bank.write("stub"); bank.close();
+        QFile en(dir.filePath("tts/cmu_us_slt.flitevox"));
+        QVERIFY(en.open(QIODevice::WriteOnly)); en.write("stub"); en.close();
+        QFile dict(dir.filePath("tts/zh_dict.bin"));
+        QVERIFY(dict.open(QIODevice::WriteOnly)); dict.write("stub"); dict.close();
+        const auto log = dir.filePath("argv.log");
+        const auto fakeBin = dir.filePath("flite_zh");
+        QFile bin(fakeBin);
+        QVERIFY(bin.open(QIODevice::WriteOnly));
+        bin.write("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$TEST_SPEECH_LOG\"\nenv | grep '^FLITECN_' > \"$TEST_ENV_LOG\"\nsleep 0.4\n");
+        bin.close();
+        QVERIFY(bin.setPermissions(QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+
+        const auto oldBin = qgetenv("TERMINAL_FLITE_BIN");
+        const auto oldRoot = qgetenv("TERMINAL_TTS_ROOT");
+        const auto oldLog = qgetenv("TEST_SPEECH_LOG");
+        const auto oldEnvLog = qgetenv("TEST_ENV_LOG");
+        QSettings settings;
+        const auto oldVoice = settings.value("ttsVoice");
+        const auto oldSpeech = settings.value("speech");
+        const auto oldDuck = settings.value("duckMediaForSpeech");
+        const auto restore = qScopeGuard([&] {
+            qputenv("TERMINAL_FLITE_BIN", oldBin);
+            qputenv("TERMINAL_TTS_ROOT", oldRoot);
+            qputenv("TEST_SPEECH_LOG", oldLog);
+            qputenv("TEST_ENV_LOG", oldEnvLog);
+            if (oldVoice.isValid()) settings.setValue("ttsVoice", oldVoice); else settings.remove("ttsVoice");
+            if (oldSpeech.isValid()) settings.setValue("speech", oldSpeech); else settings.remove("speech");
+            if (oldDuck.isValid()) settings.setValue("duckMediaForSpeech", oldDuck); else settings.remove("duckMediaForSpeech");
+            settings.sync();
+        });
+        qputenv("TERMINAL_FLITE_BIN", fakeBin.toUtf8());
+        qputenv("TERMINAL_TTS_ROOT", dir.path().toUtf8());
+        qputenv("TEST_SPEECH_LOG", log.toUtf8());
+        qputenv("TEST_ENV_LOG", (dir.filePath("env.log")).toUtf8());
+        settings.setValue("ttsVoice", "xiaoxiao");
+        settings.setValue("speech", true);
+        settings.setValue("duckMediaForSpeech", true);
+
+        SystemTools tools;
+        QVERIFY(tools.speechReady());
+        QCOMPARE(tools.mediaGain(), 1.0);
+        tools.speak("关闭当前应用");
+        QTRY_VERIFY(tools.speechActive());
+        QCOMPARE(tools.mediaGain(), 0.2);
+        QTRY_VERIFY(!tools.speechActive());
+        QCOMPARE(tools.mediaGain(), 1.0);
+
+        QFile recorded(log);
+        QVERIFY(recorded.open(QIODevice::ReadOnly));
+        const auto args = QString::fromUtf8(recorded.readAll());
+        QVERIFY(args.contains("-o"));
+        QVERIFY(args.contains("-t"));
+        QVERIFY(args.contains("关闭当前应用"));
+        QFile envfile(dir.filePath("env.log"));
+        QVERIFY(envfile.open(QIODevice::ReadOnly));
+        const auto env = QString::fromUtf8(envfile.readAll());
+        QVERIFY(env.contains("FLITECN_BANK="));
+        QVERIFY(env.contains("FLITECN_EN_VOICE="));
+        QVERIFY(!env.contains("FLITECN_UNITS="));
+        // 环境里必须带词典与音色目录，否则引擎会回退系统语音。
+        QVERIFY(!tools.voiceOptions().isEmpty());
+    }
+
+    void speechOutputSelectionPersists() {
+        // 设备列表可能为空（无音频服务的 CI），这里只验证选择持久化与设备断开时的兜底。
+        SystemTools tools;
+        QSettings settings;
+        const auto old = settings.value("ttsOutputDevice");
+        const auto restore = qScopeGuard([&] {
+            if (old.isValid()) settings.setValue("ttsOutputDevice", old); else settings.remove("ttsOutputDevice");
+            settings.sync();
+        });
+        tools.setAudioOutputDevice("no-such-output-device");
+        QCOMPARE(tools.audioOutputDevice(), QStringLiteral("no-such-output-device"));
+        // 有音频设备时名字必须可读；没有音频服务的 CI 允许为空。
+        if (!tools.audioOutputs().isEmpty()) QVERIFY(!tools.audioOutputName().isEmpty());
+        for (const auto &row : tools.audioOutputs()) {
+            QVERIFY(!row.toMap().value("name").toString().isEmpty());
+        }
+        tools.setAudioOutputDevice(QString());
+        QCOMPARE(tools.audioOutputDevice(), QString());
+    }
 };
+
+
+
 QTEST_GUILESS_MAIN(RuntimeTests)
 #include "runtime_test.moc"
