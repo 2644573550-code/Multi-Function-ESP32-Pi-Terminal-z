@@ -56,7 +56,11 @@ def main():
                                              'notify_uuid':'9b860001-214c-4de0-a9f4-f70e6a100003'})})
         (tmp/'config.json').write_text(json.dumps(config))
         try:
-            env=dict(os.environ,TEST_CONFIG=str(tmp/'config.json'),TEST_PLUGIN=str(plugin))
+            # 本测试断言同进程模块的同步回调语义（emit 后立即检查 cards）。
+            # worker 是异步 IPC，语义不同；worker 路径由 worker_ipc_contract
+            # 与 module_worker_async 覆盖。这里显式走回退开关。
+            env=dict(os.environ,TEST_CONFIG=str(tmp/'config.json'),TEST_PLUGIN=str(plugin),
+                     ORANGE_PI_MODULE_INPROCESS='1')
             subprocess.run([str(build/'session_test')],env=env,check=True,timeout=60)
             # Exercise exactly the small-package wire protocol used by BLE over
             # deterministic loopback TCP, independently of the HTTP downloader.

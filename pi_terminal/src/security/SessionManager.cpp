@@ -161,6 +161,14 @@ bool SessionManager::finishTask(const QString &taskId) {
     return true;
 }
 
+QVariantList SessionManager::pendingTaskSummaries() const {
+    QVariantList list;
+    for (TaskCapability *task : tasks_) {
+        list.append(QVariantMap{{"taskId", task->taskId()}, {"deviceId", task->deviceId()}});
+    }
+    return list;
+}
+
 bool SessionManager::hasUnfinishedTasks() const { return !tasks_.isEmpty(); }
 
 QVector<TaskCapability *> SessionManager::unfinishedTasks() const {

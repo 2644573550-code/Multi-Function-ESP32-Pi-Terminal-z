@@ -61,7 +61,10 @@ public:
 
     // 任务能力：由可信侧在 measurement 开始时创建，绑定当前用户与设备。
     QString startTask(const QString &deviceId);
-    bool finishTask(const QString &taskId);
+    // QML 只读摘要：{taskId, deviceId}，不含 TaskCapability* 指针。
+    Q_INVOKABLE QVariantList pendingTaskSummaries() const;
+    // QML 用：结束某个任务。服务端校验归属。
+    Q_INVOKABLE bool finishTask(const QString &taskId);
     bool hasUnfinishedTasks() const;
     QVector<TaskCapability *> unfinishedTasks() const;
 

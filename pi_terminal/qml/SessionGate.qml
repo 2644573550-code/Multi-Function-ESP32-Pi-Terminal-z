@@ -64,6 +64,40 @@ Item {
     // 因此改为监听根窗口的 signal（由 Main.qml 转发 clicked/keyed）。
     function noteInput() { gate.idleElapsed = 0 }
 
+    // 有未完成任务时切用户会被服务端拒绝（login 返回 BUSY），
+    // 这里给出可操作的出口，而不是让用户卡住。
+    Loader {
+        anchors.centerIn: gate
+        width: Math.min(gate.width - Theme.margin * 2, 520 * Theme.scaleFactor)
+        active: gate.needLogin && sessionManager.message === "BUSY"
+        visible: active
+        sourceComponent: TaskFinishDialog {
+            tasks: gate.pendingTasks()
+            message: gate.localizedMessage(sessionManager.message)
+            onFinishTask: function(taskId) {
+                sessionManager.finishTask(taskId)
+                sessionManager.refreshUsers()
+            }
+            onStopAll: function() {
+                gate.stopAllTasks()
+                sessionManager.refreshUsers()
+            }
+        }
+    }
+
+    function pendingTasks() {
+        // SessionManager 不把 TaskCapability* 暴露给 QML；这里只给出可读标签。
+        const list = []
+        for (const task of sessionManager.pendingTaskSummaries())
+            list.push({taskId: task.taskId, label: I18n.t("任务") + " " + task.deviceId})
+        return list
+    }
+
+    function stopAllTasks() {
+        for (const task of sessionManager.pendingTaskSummaries())
+            sessionManager.finishTask(task.taskId)
+    }
+
     // ---- 登录 / 锁屏内容 ----
     Loader {
         anchors.centerIn: gate

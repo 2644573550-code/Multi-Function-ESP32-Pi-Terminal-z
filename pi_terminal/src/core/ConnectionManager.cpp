@@ -1,4 +1,6 @@
 #include "ConnectionManager.h"
+
+#include "LaneGate.h"
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QFile>
@@ -355,6 +357,12 @@ void ConnectionManager::receive(const QString &instance, quint8 t, const QByteAr
         send(s, "disconnect_ack", {{"accepted", accepted}, {"reason", rejectReason}});
         if (accepted) { s->closePending = true; s->awaitingPeerClose = true; s->closeDeadline = now() + 3000; }
     } else if (type == "data" && s->loaded) {
+        // §0.8.4：单条业务 payload ≤512 字节，超出直接拒绝（INVALID_MESSAGE）。
+        // 不截断、不重试、不降级 —— 交给上层按 INVALID_MESSAGE 处理。
+        if (!LaneGate::payloadAcceptable(decodedPayload.size())) {
+            state(s, "error", "INVALID_MESSAGE");
+            return;
+        }
         if (!s->firstDataLogged) {
             qInfo().noquote() << "Module data received: module_id=" << s->id
                               << "instance=" << instance

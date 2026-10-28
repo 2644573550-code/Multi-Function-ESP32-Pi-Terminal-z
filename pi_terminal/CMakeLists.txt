@@ -86,6 +86,7 @@ add_library(terminal_core STATIC
     src/core/PackageReceiver.cpp src/core/PackageReceiver.h
     src/core/WorkerIpc.cpp src/core/WorkerIpc.h
     src/core/ModuleWorkerLauncher.cpp src/core/ModuleWorkerLauncher.h
+    src/core/ModuleWorkerClient.cpp src/core/ModuleWorkerClient.h
     src/core/ModulePageHost.cpp src/core/ModulePageHost.h
     src/core/LaneGate.cpp src/core/LaneGate.h)
 target_include_directories(terminal_core PUBLIC src src/modules/api)
@@ -182,6 +183,12 @@ target_include_directories(terminal_ui PUBLIC
 target_link_libraries(terminal_ui PRIVATE gstreamer-1.0 gstapp-1.0 gstvideo-1.0 gobject-2.0 glib-2.0)
 
 # 最小视频探针（开发/性能测试用，不参与安装）
+# 模块 worker 入口（T-11）：独立进程加载模块 .so，由 systemd unit 约束沙箱。
+qt_add_executable(module_worker src/core/module_worker_main.cpp src/core/WorkerIpc.cpp)
+target_include_directories(module_worker PRIVATE src)
+target_link_libraries(module_worker PRIVATE Qt6::Core)
+target_compile_options(module_worker PRIVATE -Wall -Wextra -Wpedantic)
+
 qt_add_executable(kdf_bench tools/kdf_bench.cpp)
 target_link_libraries(kdf_bench PRIVATE terminal_security Qt6::Core)
 
@@ -221,6 +228,7 @@ list(APPEND UI_QML_FILES qml/QuickToggle.qml qml/EditorToolbar.qml)
 list(APPEND UI_QML_FILES qml/QuickPanelTile.qml)
 list(APPEND UI_QML_FILES qml/KeyboardKey.qml)
 list(APPEND UI_QML_FILES qml/PinPad.qml qml/UserPicker.qml qml/LoginPage.qml qml/LockScreen.qml qml/SessionGate.qml)
+list(APPEND UI_QML_FILES qml/AdminPairingPage.qml qml/TaskFinishDialog.qml)
 list(APPEND UI_QML_FILES qml/BlurCache.qml)
 list(APPEND UI_QML_FILES qml/CachedBlur.qml)
 list(APPEND UI_QML_FILES qml/StartupSplash.qml)
@@ -329,6 +337,11 @@ if(BUILD_TESTING)
     add_test(NAME login_lock_user_pages COMMAND login_qml_test)
     set_tests_properties(login_lock_user_pages PROPERTIES LABELS "interface"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software" TIMEOUT 60)
+    add_executable(module_worker_async_test tests/module_worker_async_test.cpp)
+    target_include_directories(module_worker_async_test PRIVATE src)
+    target_link_libraries(module_worker_async_test PRIVATE terminal_core Qt6::Test)
+    add_dependencies(module_worker_async_test module_worker example_module)
+    add_test(NAME module_worker_async COMMAND module_worker_async_test)
     add_executable(session_gate_test tests/session_gate_test.cpp)
     target_link_libraries(session_gate_test PRIVATE terminal_security Qt6::Test)
     add_test(NAME session_gate_flow COMMAND session_gate_test)

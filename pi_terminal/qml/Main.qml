@@ -43,6 +43,19 @@ ApplicationWindow {
         z:20000
         inputSource:win
     }
+    // 锁屏即撤销前台读取（f-day1 §2）：模块页可能显示传感器读数，必须卸载。
+    // 不用 visible:false —— 那只是不画，数据仍在内存里可读。
+    Connections {
+        target: sessionManager
+        function onLockStateChanged() {
+            if (sessionManager.locked) {
+                modulePageHost.unload()
+                moduleLoader.source=""
+                activeSession=""
+                activeActions=[]
+            }
+        }
+    }
     Loader {
         id:startupLoader
         parent:Overlay.overlay
@@ -1117,7 +1130,7 @@ ApplicationWindow {
     }
     Timer { id:bannerTimer; onTriggered:notificationBanner.close() }
     Popup {
-        id:notificationBanner;objectName:"notificationBanner";parent:Overlay.overlay
+        id:notificationBanner;objectName:"notificationBanner";parent:Overlay.overlay;visible:!sessionManager.locked
         x:(win.width-width)/2;y:Theme.gap;width:Math.min(win.width-Theme.gap*2,720*uiScale)
         padding:Theme.gap;modal:false;closePolicy:Popup.NoAutoClose
         background:GlassSurface {color:Theme.surface;radius:Theme.shapeLarge;borderColor:bannerImportant?"#ffc66d":Theme.outline;borderWidth:2}
@@ -1288,7 +1301,7 @@ ApplicationWindow {
         hostWindow:win
     }
     Item {
-        id:homePane;objectName:"homePane";anchors.fill:parent;anchors.margins:win.edge;visible:phase!=="open"&&!repairBackdropOnly;enabled:phase==="home"
+        id:homePane;objectName:"homePane";anchors.fill:parent;anchors.margins:win.edge;visible:phase!=="open"&&!repairBackdropOnly;enabled:phase==="home" && !sessionManager.locked
         opacity:phase==="home"?1:1-openProgress*0.3
             RowLayout {id:homeHeader;anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;height:Theme.hit;spacing:Theme.gap
                 CarText {text:I18n.t("应用");heading:true;Layout.fillWidth:true}
