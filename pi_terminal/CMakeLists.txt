@@ -49,6 +49,7 @@ add_library(terminal_security STATIC
     src/security/AuthService.cpp src/security/AuthService.h
     src/security/SessionManager.cpp src/security/SessionManager.h
     src/security/TaskCapability.cpp src/security/TaskCapability.h
+    src/security/CardMatcher.cpp src/security/CardMatcher.h src/security/CardIndex.h
     src/security/SqlCipherStore.cpp src/security/SqlCipherStore.h
     src/security/UserDatabase.cpp src/security/UserDatabase.h)
 target_include_directories(terminal_security PUBLIC src)
@@ -328,6 +329,9 @@ if(BUILD_TESTING)
     add_test(NAME login_lock_user_pages COMMAND login_qml_test)
     set_tests_properties(login_lock_user_pages PROPERTIES LABELS "interface"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software" TIMEOUT 60)
+    add_executable(card_matcher_test tests/card_matcher_test.cpp)
+    target_link_libraries(card_matcher_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME card_index_matching COMMAND card_matcher_test)
     add_executable(lane_gate_test tests/lane_gate_test.cpp)
     target_link_libraries(lane_gate_test PRIVATE terminal_core Qt6::Test)
     add_test(NAME business_lane_gate COMMAND lane_gate_test)
