@@ -48,6 +48,7 @@ add_library(terminal_security STATIC
     src/security/UserService.cpp src/security/UserService.h
     src/security/AuthService.cpp src/security/AuthService.h
     src/security/SessionManager.cpp src/security/SessionManager.h
+    src/security/TaskCapability.cpp src/security/TaskCapability.h
     src/security/SqlCipherStore.cpp src/security/SqlCipherStore.h
     src/security/UserDatabase.cpp src/security/UserDatabase.h)
 target_include_directories(terminal_security PUBLIC src)
@@ -83,9 +84,10 @@ add_library(terminal_core STATIC
     src/core/SessionStateMachine.cpp src/core/SessionStateMachine.h
     src/core/PackageReceiver.cpp src/core/PackageReceiver.h
     src/core/WorkerIpc.cpp src/core/WorkerIpc.h
-    src/core/ModuleWorkerLauncher.cpp src/core/ModuleWorkerLauncher.h)
+    src/core/ModuleWorkerLauncher.cpp src/core/ModuleWorkerLauncher.h
+    src/core/ModulePageHost.cpp src/core/ModulePageHost.h)
 target_include_directories(terminal_core PUBLIC src src/modules/api)
-target_link_libraries(terminal_core PUBLIC terminal_transports Qt6::Core Qt6::Network Qt6::StateMachine)
+target_link_libraries(terminal_core PUBLIC terminal_transports Qt6::Core Qt6::Network Qt6::StateMachine Qt6::Qml)
 target_compile_definitions(terminal_core PRIVATE PI_PACKAGE_TOOL="${CMAKE_INSTALL_PREFIX}/libexec/orange-pi-terminal/package_tool.py")
 target_compile_options(terminal_core PRIVATE -Wall -Wextra -Wpedantic)
 add_library(terminal_music SHARED
@@ -186,8 +188,10 @@ qt_add_executable(orange_pi_terminal
     src/main.cpp src/app/TerminalApplication.cpp src/app/TerminalApplication.h
     src/app/TerminalOptions.cpp src/app/TerminalOptions.h
     src/app/TerminalRuntime.cpp src/app/TerminalRuntime.h
-    src/app/DiagnosticRunner.cpp src/app/DiagnosticRunner.h)
+    src/app/DiagnosticRunner.cpp src/app/DiagnosticRunner.h
+    src/app/AdminInitializer.cpp src/app/AdminInitializer.h)
 target_include_directories(orange_pi_terminal PRIVATE ../third_party/Viper-Browser/src/core/network)
+target_link_libraries(orange_pi_terminal PRIVATE terminal_security)
 
 set(TERMINAL_LIBRARY_DIR "${CMAKE_INSTALL_LIBDIR}/orange-pi-terminal")
 foreach(module IN ITEMS terminal_music terminal_system terminal_ui)
@@ -296,6 +300,11 @@ if(BUILD_TESTING)
     add_executable(user_database_test tests/user_database_test.cpp)
     target_link_libraries(user_database_test PRIVATE terminal_security Qt6::Test)
     add_test(NAME sqlcipher_user_isolation COMMAND user_database_test)
+    add_executable(module_page_host_test tests/module_page_host_test.cpp)
+    target_link_libraries(module_page_host_test PRIVATE terminal_core Qt6::Test Qt6::Qml Qt6::Quick)
+    add_test(NAME module_page_engine_isolation COMMAND module_page_host_test)
+    set_tests_properties(module_page_engine_isolation PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
     add_executable(worker_isolation_test tests/worker_isolation_test.cpp)
     target_include_directories(worker_isolation_test PRIVATE src)
     target_compile_definitions(worker_isolation_test PRIVATE

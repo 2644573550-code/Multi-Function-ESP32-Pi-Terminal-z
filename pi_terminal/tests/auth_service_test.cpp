@@ -192,6 +192,62 @@ private slots:
         // 普通用户不得停用他人。
         QVERIFY(!users.disableUser(member, admin));
     }
+
+    void lockKeepsTaskAppendButRevokesHistory() {
+        SessionManager session;
+        session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
+        const QString taskId = session.startTask(QStringLiteral("planter-1"));
+        QVERIFY(!taskId.isEmpty());
+        QVERIFY(session.appendTaskSample(taskId, QStringLiteral("planter-1"), 0));
+
+        session.lock();
+        // 锁屏后：前台 token 失效、DB key 拿不到，但任务仍可追加。
+        QVERIFY(!session.validate(QString()));
+        QVERIFY(session.dbKey().isEmpty());
+        QVERIFY2(session.appendTaskSample(taskId, QStringLiteral("planter-1"), 0),
+                 "locked session must still allow the original task to append");
+    }
+
+    void taskCannotAppendToOtherDevice() {
+        SessionManager session;
+        session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
+        const QString taskId = session.startTask(QStringLiteral("planter-1"));
+        // 设备串档必须拒绝。
+        QVERIFY(!session.appendTaskSample(taskId, QStringLiteral("planter-2"), 0));
+    }
+
+    void switchingUserRequiresFinishingTasks() {
+        SessionManager session;
+        session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
+        const QString taskId = session.startTask(QStringLiteral("planter-1"));
+        // 有未完成任务时不得切用户。
+        QVERIFY(session.hasUnfinishedTasks());
+        QVERIFY2(session.begin(QStringLiteral("u2"), QByteArray(32, 'b'), false).isEmpty(),
+                 "must not switch user while a task is unfinished");
+
+        QVERIFY(session.finishTask(taskId));
+        QVERIFY(!session.hasUnfinishedTasks());
+        // 收尾后可以切。
+        QVERIFY(!session.begin(QStringLiteral("u2"), QByteArray(32, 'b'), false).isEmpty());
+    }
+
+    void lateEventAfterFinishIsRejected() {
+        SessionManager session;
+        session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
+        const QString taskId = session.startTask(QStringLiteral("planter-1"));
+        QVERIFY(session.finishTask(taskId));
+        // 任务收尾后，迟到的回调不得再写入。
+        QVERIFY(!session.appendTaskSample(taskId, QStringLiteral("planter-1"), 0));
+    }
+
+    void logoutRevokesTasks() {
+        SessionManager session;
+        session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
+        const QString taskId = session.startTask(QStringLiteral("planter-1"));
+        session.logout();
+        QVERIFY(!session.hasUnfinishedTasks());
+        QVERIFY(!session.appendTaskSample(taskId, QStringLiteral("planter-1"), 0));
+    }
 };
 
 QTEST_GUILESS_MAIN(AuthTest)

@@ -9,6 +9,7 @@
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 #include "app/TerminalOptions.h"
+#include "app/AdminInitializer.h"
 #include "app/TerminalRuntime.h"
 #include "ui/TerminalUi.h"
 #include "SchemeRegistry.h"
@@ -44,6 +45,10 @@ int main(int argc, char **argv) {
     QCommandLineParser options;
     TerminalOptions::configure(options);
     options.process(application);
+
+    // 首次管理员初始化在起 UI 之前完成：无用户时可运行，之后永久拒绝。
+    const int initResult = AdminInitializer::run(options);
+    if (initResult >= 0) return initResult;
 
     TerminalRuntime runtime(application, options);
     return runtime.run();
