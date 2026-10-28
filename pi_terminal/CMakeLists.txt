@@ -32,15 +32,36 @@ target_include_directories(terminal_protocol PUBLIC src)
 target_link_libraries(terminal_protocol PUBLIC Qt6::Core)
 target_compile_options(terminal_protocol PRIVATE -Wall -Wextra -Wpedantic)
 
-add_library(terminal_security STATIC
+set(TERMINAL_SECURITY_SOURCES
     src/security/TrustStore.cpp src/security/TrustStore.h
     src/security/uid_index_key.h src/security/uid_index_key_default.cpp
     # UID 索引实现依赖 uidIndexKey()，因此放在安全层而不是协议层，
     # 避免 protocol → security 的反向依赖。
     src/protocol/uid_index.cpp src/protocol/uid_index.h)
+
+# 只有 HostIdentity（ECDSA P-256）需要 mbedtls。缺失时**跳过该文件**，
+# 其余安全组件照常构建——否则会把一个可选依赖变成所有人的构建前置。
+# 无头文件时可用 -DMBEDTLS_ROOT=/path/to/mbedtls 指定。
+set(MBEDTLS_ROOT "" CACHE PATH "mbedtls install prefix (contains include/ and lib/)")
+find_path(MBEDTLS_INCLUDE_DIR mbedtls/ecdsa.h HINTS "${MBEDTLS_ROOT}/include")
+find_library(MBEDTLS_CRYPTO_LIBRARY NAMES mbedcrypto HINTS "${MBEDTLS_ROOT}/lib")
+if(MBEDTLS_INCLUDE_DIR AND MBEDTLS_CRYPTO_LIBRARY)
+    message(STATUS "pbr: mbedtls found at ${MBEDTLS_INCLUDE_DIR} -> HostIdentity enabled (T-03b)")
+    list(APPEND TERMINAL_SECURITY_SOURCES src/security/HostIdentity.cpp src/security/HostIdentity.h)
+    set(TERMINAL_SECURITY_HAVE_MBEDTLS ON)
+else()
+    message(STATUS "pbr: mbedtls not found -> HostIdentity (T-03b) skipped; pass -DMBEDTLS_ROOT=... to enable")
+    set(TERMINAL_SECURITY_HAVE_MBEDTLS OFF)
+endif()
+
+add_library(terminal_security STATIC ${TERMINAL_SECURITY_SOURCES})
 target_include_directories(terminal_security PUBLIC src)
 target_link_libraries(terminal_security PUBLIC Qt6::Core)
 target_compile_options(terminal_security PRIVATE -Wall -Wextra -Wpedantic)
+if(TERMINAL_SECURITY_HAVE_MBEDTLS)
+    target_include_directories(terminal_security PRIVATE ${MBEDTLS_INCLUDE_DIR})
+    target_link_libraries(terminal_security PUBLIC ${MBEDTLS_CRYPTO_LIBRARY})
+endif()
 
 add_library(terminal_transports STATIC
     src/transport/TransportBase.h
@@ -277,6 +298,11 @@ if(BUILD_TESTING)
     target_include_directories(uid_index_default_key_test PRIVATE src)
     target_link_libraries(uid_index_default_key_test PRIVATE Qt6::Core)
     add_test(NAME pbr_uid_index_fail_closed COMMAND uid_index_default_key_test)
+    if(TERMINAL_SECURITY_HAVE_MBEDTLS)
+        add_executable(host_identity_test tests/host_identity_test.cpp)
+        target_link_libraries(host_identity_test PRIVATE terminal_security)
+        add_test(NAME pbr_host_identity COMMAND host_identity_test)
+    endif()
     add_executable(session_test tests/session_test.cpp)
     add_dependencies(session_test example_module)
     target_link_libraries(session_test PRIVATE terminal_core Qt6::Test)
