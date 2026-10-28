@@ -35,6 +35,7 @@ D 若直接写这些页面，两个人会改同一批文件。所以 D 只提供
 | 方法 | 说明 |
 |---|---|
 | `slotSnapshot()` | 槽位快照，固定 2 条（槽 0/1）。**快照**，不是属性，页面自己在需要时调用 |
+| `slotStats()` | 判定计数：`accepted` / `rejected` / `lastRejection` |
 | `refresh()` | 手动重读（文件监听之外的兜底） |
 
 ### 1.1 `trustRecords` 每条字段
@@ -104,7 +105,7 @@ Repeater {
 | `HostIdentity` | 私钥内容 | **否** | ✅ 未暴露 |
 | `SlotRouter` | 槽 0/1 绑定、代次、设备 | 是 | ✅ `slotSnapshot()` |
 | `SlotRouter` | 桥板离线（位置 unknown） | 是 | ⚠️ 部分：仅已绑定时给 `bridgeOnline`，未绑定槽无桥板信息 |
-| `SlotRouter` | 迟到/串槽事件被拒的次数 | **是（运维排查）** | ❌ **未覆盖**：目前只 `qWarning`，无计数器 |
+| `SlotRouter` | 迟到/串槽事件被拒的次数 | 是（运维排查） | ✅ `slotStats()`（accepted / rejected / lastRejection） |
 | `uid_index` | 密钥就绪 | 是 | ✅ `uidKeyReady` |
 | `uid_index` | raw UID / 用户映射 | **否** | ✅ 未暴露 |
 
@@ -114,10 +115,11 @@ Repeater {
   「空」与「损坏」，会把数据损坏显示成「还没配对」——已补 `healthy()`。
 - **1 处部分覆盖**：未绑定槽的桥板在线状态。因为 `bridge_id` 要等 T-03 配对后
   才确定，未绑定时没有归属桥板可问。
-- **1 处真实缺口**：`SlotRouter` 拒绝迟到/串槽事件时只写日志，没有计数。
-  运维遇到「刷卡没反应」时无法从界面判断是被当成迟到事件丢了。
-  建议在 T-07（会话层）或 T-16（页面）加拒绝计数，**本次不做**：
-  计数器属于 SlotRouter 的语义扩展，会影响已提交的 T-05 PR，等 F 对 T-05 有结论后再加。
+- **已补 1 处缺口**：`SlotRouter` 拒绝迟到/串槽事件时原先只写日志、没有计数，
+  运维遇到「刷卡没反应」无法判断是不是被当成迟到事件丢了。现已在
+  `SlotRouter` 加 `acceptedCount()` / `rejectedCount()` / `lastRejection()`，
+  经 `ConnectionManager::slotStats()` 与 `SecurityStatus::slotStats()` 暴露到界面。
+  计数器是**纯加法**（不改变任何判定结果），对已提交的 T-05 无行为影响。
 
 ## 5. 明确不做的部分
 

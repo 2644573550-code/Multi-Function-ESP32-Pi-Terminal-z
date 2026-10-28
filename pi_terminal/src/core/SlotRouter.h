@@ -79,12 +79,25 @@ public:
     bool isBound(int slotId) const;
     void clear();
 
+    // 判定计数（排查用）。运维遇到「刷卡没反应」时，需要能看出事件是不是
+    // 被当成迟到/串槽丢掉了——只写日志在界面上看不见。
+    quint64 acceptedCount() const { return accepted_; }
+    quint64 rejectedCount() const { return rejected_; }
+    // 最近一次拒绝的原因（verdictName）；从未拒绝时为空。
+    QString lastRejection() const { return lastRejection_; }
+
 private:
     bool isRetired(int slotId, const QString &generation) const;
     void retire(int slotId, const QString &generation);
+
+    Decision note(Decision decision) const;
 
     QHash<int, Binding> current_;
     QHash<int, QStringList> retired_;   // slot -> 旧代次（新→旧）
     QHash<QString, bool> bridgeOnline_;
     int retiredHistory_;
+    // 计数与最近拒绝原因在 const 判定里更新，故为 mutable。
+    mutable quint64 accepted_ = 0;
+    mutable quint64 rejected_ = 0;
+    mutable QString lastRejection_;
 };

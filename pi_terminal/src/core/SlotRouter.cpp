@@ -60,6 +60,17 @@ void SlotRouter::retire(int slotId, const QString &generation)
     while (list.size() > retiredHistory_) list.removeLast();
 }
 
+SlotRouter::Decision SlotRouter::note(Decision decision) const
+{
+    if (decision.verdict == Verdict::Accepted) {
+        ++accepted_;
+    } else {
+        ++rejected_;
+        lastRejection_ = verdictName(decision.verdict);
+    }
+    return decision;
+}
+
 SlotRouter::Decision SlotRouter::bind(const QString &bridgeId, int slotId, const QString &deviceId,
                                       const QString &generation, const QString &instance, qint64 now)
 {
@@ -67,23 +78,23 @@ SlotRouter::Decision SlotRouter::bind(const QString &bridgeId, int slotId, const
     if (!isValidSlot(slotId)) {
         decision.verdict = Verdict::SlotMismatch;
         decision.detail = QStringLiteral("slot must be 0 or 1");
-        return decision;
+        return note(decision);
     }
     if (!isValidGeneration(generation)) {
         decision.verdict = Verdict::GenerationMismatch;
         decision.detail = QStringLiteral("generation must be 32 lowercase hex");
-        return decision;
+        return note(decision);
     }
     if (deviceId.isEmpty()) {
         decision.verdict = Verdict::DeviceMismatch;
         decision.detail = QStringLiteral("device_id must not be empty");
-        return decision;
+        return note(decision);
     }
     if (!bridgeOnline(bridgeId)) {
         // 桥板失联时不允许建立新的物理绑定。
         decision.verdict = Verdict::PositionUnknown;
         decision.detail = kUnknownDetail;
-        return decision;
+        return note(decision);
     }
 
     const Binding existing = current_.value(slotId);
@@ -93,13 +104,13 @@ SlotRouter::Decision SlotRouter::bind(const QString &bridgeId, int slotId, const
             // 同一绑定重复上报：幂等接受，不动状态。
             decision.verdict = Verdict::Accepted;
             decision.instance = existing.instance;
-            return decision;
+            return note(decision);
         }
         if (existing.generation == generation && existing.deviceId != deviceId) {
             // 同一代次声称两台设备：状态被破坏，拒绝而不是覆盖。
             decision.verdict = Verdict::Conflict;
             decision.detail = QStringLiteral("same generation already bound to another device");
-            return decision;
+            return note(decision);
         }
         // 换设备/换代次必须显式 release 或带来新代次。这里允许"刷新"：
         // 桥板在上电/重新插拔时会直接宣布新代次，中间可能没有 detach。
@@ -110,7 +121,7 @@ SlotRouter::Decision SlotRouter::bind(const QString &bridgeId, int slotId, const
     if (isRetired(slotId, generation)) {
         decision.verdict = Verdict::StaleGeneration;
         decision.detail = QStringLiteral("generation was already superseded");
-        return decision;
+        return note(decision);
     }
 
     Binding binding;
@@ -124,7 +135,7 @@ SlotRouter::Decision SlotRouter::bind(const QString &bridgeId, int slotId, const
 
     decision.verdict = Verdict::Accepted;
     decision.instance = instance;
-    return decision;
+    return note(decision);
 }
 
 SlotRouter::Decision SlotRouter::release(const QString &bridgeId, int slotId,
@@ -135,12 +146,12 @@ SlotRouter::Decision SlotRouter::release(const QString &bridgeId, int slotId,
     if (!isValidSlot(slotId)) {
         decision.verdict = Verdict::SlotMismatch;
         decision.detail = QStringLiteral("slot must be 0 or 1");
-        return decision;
+        return note(decision);
     }
     if (!isValidGeneration(generation)) {
         decision.verdict = Verdict::GenerationMismatch;
         decision.detail = QStringLiteral("generation must be 32 lowercase hex");
-        return decision;
+        return note(decision);
     }
 
     const Binding existing = current_.value(slotId);
@@ -148,26 +159,26 @@ SlotRouter::Decision SlotRouter::release(const QString &bridgeId, int slotId,
         // 从未绑定：迟到的 detach。若代次是退役过的，明确判迟到。
         decision.verdict = isRetired(slotId, generation) ? Verdict::StaleGeneration : Verdict::Unbound;
         decision.detail = QStringLiteral("no binding on slot");
-        return decision;
+        return note(decision);
     }
     if (existing.bridgeId != bridgeId) {
         decision.verdict = Verdict::BridgeMismatch;
         decision.detail = QStringLiteral("bridge does not own this slot");
-        return decision;
+        return note(decision);
     }
     if (existing.generation != generation) {
         // **关键**：迟到的 detach 不得解掉新设备的绑定。
         decision.verdict = isRetired(slotId, generation) ? Verdict::StaleGeneration
                                                          : Verdict::GenerationMismatch;
         decision.detail = QStringLiteral("generation does not match current binding");
-        return decision;
+        return note(decision);
     }
 
     retire(slotId, existing.generation);
     current_.remove(slotId);
     decision.verdict = Verdict::Accepted;
     decision.instance = existing.instance;
-    return decision;
+    return note(decision);
 }
 
 SlotRouter::Decision SlotRouter::route(const QString &bridgeId, int slotId,
@@ -177,47 +188,47 @@ SlotRouter::Decision SlotRouter::route(const QString &bridgeId, int slotId,
     if (!isValidSlot(slotId)) {
         decision.verdict = Verdict::SlotMismatch;
         decision.detail = QStringLiteral("slot must be 0 or 1");
-        return decision;
+        return note(decision);
     }
     if (!isValidGeneration(generation)) {
         decision.verdict = Verdict::GenerationMismatch;
         decision.detail = QStringLiteral("generation must be 32 lowercase hex");
-        return decision;
+        return note(decision);
     }
 
     const Binding existing = current_.value(slotId);
     if (!existing.valid()) {
         decision.verdict = isRetired(slotId, generation) ? Verdict::StaleGeneration : Verdict::Unbound;
         decision.detail = QStringLiteral("no binding on slot");
-        return decision;
+        return note(decision);
     }
     if (existing.generation != generation) {
         decision.verdict = isRetired(slotId, generation) ? Verdict::StaleGeneration
                                                          : Verdict::GenerationMismatch;
         decision.detail = QStringLiteral("generation does not match current binding");
-        return decision;
+        return note(decision);
     }
     if (existing.bridgeId != bridgeId) {
         decision.verdict = Verdict::BridgeMismatch;
         decision.detail = QStringLiteral("bridge does not own this slot");
-        return decision;
+        return note(decision);
     }
     if (existing.deviceId != deviceId) {
         decision.verdict = Verdict::DeviceMismatch;
         decision.detail = QStringLiteral("device does not match binding");
-        return decision;
+        return note(decision);
     }
     if (!bridgeOnline(bridgeId)) {
         // 位置事件本身来自桥板，桥板失联后不可能有新事件；
         // 保留此判断以防调用方在离线期间回放缓冲事件。
         decision.verdict = Verdict::PositionUnknown;
         decision.detail = kUnknownDetail;
-        return decision;
+        return note(decision);
     }
 
     decision.verdict = Verdict::Accepted;
     decision.instance = existing.instance;
-    return decision;
+    return note(decision);
 }
 
 SlotRouter::Binding SlotRouter::binding(int slotId) const
@@ -235,4 +246,7 @@ void SlotRouter::clear()
     current_.clear();
     retired_.clear();
     bridgeOnline_.clear();
+    accepted_ = 0;
+    rejected_ = 0;
+    lastRejection_.clear();
 }

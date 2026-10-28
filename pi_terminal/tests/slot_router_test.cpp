@@ -278,6 +278,41 @@ static void clearAndNames()
                 == QStringLiteral("POSITION_UNKNOWN"), "verdict name unknown position");
 }
 
+// ---------------------------------------------------------------------------
+// 9. 判定计数（排查「刷卡没反应」用）
+// ---------------------------------------------------------------------------
+static void counters()
+{
+    SlotRouter router;
+    require(router.acceptedCount() == 0 && router.rejectedCount() == 0, "counters start at zero");
+    require(router.lastRejection().isEmpty(), "no rejection recorded initially");
+
+    require(router.bind(kBridgeA, 0, kDev1, kGen1, QStringLiteral("s"), 1).verdict
+                == SlotRouter::Verdict::Accepted, "bind accepted");
+    require(router.acceptedCount() == 1 && router.rejectedCount() == 0, "accept counted");
+
+    require(router.route(kBridgeA, 0, kDev1, kGen1).verdict == SlotRouter::Verdict::Accepted,
+            "route accepted");
+    require(router.acceptedCount() == 2, "route accept counted");
+
+    // 串槽事件被拒：计数 +1，并记录原因。
+    require(router.route(kBridgeA, 1, kDev2, kGen2).verdict == SlotRouter::Verdict::Unbound,
+            "route to unbound slot rejected");
+    require(router.rejectedCount() == 1, "rejection counted");
+    require(router.lastRejection() == QStringLiteral("UNBOUND"), "rejection reason recorded");
+
+    // 迟到的 detach 也要计数。
+    require(router.release(kBridgeA, 0, kGen3, 5).verdict == SlotRouter::Verdict::GenerationMismatch,
+            "wrong generation release rejected");
+    require(router.rejectedCount() == 2, "second rejection counted");
+    require(router.lastRejection() == QStringLiteral("GENERATION_MISMATCH"), "reason updated");
+
+    // clear() 归零。
+    router.clear();
+    require(router.acceptedCount() == 0 && router.rejectedCount() == 0, "clear resets counters");
+    require(router.lastRejection().isEmpty(), "clear resets reason");
+}
+
 int main()
 {
     basicBindRoute();
@@ -288,6 +323,7 @@ int main()
     bridgeOffline();
     retiredHistoryBound();
     clearAndNames();
+    counters();
     std::cout << "slot router tests passed (" << g_checks << " assertions)\n";
     return 0;
 }

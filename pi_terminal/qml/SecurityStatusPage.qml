@@ -229,6 +229,20 @@ Item {
                         color: page.mutedColor
                         font.pixelSize: 11
                     }
+
+                    // 判定计数：刷卡没反应时，先看是不是被当成迟到/串槽丢了。
+                    Text {
+                        id: statsText
+                        property var stats: securityStatus.slotStats()
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: stats.rejected > 0
+                              ? qsTr("槽位判定：接受 %1 次，拒绝 %2 次（最近原因 %3）")
+                                    .arg(stats.accepted).arg(stats.rejected).arg(stats.lastRejection)
+                              : qsTr("槽位判定：接受 %1 次，无拒绝").arg(stats.accepted)
+                        color: stats.rejected > 0 ? page.warnColor : page.mutedColor
+                        font.pixelSize: 12
+                    }
                 }
             }
 

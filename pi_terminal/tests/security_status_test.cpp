@@ -65,6 +65,19 @@ private slots:
         }
     }
 
+    // 2b. 槽位判定计数透传：初始为 0，页面能读到结构。
+    void slotStatsPassThrough()
+    {
+        QTemporaryDir dir;
+        ConnectionManager connection;
+        SecurityStatus status(&connection, dir.filePath("pbr_trust.json"),
+                              dir.filePath("host_identity.pem"));
+        const QVariantMap stats = status.slotStats();
+        QCOMPARE(stats.value("accepted").toULongLong(), 0ULL);
+        QCOMPARE(stats.value("rejected").toULongLong(), 0ULL);
+        QVERIFY(stats.value("lastRejection").toString().isEmpty());
+    }
+
     // 3. 信任库写入后，文件监听必须把它读进来（响应式模型）。
     void trustRecordsFollowFile()
     {

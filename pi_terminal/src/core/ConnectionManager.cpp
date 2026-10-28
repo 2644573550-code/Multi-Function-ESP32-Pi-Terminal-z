@@ -147,6 +147,14 @@ QVariantList ConnectionManager::slotStatus() const {
     return list;
 }
 
+QVariantMap ConnectionManager::slotStats() const {
+    return QVariantMap{
+        {"accepted", QVariant::fromValue(slotRouter_.acceptedCount())},
+        {"rejected", QVariant::fromValue(slotRouter_.rejectedCount())},
+        {"lastRejection", slotRouter_.lastRejection()},
+    };
+}
+
 QVariantList ConnectionManager::cards() const {
     QVariantList list;
     for (auto s : sessions_) {

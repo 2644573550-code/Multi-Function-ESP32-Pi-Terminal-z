@@ -67,6 +67,9 @@ public:
     // 槽位快照（只读）。0/1 两个槽各一条，未绑定时 bound=false。
     Q_INVOKABLE QVariantList slotSnapshot() const;
 
+    // 槽位判定计数（快照）。accepted / rejected / lastRejection。
+    Q_INVOKABLE QVariantMap slotStats() const;
+
     // 手动刷新（重新读盘 + 重算 UID 密钥就绪状态）。文件监听之外的兜底。
     Q_INVOKABLE void refresh();
 

@@ -182,6 +182,11 @@ bool SecurityStatus::uidKeyReady() const
     return uidKeyReady_;
 }
 
+QVariantMap SecurityStatus::slotStats() const
+{
+    return connection_ ? connection_->slotStats() : QVariantMap{};
+}
+
 QVariantList SecurityStatus::slotSnapshot() const
 {
     // 槽位状态在 ConnectionManager 里；本类不复制、不缓存，
