@@ -5,6 +5,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtWebEngine 2.0
 import Terminal.Native 1.0
+import "TimeMath.js" as TimeMath
 
 ApplicationWindow {
     id: win
@@ -424,7 +425,16 @@ ApplicationWindow {
     property var browserDownloads: []
     property var pendingBrowserAuth:null
     property var pendingBrowserPermission:null
-    property string clockText: Qt.formatTime(new Date(), "hh:mm")
+    // 任务栏/首页时钟跟随设置里的时间格式（24 小时 / 上午·下午），
+    // 每秒由 clockTick 触发重算；切换格式时绑定会立即重算。
+    property int clockTick: 0
+    property string clockText: {
+        clockTick
+        const now = new Date()
+        if (timeFormat !== "12") return Qt.formatTime(now, "hh:mm")
+        return (now.getHours() >= 12 ? I18n.t("下午") : I18n.t("上午")) + " " +
+               TimeMath.formatHm12({ hour: now.getHours(), minute: now.getMinutes() })
+    }
     property bool browserTestRunning: false
     property bool browserTestPassed: false
     property bool browserTouchLinkPassed:false
@@ -478,7 +488,7 @@ ApplicationWindow {
         ? browserRepeater.itemAt(browserTabs.currentIndex) : null
     property bool browserWheelEnabled: false
     readonly property string defaultBrowserUrl: "https://baidu.com"
-    Timer { interval: 1000; running: true; repeat: true; onTriggered: clockText = Qt.formatTime(new Date(), "hh:mm") }
+    Timer { interval: 1000; running: true; repeat: true; onTriggered: win.clockTick++ }
     function builtin(page) {
         return ({1:{entryId:"connections",title:I18n.t("连接管理"),iconName:"lan",accentColor:"#ad8cff",route:1,instance:"",ready:true},
                  2:{entryId:"browser",title:I18n.t("浏览器"),iconName:"language",accentColor:"#4fd4a4",route:2,instance:"",ready:true},
