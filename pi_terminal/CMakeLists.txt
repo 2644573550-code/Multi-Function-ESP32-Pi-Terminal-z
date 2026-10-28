@@ -85,7 +85,8 @@ add_library(terminal_core STATIC
     src/core/PackageReceiver.cpp src/core/PackageReceiver.h
     src/core/WorkerIpc.cpp src/core/WorkerIpc.h
     src/core/ModuleWorkerLauncher.cpp src/core/ModuleWorkerLauncher.h
-    src/core/ModulePageHost.cpp src/core/ModulePageHost.h)
+    src/core/ModulePageHost.cpp src/core/ModulePageHost.h
+    src/core/LaneGate.cpp src/core/LaneGate.h)
 target_include_directories(terminal_core PUBLIC src src/modules/api)
 target_link_libraries(terminal_core PUBLIC terminal_transports Qt6::Core Qt6::Network Qt6::StateMachine Qt6::Qml)
 target_compile_definitions(terminal_core PRIVATE PI_PACKAGE_TOOL="${CMAKE_INSTALL_PREFIX}/libexec/orange-pi-terminal/package_tool.py")
@@ -215,6 +216,7 @@ list(APPEND UI_QML_FILES qml/PictureViewer.qml qml/FileThumbnail.qml)
 list(APPEND UI_QML_FILES qml/QuickToggle.qml qml/EditorToolbar.qml)
 list(APPEND UI_QML_FILES qml/QuickPanelTile.qml)
 list(APPEND UI_QML_FILES qml/KeyboardKey.qml)
+list(APPEND UI_QML_FILES qml/PinPad.qml qml/UserPicker.qml qml/LoginPage.qml qml/LockScreen.qml)
 list(APPEND UI_QML_FILES qml/BlurCache.qml)
 list(APPEND UI_QML_FILES qml/CachedBlur.qml)
 list(APPEND UI_QML_FILES qml/StartupSplash.qml)
@@ -300,6 +302,32 @@ if(BUILD_TESTING)
     add_executable(user_database_test tests/user_database_test.cpp)
     target_link_libraries(user_database_test PRIVATE terminal_security Qt6::Test)
     add_test(NAME sqlcipher_user_isolation COMMAND user_database_test)
+    add_executable(login_qml_test tests/login_qml_test.cpp)
+    target_link_libraries(login_qml_test PRIVATE Qt6::Test Qt6::Quick Qt6::Qml Qt6::QuickControls2)
+    target_compile_definitions(login_qml_test PRIVATE
+        TERMINAL_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml")
+    # Theme/I18n 是 pragma Singleton，必须通过 qml module 注册，否则 I18n.t 是 undefined，
+    # 组件照样"实例化成功"但每个绑定都报错 —— 那种测试是假绿。
+    set(login_test_qml
+        qml/Theme.qml qml/I18n.qml qml/CarText.qml qml/CarButton.qml qml/CarField.qml
+        qml/MaterialIcon.qml qml/IconButton.qml qml/PinPad.qml qml/UserPicker.qml
+        qml/LoginPage.qml qml/LockScreen.qml)
+    set_source_files_properties(qml/Theme.qml qml/I18n.qml
+        PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+    foreach(file IN LISTS login_test_qml)
+        get_filename_component(alias "${file}" NAME)
+        set_source_files_properties("${file}" PROPERTIES QT_RESOURCE_ALIAS "${alias}")
+    endforeach()
+    # 独立 URI，避免与 terminal_ui 共用输出目录（Qt 不允许两个模块同目录）。
+    qt_add_qml_module(login_qml_test URI OrangePiTerminal.LoginTest VERSION 1.0
+        RESOURCE_PREFIX /qt/qml OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/LoginTestQml"
+        QML_FILES ${login_test_qml})
+    add_test(NAME login_lock_user_pages COMMAND login_qml_test)
+    set_tests_properties(login_lock_user_pages PROPERTIES LABELS "interface"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software" TIMEOUT 60)
+    add_executable(lane_gate_test tests/lane_gate_test.cpp)
+    target_link_libraries(lane_gate_test PRIVATE terminal_core Qt6::Test)
+    add_test(NAME business_lane_gate COMMAND lane_gate_test)
     add_executable(module_page_host_test tests/module_page_host_test.cpp)
     target_link_libraries(module_page_host_test PRIVATE terminal_core Qt6::Test Qt6::Qml Qt6::Quick)
     add_test(NAME module_page_engine_isolation COMMAND module_page_host_test)
