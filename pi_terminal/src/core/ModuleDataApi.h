@@ -51,7 +51,13 @@ public:
     // 返回 [{t, sum, low, high, count}]，用于画曲线。
     Q_INVOKABLE QVariantList historySeries(qint64 spanMs, qint64 stepMs) const;
 
-    // ---- 读数（血压等）----
+    // ---- 测量（血压等，多指标一次测量）----
+    // measurement 形如 {systolic, diastolic, pulse, unit, source, device_model}。
+    // 缺失指标不写 0；全部缺失则拒绝。
+    Q_INVOKABLE bool appendMeasurement(const QVariantMap &measurement);
+    Q_INVOKABLE QVariantList recentMeasurements(int limit = 50) const;
+
+    // ---- 单值读数（兼容旧接口）----
     Q_INVOKABLE bool appendReading(const QVariantMap &reading);
     Q_INVOKABLE QVariantList recentReadings(int limit = 50) const;
 

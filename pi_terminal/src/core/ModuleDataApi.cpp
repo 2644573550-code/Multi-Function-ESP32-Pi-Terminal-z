@@ -156,6 +156,61 @@ QVariantList ModuleDataApi::historySeries(qint64 spanMs, qint64 stepMs) const {
     return out;
 }
 
+bool ModuleDataApi::appendMeasurement(const QVariantMap &measurement) {
+    if (!checkReady()) return false;
+
+    security::UserDatabase::Measurement record;
+    record.receivedAtMs = QDateTime::currentMSecsSinceEpoch();
+    record.source = measurement.value(QStringLiteral("source"),
+                                      QStringLiteral("unknown")).toString();
+    record.deviceId = instance_;
+    record.deviceModel = measurement.value(QStringLiteral("device_model")).toString();
+    record.unit = measurement.value(QStringLiteral("unit"), QStringLiteral("mmHg")).toString();
+    record.valid = measurement.value(QStringLiteral("valid"), true).toBool();
+    record.invalidReason = measurement.value(QStringLiteral("invalid_reason")).toString();
+
+    // 逐指标判缺失：undefined / null / 非数字都视为未测，不补 0。
+    const auto take = [&measurement](const char *key, double *out) {
+        const QVariant v = measurement.value(QString::fromLatin1(key));
+        if (!v.isValid() || v.isNull()) return false;
+        bool ok = false;
+        const double d = v.toDouble(&ok);
+        if (!ok || !std::isfinite(d)) return false;
+        *out = d;
+        return true;
+    };
+    record.hasSystolic = take("systolic", &record.systolic);
+    record.hasDiastolic = take("diastolic", &record.diastolic);
+    record.hasPulse = take("pulse", &record.pulse);
+
+    if (!record.hasSystolic && !record.hasDiastolic && !record.hasPulse) return false;
+    if (!database_->appendMeasurement(record)) return false;
+    emit dataChanged();
+    return true;
+}
+
+QVariantList ModuleDataApi::recentMeasurements(int limit) const {
+    QVariantList out;
+    if (!checkReady()) return out;
+    for (const auto &m : database_->queryMeasurements(limit)) {
+        QVariantMap item;
+        item.insert(QStringLiteral("received_at"), m.receivedAtMs);
+        item.insert(QStringLiteral("measured_at"), m.measuredAtMs);
+        item.insert(QStringLiteral("source"), m.source);
+        item.insert(QStringLiteral("device_model"), m.deviceModel);
+        item.insert(QStringLiteral("unit"), m.unit);
+        // 缺失指标不放进 map：QML 用 undefined 判断"未检测"。
+        if (m.hasSystolic) item.insert(QStringLiteral("systolic"), m.systolic);
+        if (m.hasDiastolic) item.insert(QStringLiteral("diastolic"), m.diastolic);
+        if (m.hasPulse) item.insert(QStringLiteral("pulse"), m.pulse);
+        item.insert(QStringLiteral("valid"), m.valid);
+        if (!m.invalidReason.isEmpty())
+            item.insert(QStringLiteral("invalid_reason"), m.invalidReason);
+        out.append(item);
+    }
+    return out;
+}
+
 bool ModuleDataApi::appendReading(const QVariantMap &reading) {
     if (!checkReady()) return false;
     // 读数必须带数值与单位；缺失即拒绝，不补造。

@@ -70,6 +70,26 @@ public:
     QStringList moduleKeys(int moduleId, const QString &instance) const;
     bool clearModuleValues(int moduleId, const QString &instance);
 
+    // 一次测量（报告 §12.1）：同一次测量可能包含收缩压/舒张压/脉搏多个指标，
+    // 必须作为一条记录保存并共享来源、型号、时间与有效性，
+    // 否则无法区分"一次测了三个值"和"测了三次"。
+    struct Measurement {
+        qint64 receivedAtMs = 0;
+        qint64 measuredAtMs = 0;
+        QString source;          // device.auto / device.manual / user.entry
+        QString deviceId;
+        QString deviceModel;
+        QString unit;
+        // 每项独立可缺：缺失用 has* = false 表示，不写 0。
+        bool hasSystolic = false;   double systolic = 0;
+        bool hasDiastolic = false;  double diastolic = 0;
+        bool hasPulse = false;      double pulse = 0;
+        bool valid = true;
+        QString invalidReason;
+    };
+    bool appendMeasurement(const Measurement &measurement);
+    QVector<Measurement> queryMeasurements(int limit = 50) const;
+
     // 一条读数记录（报告 §12.1：保留型号、来源、单位、时间、有效性）。
     struct Reading {
         qint64 receivedAtMs = 0;

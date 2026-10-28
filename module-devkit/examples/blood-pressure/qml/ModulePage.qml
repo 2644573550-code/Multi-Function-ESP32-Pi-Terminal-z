@@ -13,7 +13,10 @@ Rectangle {
     property var hostTheme: ({})
     property bool english: false
 
-    property string entryValue: ""
+    // 一次测量三个指标（报告 §12.1）：分开录入但存成一条记录。
+    property string entrySys: ""
+    property string entryDia: ""
+    property string entryPulse: ""
     property string entryUnit: "mmHg"
     property string message: ""
     property var rows: []
@@ -26,7 +29,7 @@ Rectangle {
 
     function reload() {
         if (typeof data === "undefined" || !data) { rows = []; return }
-        rows = data.recentReadings(100)
+        rows = data.recentMeasurements(100)
     }
 
     function sourceLabel(source) {
@@ -40,21 +43,27 @@ Rectangle {
 
     function submit() {
         if (typeof data === "undefined" || !data) return
-        const text = entryValue.trim()
-        if (text.length === 0) { message = page.english ? "Enter a reading" : "请输入读数"; return }
-        const value = Number(text)
-        if (!isFinite(value) || value <= 0) {
-            message = page.english ? "Invalid reading" : "读数无效"
+        // 至少填一项才允许保存；空表单不造记录。
+        const sys = entrySys.trim(), dia = entryDia.trim(), pulse = entryPulse.trim()
+        if (sys.length === 0 && dia.length === 0 && pulse.length === 0) {
+            message = page.english ? "Enter at least one value" : "至少填写一项"
             return
         }
-        // 来源标记为手工录入：与设备上报分开，界面据此区分。
-        const ok = data.appendReading({
-            "value": value,
-            "unit": entryUnit,
-            "source": "user.entry"
-        })
+        // 只把填了的项交给宿主：缺失项保持 undefined，不补 0。
+        const payload = { "unit": entryUnit, "source": "user.entry", "valid": true }
+        if (sys.length > 0) payload.systolic = Number(sys)
+        if (dia.length > 0) payload.diastolic = Number(dia)
+        if (pulse.length > 0) payload.pulse = Number(pulse)
+        // 收缩压必须高于舒张压：不成立的组合由模块侧判无效，这里先拦一道。
+        if (payload.systolic !== undefined && payload.diastolic !== undefined
+                && payload.systolic <= payload.diastolic) {
+            message = page.english
+                      ? "Systolic must be above diastolic" : "收缩压必须高于舒张压"
+            return
+        }
+        const ok = data.appendMeasurement(payload)
         if (ok) {
-            entryValue = ""
+            entrySys = ""; entryDia = ""; entryPulse = ""
             message = page.english ? "Saved" : "已保存"
             reload()
         } else {
@@ -96,13 +105,31 @@ Rectangle {
             Layout.fillWidth: true
             spacing: page.gap / 2
             TextField {
-                id: entryField
+                id: sysField
                 Layout.fillWidth: true
                 Layout.preferredHeight: page.hit
-                placeholderText: page.english ? "Reading" : "收缩压 / 舒张压"
-                text: page.entryValue
+                placeholderText: page.english ? "Systolic" : "收缩压"
+                text: page.entrySys
                 inputMethodHints: Qt.ImhDigitsOnly
-                onTextChanged: page.entryValue = text
+                onTextChanged: page.entrySys = text
+            }
+            TextField {
+                id: diaField
+                Layout.fillWidth: true
+                Layout.preferredHeight: page.hit
+                placeholderText: page.english ? "Diastolic" : "舒张压"
+                text: page.entryDia
+                inputMethodHints: Qt.ImhDigitsOnly
+                onTextChanged: page.entryDia = text
+            }
+            TextField {
+                id: pulseField
+                Layout.fillWidth: true
+                Layout.preferredHeight: page.hit
+                placeholderText: page.english ? "Pulse" : "脉搏"
+                text: page.entryPulse
+                inputMethodHints: Qt.ImhDigitsOnly
+                onTextChanged: page.entryPulse = text
             }
             Button {
                 Layout.preferredHeight: page.hit
@@ -112,7 +139,8 @@ Rectangle {
             Button {
                 Layout.preferredHeight: page.hit
                 text: page.english ? "Save" : "保存"
-                enabled: page.entryValue.length > 0
+                enabled: page.entrySys.length > 0 || page.entryDia.length > 0
+                         || page.entryPulse.length > 0
                 onClicked: page.submit()
             }
         }
@@ -151,10 +179,12 @@ Rectangle {
                     anchors.margins: page.gap / 2
                     Text {
                         Layout.fillWidth: true
-                        // 缺失值显示"未检测"，不显示 0。
-                        text: modelData.has_value
-                              ? String(modelData.value) + " " + (modelData.unit || "")
-                              : (page.english ? "Not detected" : "未检测")
+                        // 每个指标独立判断：缺失显示"—"，不写 0。
+                        readonly property string unit: modelData.unit || ""
+                        text: (modelData.systolic !== undefined ? String(modelData.systolic) : "—")
+                              + "/" + (modelData.diastolic !== undefined ? String(modelData.diastolic) : "—")
+                              + (modelData.pulse !== undefined ? "  ♥" + modelData.pulse : "")
+                              + (unit.length > 0 ? "  " + unit : "")
                         color: modelData.valid ? page.foreground : "#ffdaa0"
                         font.pixelSize: 14 * page.hostUiScale
                     }

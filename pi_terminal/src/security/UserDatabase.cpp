@@ -63,6 +63,23 @@ CREATE TABLE IF NOT EXISTS readings(
     invalid_reason TEXT
 );
 CREATE INDEX IF NOT EXISTS readings_by_time ON readings(received_at_ms);
+-- 一次测量（报告 §12.1）：收缩压/舒张压/脉搏作为一条记录，共享来源与时间。
+-- 缺失指标一律 NULL，不用 0 伪造。
+CREATE TABLE IF NOT EXISTS measurements(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at_ms INTEGER NOT NULL,
+    measured_at_ms INTEGER,
+    source TEXT NOT NULL DEFAULT 'unknown',
+    device_id TEXT NOT NULL,
+    device_model TEXT,
+    unit TEXT,
+    systolic REAL,
+    diastolic REAL,
+    pulse REAL,
+    valid INTEGER NOT NULL DEFAULT 1,
+    invalid_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS measurements_by_time ON measurements(received_at_ms);
 -- 模块页的键值存储（报告 §6.1）：QML 拿不到 DB，只能通过 ModuleStore 门面
 -- 读写自己这一格。作用域 = module_id + instance，随用户库加密。
 CREATE TABLE IF NOT EXISTS module_kv(
@@ -337,6 +354,78 @@ bool UserDatabase::appendDeviceReading(double value, const QString &unit,
     const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
     store_->finalize(stmt);
     return ok;
+}
+
+bool UserDatabase::appendMeasurement(const Measurement &measurement) {
+    if (!isOpen()) return false;
+    // 至少一个指标才值得存；空测量一律拒绝，不造记录。
+    if (!measurement.hasSystolic && !measurement.hasDiastolic && !measurement.hasPulse)
+        return false;
+
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "INSERT INTO measurements(received_at_ms, measured_at_ms, source, device_id,"
+            " device_model, unit, systolic, diastolic, pulse, valid, invalid_reason)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?)"), &stmt))
+        return false;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    store_->bindInt(stmt, 1, measurement.receivedAtMs > 0 ? measurement.receivedAtMs : now);
+    store_->bindInt(stmt, 2, measurement.measuredAtMs > 0 ? measurement.measuredAtMs : now);
+    store_->bindText(stmt, 3, measurement.source.isEmpty()
+                                 ? QStringLiteral("unknown") : measurement.source);
+    store_->bindText(stmt, 4, measurement.deviceId.isEmpty()
+                                 ? QStringLiteral("device") : measurement.deviceId);
+    store_->bindText(stmt, 5, measurement.deviceModel);
+    store_->bindText(stmt, 6, measurement.unit);
+    // 缺失指标写 NULL，不能写成 0（0 会被误读为有效读数）。
+    if (measurement.hasSystolic) store_->bindDouble(stmt, 7, measurement.systolic);
+    else store_->bindNull(stmt, 7);
+    if (measurement.hasDiastolic) store_->bindDouble(stmt, 8, measurement.diastolic);
+    else store_->bindNull(stmt, 8);
+    if (measurement.hasPulse) store_->bindDouble(stmt, 9, measurement.pulse);
+    else store_->bindNull(stmt, 9);
+    store_->bindInt(stmt, 10, measurement.valid ? 1 : 0);
+    if (measurement.invalidReason.isEmpty()) store_->bindNull(stmt, 11);
+    else store_->bindText(stmt, 11, measurement.invalidReason);
+
+    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
+    store_->finalize(stmt);
+    return ok;
+}
+
+QVector<UserDatabase::Measurement> UserDatabase::queryMeasurements(int limit) const {
+    QVector<Measurement> out;
+    if (!isOpen() || limit <= 0) return out;
+    const int bounded = limit > 200 ? 200 : limit;
+
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "SELECT received_at_ms, measured_at_ms, source, device_id, device_model, unit,"
+            " systolic, diastolic, pulse, valid, invalid_reason FROM measurements"
+            " ORDER BY received_at_ms DESC LIMIT ?"), &stmt))
+        return out;
+    store_->bindInt(stmt, 1, bounded);
+    while (store_->step(stmt)) {
+        Measurement m;
+        m.receivedAtMs = store_->columnInt(stmt, 0);
+        m.measuredAtMs = store_->columnInt(stmt, 1);
+        m.source = store_->columnText(stmt, 2);
+        m.deviceId = store_->columnText(stmt, 3);
+        m.deviceModel = store_->columnText(stmt, 4);
+        m.unit = store_->columnText(stmt, 5);
+        // 每列单独判 NULL：缺失与"等于 0"是两件事。
+        m.hasSystolic = !store_->columnIsNull(stmt, 6);
+        if (m.hasSystolic) m.systolic = store_->columnDouble(stmt, 6);
+        m.hasDiastolic = !store_->columnIsNull(stmt, 7);
+        if (m.hasDiastolic) m.diastolic = store_->columnDouble(stmt, 7);
+        m.hasPulse = !store_->columnIsNull(stmt, 8);
+        if (m.hasPulse) m.pulse = store_->columnDouble(stmt, 8);
+        m.valid = store_->columnInt(stmt, 9) != 0;
+        m.invalidReason = store_->columnText(stmt, 10);
+        out.append(m);
+    }
+    store_->finalize(stmt);
+    return out;
 }
 
 QVector<UserDatabase::Reading> UserDatabase::queryReadings(int limit) const {

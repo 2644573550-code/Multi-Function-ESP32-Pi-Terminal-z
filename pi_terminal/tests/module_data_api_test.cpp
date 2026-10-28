@@ -207,6 +207,59 @@ private slots:
         QVERIFY2(sources.contains(QStringLiteral("device.auto")), "device source must be preserved");
     }
 
+
+    // 一次测量包含三个指标：必须存成一条记录，缺失项不补 0。
+    void measurementKeepsMultipleMetrics()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        UserDatabase db(dir.path());
+        QVERIFY(db.openForSession(QStringLiteral("usera"), keyOf('a')));
+        ModuleDataApi api(80, QStringLiteral("inst-1"));
+        api.setDatabase(&db);
+
+        // 三个指标齐全。
+        QVERIFY(api.appendMeasurement(QVariantMap{
+            {QStringLiteral("systolic"), 122},
+            {QStringLiteral("diastolic"), 78},
+            {QStringLiteral("pulse"), 66},
+            {QStringLiteral("unit"), QStringLiteral("mmHg")},
+            {QStringLiteral("source"), QStringLiteral("user.entry")}}));
+
+        // 只填收缩压：另两项必须缺失，不能变 0。
+        QVERIFY(api.appendMeasurement(QVariantMap{
+            {QStringLiteral("systolic"), 118},
+            {QStringLiteral("source"), QStringLiteral("device.auto")}}));
+
+        const QVariantList list = api.recentMeasurements(10);
+        QCOMPARE(list.size(), 2);
+        // 最新一条在前：只有收缩压。
+        const QVariantMap newest = list.first().toMap();
+        QCOMPARE(newest.value(QStringLiteral("systolic")).toInt(), 118);
+        QVERIFY2(!newest.contains(QStringLiteral("diastolic")), "missing metric must stay absent");
+        QVERIFY2(!newest.contains(QStringLiteral("pulse")), "missing metric must stay absent");
+        // 上一条：三个指标齐全。
+        const QVariantMap older = list.at(1).toMap();
+        QCOMPARE(older.value(QStringLiteral("systolic")).toInt(), 122);
+        QCOMPARE(older.value(QStringLiteral("diastolic")).toInt(), 78);
+        QCOMPARE(older.value(QStringLiteral("pulse")).toInt(), 66);
+    }
+
+    // 一项都没填必须拒绝，不造空记录。
+    void emptyMeasurementIsRejected()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        UserDatabase db(dir.path());
+        QVERIFY(db.openForSession(QStringLiteral("usera"), keyOf('a')));
+        ModuleDataApi api(80, QStringLiteral("inst-1"));
+        api.setDatabase(&db);
+
+        QVERIFY(!api.appendMeasurement(QVariantMap{{QStringLiteral("source"),
+                                                    QStringLiteral("user.entry")}}));
+        QVERIFY(api.recentMeasurements(10).isEmpty());
+    }
+
 };
 
 QTEST_GUILESS_MAIN(ModuleDataApiTest)

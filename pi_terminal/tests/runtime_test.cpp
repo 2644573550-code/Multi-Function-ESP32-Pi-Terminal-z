@@ -456,6 +456,45 @@ private slots:
         // The GUI owns URL normalization; the native file API must remain bounded.
         QVERIFY(tools.files("").size() >= 0);
     }
+
+    // 技术说明 §6 表 1：四种组合都合法（业务 lane 与包通道独立）。
+    // applyModuleConfig 与 fromProfile 必须给出同一判定，否则会分叉。
+    void transportPolicyTableIsConsistent()
+    {
+        struct Case { const char *mode; const char *package; bool valid; };
+        const Case cases[] = {
+            {"fixed_ble", "data", true},
+            {"fixed_ble", "hotspot_lan", true},
+            {"fixed_hotspot_lan", "data", true},
+            // 四项组合全部合法：业务 lane 与包通道是两个独立决策。
+            {"fixed_hotspot_lan", "hotspot_lan", true},
+        };
+        for (const auto &c : cases) {
+            const QJsonObject moduleConfig{
+                {"schema", "module-transport-v1"},
+                {"transport_mode", QLatin1String(c.mode)},
+                {"package_transport", QLatin1String(c.package)}};
+
+            // 路径一：模块配置合并进 profile。
+            QJsonObject merged;
+            const bool viaModule = TransportPolicy::applyModuleConfig(&merged, moduleConfig);
+
+            // 路径二：直接从 profile 解析。
+            const bool viaProfile = TransportPolicy::fromProfile(moduleConfig).valid();
+
+            QVERIFY2(viaModule == c.valid,
+                     qPrintable(QStringLiteral("applyModuleConfig(%1,%2) = %3")
+                                    .arg(QLatin1String(c.mode), QLatin1String(c.package))
+                                    .arg(viaModule)));
+            QVERIFY2(viaProfile == c.valid,
+                     qPrintable(QStringLiteral("fromProfile(%1,%2) = %3")
+                                    .arg(QLatin1String(c.mode), QLatin1String(c.package))
+                                    .arg(viaProfile)));
+            // 两条路径结论必须一致。
+            QCOMPARE(viaModule, viaProfile);
+        }
+    }
+
 };
 QTEST_GUILESS_MAIN(RuntimeTests)
 #include "runtime_test.moc"
