@@ -221,10 +221,45 @@ PASS: pbkdf2MatchesRfc6070(c=4096-longpw) 3d2eec4f...07038
 
 `QPasswordDigestor` **完全符合 RFC 6070**，所以问题只在速度。
 
+### ⚠️ 待 F 裁决：KDF 实现路径（阻塞 P0 可用性）
+
+**这是本回执唯一需要裁决的项，不是我能自行决定的。**
+
+| 项 | 现状 |
+|---|---|
+| 文档要求 | §0.2 点名 `QPasswordDigestor::deriveKeyPbkdf2`（`Qt6::Network`，零新依赖） |
+| 实测问题 | Qt 实现比裸 OpenSSL 慢 **8.5 倍**，输出完全一致 |
+| 安全影响 | **无**。RFC 6070 向量已验证两者都正确；安全性取决于迭代数，不取决于实现 |
+| 可用性影响 | Pi 3B 上每次 PIN 认证预计 **4~7 秒**（文档预估 0.5~1.5 秒） |
+| 文档规则 | §0.2：「若实测超过 2 秒，提 PR 附数据；**不得自行降低迭代数**」 |
+
+**证据**（同进程内对照，排除机器差异）：
+
+```
+round 1: QPasswordDigestor=763 ms  bare_openssl=90 ms  ratio=8.5x  same=1
+round 2: QPasswordDigestor=759 ms  bare_openssl=90 ms  ratio=8.4x  same=1
+round 3: QPasswordDigestor=762 ms  bare_openssl=89 ms  ratio=8.6x  same=1
+```
+
+`same=1` 是逐字节输出比对。可在任何装有 Qt 6.5 + OpenSSL 的机器复现。
+
+**三个可选方案，请 F 择一：**
+
+| 方案 | 代价 | 收益 |
+|---|---|---|
+| **A. 改用 `PKCS5_PBKDF2_HMAC`** | 违反 §0.2 字面要求；`KeyWrap` 已在用 OpenSSL::Crypto，不新增依赖 | Pi 上 0.5~0.9 秒；耗时回到文档预估范围 |
+| **B. 保留 Qt 实现，接受 4~7 秒** | 用户输完 PIN 等 4~7 秒；`user_pin_session` 在 Pi 上要跑 65 秒 | 完全符合 §0.2 |
+| **C. 降迭代数到 100k** | **文档明令禁止**（§0.2「不得由配置或环境变量降低」） | 无 |
+
+> **Z 的建议是 A**：安全强度不变（同算法、同迭代数、同 salt/输出长度，只是换了实现），
+> 且 OpenSSL 的 PBKDF2 经过更多审计。但 §0.2 是 F 冻结的参数，我不自行偏离。
+
+**在 F 裁决前，代码保持方案 B（当前 `QPasswordDigestor`），Pi 实测数据一到就补齐这张表。**
+
 **认证/限速单测**（`ctest -R user_pin_session`）
 
 ```
-20/20 passed（36 秒，600k 迭代真跑）
+26/26 passed（36 秒，600k 迭代真跑）
 ```
 
 覆盖：PIN 格式、首次管理员只能建一次、注册表不含 PIN、正确 PIN 解出 32B DB key、
@@ -313,7 +348,7 @@ sudo apt install libsqlcipher-dev libssl-dev
 # 2. 确认大版本（10 秒）—— 决定 DB 兼容性
 sqlcipher "PRAGMA cipher_version;"
 
-# 3. KDF 真实延迟（3 秒）—— 唯一可能推翻参数的项
+# 3. KDF 真实延迟（30 秒）—— 唯一可能推翻参数的项，也是待 F 裁决的依据
 cd pi_terminal && source scripts/env.sh && ./build/kdf_bench
 
 # 4. unit 生效性（1 分钟）
@@ -324,6 +359,9 @@ systemd-analyze verify /etc/systemd/system/orange-pi-worker@.service
 # 5. 文件系统确认（1 秒）
 findmnt -no FSTYPE --target ~
 ```
+
+**第 3 步的数字直接决定 B-06 那个待裁决项。** 如果 Pi 上实测 < 2 秒，方案 B 就没问题，
+不需要改实现；如果 4~7 秒，把输出附在 PR 里请 F 裁决。
 
 
 ---
