@@ -33,7 +33,11 @@ target_link_libraries(terminal_protocol PUBLIC Qt6::Core)
 target_compile_options(terminal_protocol PRIVATE -Wall -Wextra -Wpedantic)
 
 add_library(terminal_security STATIC
-    src/security/TrustStore.cpp src/security/TrustStore.h)
+    src/security/TrustStore.cpp src/security/TrustStore.h
+    src/security/uid_index_key.h src/security/uid_index_key_default.cpp
+    # UID 索引实现依赖 uidIndexKey()，因此放在安全层而不是协议层，
+    # 避免 protocol → security 的反向依赖。
+    src/protocol/uid_index.cpp src/protocol/uid_index.h)
 target_include_directories(terminal_security PUBLIC src)
 target_link_libraries(terminal_security PUBLIC Qt6::Core)
 target_compile_options(terminal_security PRIVATE -Wall -Wextra -Wpedantic)
@@ -262,6 +266,17 @@ if(BUILD_TESTING)
     add_executable(trust_store_test tests/trust_store_test.cpp)
     target_link_libraries(trust_store_test PRIVATE terminal_security)
     add_test(NAME pbr_trust_store COMMAND trust_store_test)
+    # UID 索引：KAT 用测试密钥提供者，独立于产品的默认失败关闭实现。
+    add_executable(uid_index_test tests/uid_index_test.cpp
+        src/protocol/uid_index.cpp tests/support/uid_index_key_fixed.cpp)
+    target_include_directories(uid_index_test PRIVATE src)
+    target_link_libraries(uid_index_test PRIVATE Qt6::Core)
+    add_test(NAME pbr_uid_index COMMAND uid_index_test)
+    add_executable(uid_index_default_key_test tests/uid_index_default_key_test.cpp
+        src/protocol/uid_index.cpp src/security/uid_index_key_default.cpp)
+    target_include_directories(uid_index_default_key_test PRIVATE src)
+    target_link_libraries(uid_index_default_key_test PRIVATE Qt6::Core)
+    add_test(NAME pbr_uid_index_fail_closed COMMAND uid_index_default_key_test)
     add_executable(session_test tests/session_test.cpp)
     add_dependencies(session_test example_module)
     target_link_libraries(session_test PRIVATE terminal_core Qt6::Test)
