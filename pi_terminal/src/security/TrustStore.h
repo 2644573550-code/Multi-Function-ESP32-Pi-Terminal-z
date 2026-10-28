@@ -62,6 +62,11 @@ public:
     QVector<Record> all() const;
     bool hasActiveIdentity() const;
 
+    // 内容是否可用：文件不存在或空库算可用；解析/字段校验失败为 false。
+    // 界面接点用它区分「还没有配对过的桥板」与「信任库已损坏」——
+    // 后者必须报警，绝不能显示成前者。
+    bool healthy() const;
+
     // 登记一条桥板身份。已存在同一公钥的有效记录时**拒绝覆盖**
     // （换板须先 revokeIdentity，对应 §6.7「不覆盖」的裁决）。
     bool enrollIdentity(const QString &bridgeId, const QByteArray &publicKey, QString *error = nullptr);

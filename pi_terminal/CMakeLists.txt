@@ -32,11 +32,44 @@ target_include_directories(terminal_protocol PUBLIC src)
 target_link_libraries(terminal_protocol PUBLIC Qt6::Core)
 target_compile_options(terminal_protocol PRIVATE -Wall -Wextra -Wpedantic)
 
-add_library(terminal_security STATIC
-    src/security/TrustStore.cpp src/security/TrustStore.h)
+# 物理槽位路由：纯 Qt Core，不依赖网络/蓝牙，便于单测。
+# terminal_core 依赖它，但它不反向依赖 terminal_core。
+add_library(terminal_routing STATIC
+    src/core/SlotRouter.cpp src/core/SlotRouter.h)
+target_include_directories(terminal_routing PUBLIC src)
+target_link_libraries(terminal_routing PUBLIC Qt6::Core)
+target_compile_options(terminal_routing PRIVATE -Wall -Wextra -Wpedantic)
+
+set(TERMINAL_SECURITY_SOURCES
+    src/security/TrustStore.cpp src/security/TrustStore.h
+    src/security/uid_index_key.h src/security/uid_index_key_default.cpp
+    # UID 索引实现依赖 uidIndexKey()，因此放在安全层而不是协议层，
+    # 避免 protocol → security 的反向依赖。
+    src/protocol/uid_index.cpp src/protocol/uid_index.h)
+
+# 只有 HostIdentity（ECDSA P-256）需要 mbedtls。缺失时**跳过该文件**，
+# 其余安全组件照常构建——否则会把一个可选依赖变成所有人的构建前置。
+# 无头文件时可用 -DMBEDTLS_ROOT=/path/to/mbedtls 指定。
+set(MBEDTLS_ROOT "" CACHE PATH "mbedtls install prefix (contains include/ and lib/)")
+find_path(MBEDTLS_INCLUDE_DIR mbedtls/ecdsa.h HINTS "${MBEDTLS_ROOT}/include")
+find_library(MBEDTLS_CRYPTO_LIBRARY NAMES mbedcrypto HINTS "${MBEDTLS_ROOT}/lib")
+if(MBEDTLS_INCLUDE_DIR AND MBEDTLS_CRYPTO_LIBRARY)
+    message(STATUS "pbr: mbedtls found at ${MBEDTLS_INCLUDE_DIR} -> HostIdentity enabled (T-03b)")
+    list(APPEND TERMINAL_SECURITY_SOURCES src/security/HostIdentity.cpp src/security/HostIdentity.h)
+    set(TERMINAL_SECURITY_HAVE_MBEDTLS ON)
+else()
+    message(STATUS "pbr: mbedtls not found -> HostIdentity (T-03b) skipped; pass -DMBEDTLS_ROOT=... to enable")
+    set(TERMINAL_SECURITY_HAVE_MBEDTLS OFF)
+endif()
+
+add_library(terminal_security STATIC ${TERMINAL_SECURITY_SOURCES})
 target_include_directories(terminal_security PUBLIC src)
 target_link_libraries(terminal_security PUBLIC Qt6::Core)
 target_compile_options(terminal_security PRIVATE -Wall -Wextra -Wpedantic)
+if(TERMINAL_SECURITY_HAVE_MBEDTLS)
+    target_include_directories(terminal_security PRIVATE ${MBEDTLS_INCLUDE_DIR})
+    target_link_libraries(terminal_security PUBLIC ${MBEDTLS_CRYPTO_LIBRARY})
+endif()
 
 add_library(terminal_transports STATIC
     src/transport/TransportBase.h
@@ -55,11 +88,25 @@ add_library(terminal_core STATIC
     src/core/ModuleCardModel.cpp src/core/ModuleCardModel.h
     src/core/PageProvider.cpp src/core/PageProvider.h
     src/core/SessionStateMachine.cpp src/core/SessionStateMachine.h
-    src/core/PackageReceiver.cpp src/core/PackageReceiver.h)
+    src/core/PackageReceiver.cpp src/core/PackageReceiver.h
+    src/core/SecurityStatus.cpp src/core/SecurityStatus.h)
 target_include_directories(terminal_core PUBLIC src src/modules/api)
-target_link_libraries(terminal_core PUBLIC terminal_transports terminal_security Qt6::Core Qt6::Network Qt6::StateMachine)
+target_link_libraries(terminal_core PUBLIC terminal_transports terminal_security terminal_routing Qt6::Core Qt6::Network Qt6::StateMachine)
 target_compile_definitions(terminal_core PRIVATE PI_PACKAGE_TOOL="${CMAKE_INSTALL_PREFIX}/libexec/orange-pi-terminal/package_tool.py")
 target_compile_options(terminal_core PRIVATE -Wall -Wextra -Wpedantic)
+# 界面接点需要在没有 mbedtls 的构建里也能编译：身份那一块按此宏降级为
+# "unavailable"，而不是让整个 terminal_core 依赖 mbedtls。
+if(TERMINAL_SECURITY_HAVE_MBEDTLS)
+    target_compile_definitions(terminal_core PRIVATE TERMINAL_HAVE_MBEDTLS=1)
+endif()
+# 安全状态页的独立预览程序（开发工具，不随产品安装）。
+# 只加载 qml/SecurityStatusPage.qml，不碰 Main.qml，因此与 Z 的 T-09 零重叠；
+# 也不链接 terminal_ui，所以不依赖 VLC SDK。
+add_executable(security_preview tools/security_preview/main.cpp)
+target_link_libraries(security_preview PRIVATE terminal_core Qt6::Quick)
+target_compile_definitions(security_preview PRIVATE
+    PREVIEW_PAGE="${CMAKE_CURRENT_SOURCE_DIR}/qml/SecurityStatusPage.qml")
+
 add_library(terminal_music SHARED
     src/ui/MusicPlayback.cpp src/ui/MusicPlayback.h
     src/ui/MusicService.cpp src/ui/MusicService.h)
@@ -195,6 +242,7 @@ set_source_files_properties(qml/TimeMath.js PROPERTIES QT_RESOURCE_ALIAS TimeMat
 list(APPEND UI_QML_FILES qml/DesktopPet.qml)
 list(APPEND UI_QML_FILES qml/PetManager.qml)
 list(APPEND UI_QML_FILES qml/TvPlayer.qml)
+list(APPEND UI_QML_FILES qml/SecurityStatusPage.qml)
 foreach(qml_file IN LISTS UI_QML_FILES)
     get_filename_component(qml_name "${qml_file}" NAME)
     set_source_files_properties("${qml_file}" PROPERTIES QT_RESOURCE_ALIAS "${qml_name}")
@@ -259,9 +307,36 @@ if(BUILD_TESTING)
     add_executable(protocol_test tests/protocol_test.cpp)
     target_link_libraries(protocol_test PRIVATE terminal_protocol)
     add_test(NAME pibridge_protocol COMMAND protocol_test)
+    add_executable(slot_router_test tests/slot_router_test.cpp)
+    target_link_libraries(slot_router_test PRIVATE terminal_routing)
+    add_test(NAME pbr_slot_router COMMAND slot_router_test)
+    add_executable(security_status_test tests/security_status_test.cpp)
+    target_link_libraries(security_status_test PRIVATE terminal_core Qt6::Test)
+    # terminal_core 把该宏设为 PRIVATE，测试要按同一条件编译身份相关用例，
+    # 否则会出现"库里有身份、测试却跳过"的假阴性。
+    if(TERMINAL_SECURITY_HAVE_MBEDTLS)
+        target_compile_definitions(security_status_test PRIVATE TERMINAL_HAVE_MBEDTLS=1)
+    endif()
+    add_test(NAME pbr_security_status COMMAND security_status_test)
     add_executable(trust_store_test tests/trust_store_test.cpp)
     target_link_libraries(trust_store_test PRIVATE terminal_security)
     add_test(NAME pbr_trust_store COMMAND trust_store_test)
+    # UID 索引：KAT 用测试密钥提供者，独立于产品的默认失败关闭实现。
+    add_executable(uid_index_test tests/uid_index_test.cpp
+        src/protocol/uid_index.cpp tests/support/uid_index_key_fixed.cpp)
+    target_include_directories(uid_index_test PRIVATE src)
+    target_link_libraries(uid_index_test PRIVATE Qt6::Core)
+    add_test(NAME pbr_uid_index COMMAND uid_index_test)
+    add_executable(uid_index_default_key_test tests/uid_index_default_key_test.cpp
+        src/protocol/uid_index.cpp src/security/uid_index_key_default.cpp)
+    target_include_directories(uid_index_default_key_test PRIVATE src)
+    target_link_libraries(uid_index_default_key_test PRIVATE Qt6::Core)
+    add_test(NAME pbr_uid_index_fail_closed COMMAND uid_index_default_key_test)
+    if(TERMINAL_SECURITY_HAVE_MBEDTLS)
+        add_executable(host_identity_test tests/host_identity_test.cpp)
+        target_link_libraries(host_identity_test PRIVATE terminal_security)
+        add_test(NAME pbr_host_identity COMMAND host_identity_test)
+    endif()
     add_executable(session_test tests/session_test.cpp)
     add_dependencies(session_test example_module)
     target_link_libraries(session_test PRIVATE terminal_core Qt6::Test)

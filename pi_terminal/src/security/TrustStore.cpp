@@ -43,6 +43,14 @@ bool TrustStore::exists() const
     return QFile::exists(path_);
 }
 
+bool TrustStore::healthy() const
+{
+    // ensureLoaded 会把解析/校验失败记到 corrupted_，这里只做一次读取，
+    // 不因为"文件不存在"就报不健康（新机器本来就没有这个文件）。
+    ensureLoaded(nullptr);
+    return !corrupted_;
+}
+
 bool TrustStore::isValidPublicKey(const QByteArray &publicKey)
 {
     return publicKey.size() == kPublicKeyBytes && quint8(publicKey.at(0)) == 0x04;

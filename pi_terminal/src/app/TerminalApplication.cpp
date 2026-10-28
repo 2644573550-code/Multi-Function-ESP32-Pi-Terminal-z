@@ -44,6 +44,7 @@ int TerminalApplication::initialize(const QCommandLineParser &options) {
         connection_.start(device);
 
     engine_.rootContext()->setContextProperty("connectionManager", &connection_);
+    engine_.rootContext()->setContextProperty("securityStatus", &securityStatus_);
     engine_.rootContext()->setContextProperty("systemTools", &systemTools_);
     engine_.rootContext()->setContextProperty("musicService", &musicService_);
     engine_.rootContext()->setContextProperty("viperBrowser", &browserController_);

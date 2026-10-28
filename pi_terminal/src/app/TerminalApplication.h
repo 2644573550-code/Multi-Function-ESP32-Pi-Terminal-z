@@ -3,6 +3,7 @@
 #include <QQmlApplicationEngine>
 
 #include "core/ConnectionManager.h"
+#include "core/SecurityStatus.h"
 #include "ui/DesktopShell.h"
 #include "ui/SystemTools.h"
 #include "ui/MusicService.h"
@@ -24,6 +25,7 @@ private:
     // (which release hotspot leases), then SystemTools and its helper processes.
     SystemTools systemTools_;
     ConnectionManager connection_;
+    SecurityStatus securityStatus_{&connection_};
     DesktopShell desktopShell_;
     MusicService musicService_;
     ViperBrowserController browserController_;

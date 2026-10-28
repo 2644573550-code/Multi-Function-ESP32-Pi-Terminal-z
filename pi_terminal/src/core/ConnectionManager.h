@@ -11,6 +11,7 @@
 #include "ModuleCardModel.h"
 #include "PageProvider.h"
 #include "SessionStateMachine.h"
+#include "SlotRouter.h"
 #include "PackageReceiver.h"
 #include "HostEventDetector.h"
 #include "BridgeConnectionMonitor.h"
@@ -35,6 +36,12 @@ public:
     bool bridgeConnected() const { return bridgeMonitor_.connected(); }
     bool bridgeMonitoring() const { return bridgeMonitor_.enabled(); }
     QVariantList cards() const;
+    // 物理槽位快照（T-05 界面接点）。只读：槽位是"可空的位置属性"，
+    // 业务身份仍由 cards() 表达。未绑定的槽也返回一条，bound=false。
+    Q_INVOKABLE QVariantList slotStatus() const;
+    // 槽位判定计数：accepted / rejected / lastRejection。
+    // 用于回答「刷卡没反应是不是被当成迟到事件丢了」。
+    Q_INVOKABLE QVariantMap slotStats() const;
     QString status() const { return status_; }
     ModuleCardModel *cardModel() { return &cards_; }
     PageProvider *pageProvider() { return &pages_; }
@@ -91,6 +98,9 @@ private:
     ModuleCardModel cards_;
     PageProvider pages_;
     PogoControlTransport pogo_;
+    // 物理槽位路由（T-05）。仅在事件带齐 bridge_id/slot_id/binding_generation/
+    // device_id 时启用；旧格式事件完全走原路径，行为不变。
+    SlotRouter slotRouter_;
     BridgeConnectionMonitor bridgeMonitor_;
     HostEventDetector hostEvents_;
     QTimer tick_;

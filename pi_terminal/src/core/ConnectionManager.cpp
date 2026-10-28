@@ -11,6 +11,35 @@
 #include <QDir>
 
 static qint64 now() { return QDateTime::currentMSecsSinceEpoch(); }
+
+namespace {
+// 位置事件的可路由形态（pbr-secure-v1 §4.3）。
+// 四项缺一不可：旧版桥板不发这些字段，缺失时保持既有行为、不路由，
+// 避免把兼容性做成回归。
+struct SlotPosition
+{
+    QString bridgeId;
+    QString deviceId;
+    QString generation;
+    int slotId = -1;
+    bool valid() const
+    {
+        return slotId >= 0 && !bridgeId.isEmpty() && !generation.isEmpty() && !deviceId.isEmpty();
+    }
+};
+
+SlotPosition slotPositionOf(const QJsonObject &event)
+{
+    SlotPosition position;
+    const QJsonValue slot = event.value(QStringLiteral("slot_id"));
+    if (slot.isDouble()) position.slotId = slot.toInt(-1);
+    position.bridgeId = event.value(QStringLiteral("bridge_id")).toString();
+    position.deviceId = event.value(QStringLiteral("device_id")).toString();
+    position.generation = event.value(QStringLiteral("binding_generation")).toString();
+    return position;
+}
+} // namespace
+
 ConnectionManager::ConnectionManager(QObject *parent) : QObject(parent), modules_(this), pogo_(this) {
     connect(this, &ConnectionManager::cardsChanged, this, [this] { cards_.synchronize(cards()); });
     connect(&pogo_, &TransportBase::connected, &hostEvents_, &HostEventDetector::reset);
@@ -100,6 +129,32 @@ bool ConnectionManager::start(const QString &device) {
     bridgeMonitor_.enable(); emit bridgeConnectionChanged();
     return pogo_.open(device);
 }
+QVariantList ConnectionManager::slotStatus() const {
+    QVariantList list;
+    for (int slot = 0; slot < 2; ++slot) {
+        const SlotRouter::Binding binding = slotRouter_.binding(slot);
+        QVariantMap entry{{"slot", slot}, {"bound", binding.valid()}};
+        if (binding.valid()) {
+            entry.insert("bridgeId", binding.bridgeId);
+            entry.insert("deviceId", binding.deviceId);
+            entry.insert("generation", binding.generation);
+            entry.insert("instance", binding.instance);
+            entry.insert("boundAt", binding.boundAt);
+            entry.insert("bridgeOnline", slotRouter_.bridgeOnline(binding.bridgeId));
+        }
+        list.append(entry);
+    }
+    return list;
+}
+
+QVariantMap ConnectionManager::slotStats() const {
+    return QVariantMap{
+        {"accepted", QVariant::fromValue(slotRouter_.acceptedCount())},
+        {"rejected", QVariant::fromValue(slotRouter_.rejectedCount())},
+        {"lastRejection", slotRouter_.lastRejection()},
+    };
+}
+
 QVariantList ConnectionManager::cards() const {
     QVariantList list;
     for (auto s : sessions_) {
@@ -128,6 +183,18 @@ void ConnectionManager::attach(const QJsonObject &e) {
                           << "package=" << moduleConfig.value("package_transport").toString();
     }
     if (type == "detach") {
+        // 位置事件先过槽位路由：迟到的 detach 不得解掉新设备的绑定，
+        // 也不得把新会话的 contact 清掉。旧格式事件不带这些字段，跳过。
+        const SlotPosition position = slotPositionOf(e);
+        if (position.valid()) {
+            const auto decision = slotRouter_.release(position.bridgeId, position.slotId,
+                                                      position.generation, now());
+            if (decision.verdict != SlotRouter::Verdict::Accepted) {
+                qWarning().noquote() << "Slot detach rejected:" << instance
+                                     << SlotRouter::verdictName(decision.verdict) << decision.detail;
+                return;
+            }
+        }
         suppressedInstances_.remove(instance);
         auto s = sessions_.value(instance);
         if (s && e.value("module_id").toInt(-1) == s->id) {
@@ -142,6 +209,21 @@ void ConnectionManager::attach(const QJsonObject &e) {
     const double numericId = e.value("module_id").toDouble(-1);
     if (type != "attach" || numericId < 1 || numericId > 255 || numericId != int(numericId) ||
         !QRegularExpression("^[A-Za-z0-9_-]{1,64}$").match(instance).hasMatch()) return;
+    {
+        // 双槽路由：同一槽换设备必换 binding_generation，旧代次的迟到 attach
+        // 在这里被拒，不会建立/覆盖会话。重复上报同代次是幂等的。
+        const SlotPosition position = slotPositionOf(e);
+        if (position.valid()) {
+            const auto decision = slotRouter_.bind(position.bridgeId, position.slotId,
+                                                   position.deviceId, position.generation,
+                                                   instance, now());
+            if (decision.verdict != SlotRouter::Verdict::Accepted) {
+                qWarning().noquote() << "Slot attach rejected:" << instance
+                                     << SlotRouter::verdictName(decision.verdict) << decision.detail;
+                return;
+            }
+        }
+    }
     if (sessions_.contains(instance)) {
         auto s = sessions_[instance];
         if (s->id != int(numericId) || s->stopping) return;
@@ -519,6 +601,12 @@ void ConnectionManager::sendCloseRequest(const QSharedPointer<Session> &s) {
 void ConnectionManager::stop(const QSharedPointer<Session> &s, const QString &reason) {
     if (s->stopping) return;
     s->stopping = true; s->ready = false;
+    // 会话关闭时释放它占用的物理槽，避免槽位绑定泄漏到下一次插入。
+    for (int slot = 0; slot < 2; ++slot) {
+        const SlotRouter::Binding binding = slotRouter_.binding(slot);
+        if (binding.valid() && binding.instance == s->instance)
+            slotRouter_.release(binding.bridgeId, slot, binding.generation, now());
+    }
     s->closePending = false;
     s->awaitingPeerClose = false;
     if (s->receiver) s->receiver->cancel();
