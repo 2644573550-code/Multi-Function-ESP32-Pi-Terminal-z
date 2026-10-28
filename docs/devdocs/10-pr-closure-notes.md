@@ -13,7 +13,7 @@
 | PR 分支 | 能否关闭 | 依据 |
 |---|---|---|
 | `docs/pbr-secure-v1-rev3-tag-notation` | ✅ 可以 | 提交对象是 `feat/p0-software-complete` 的祖先 |
-| `feat/pbr-t03-truststore` | ✅ 可以 | 同上 |
+| `feat/pbr-t03-truststore` | ✅ 可以 | 同上；**该分支没有 md 文件**，说明见本文 §3 |
 | `docs/pbr-t07-acceptance-tests` | ✅ 可以 | 同上 |
 | `feat/z-p0-security` | ✅ 可以 | 同上 |
 | `feat/pbr-p0-delivery` | ✅ 可以 | 同上 |
@@ -89,6 +89,25 @@ M  third_party/flite/PROJECT-NOTES.md
 **保留新的那份是对的，旧的可以关。**
 
 ---
+
+## 3. 只含代码的分支怎么留说明
+
+`feat/pbr-t03-truststore` 是唯一一个**没有改任何 markdown** 的 PR：
+它只新增 `TrustStore.cpp` / `TrustStore.h` / `trust_store_test.cpp` 和 CMake 条目。
+
+这种情况下无法"在 PR 的 md 文件里留链接"。处理方式：
+
+1. 本文记录了它的包含关系与关闭依据（上方表格 + §1 的验证命令）
+2. 合并后的代码在 `pi_terminal/src/security/TrustStore.{h,cpp}`，测试在
+   `module_page_host_test` / `trust_store_test`（`pbr_trust_store`）
+3. 更新日志里对应条目见 [`11-changelog-and-tests.md`](11-changelog-and-tests.md)
+   §2.1（信任库）与 §4.2（`pbr_trust_store` 用例清单）
+
+关闭该 PR 时建议贴：
+
+> 内容已并入 `feat/p0-software-complete`（`pi_terminal/src/security/TrustStore.*`）。
+> 变更记录见 `docs/devdocs/11-changelog-and-tests.md`，
+> 包含关系验证见 `docs/devdocs/10-pr-closure-notes.md`。
 
 ## 关闭后保留的信息
 

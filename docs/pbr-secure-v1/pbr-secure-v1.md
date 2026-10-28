@@ -543,3 +543,21 @@ cc -I<prefix>/include docs/pbr-secure-v1/mbedtls_check.c \
 - P0 私钥明文存储，见 §2。
 - ECDSA 的 `r‖s` 与 mbedtls 默认 DER 不同，实现必须显式转换。这一处最容易出错，两侧都要有一条针对 `r` 首字节高位为 1 的用例。
 - 重放保护只在会话内有效。
+
+---
+
+---
+
+## 合并说明（2026-10-29）
+
+本文所在的 PR 已并入 **`feat/p0-software-complete`**，本 PR 可以安全关闭。
+
+- **更新日志与测试详情**：[`docs/devdocs/11-changelog-and-tests.md`](../devdocs/11-changelog-and-tests.md)
+- **PR 关闭说明与包含关系验证**：[`docs/devdocs/10-pr-closure-notes.md`](../devdocs/10-pr-closure-notes.md)
+- **给 L 的硬件交接清单**：[`docs/devdocs/08-handoff-to-L.md`](../devdocs/08-handoff-to-L.md)
+- **调试钩子清单**：[`docs/devdocs/09-debug-hooks.md`](../devdocs/09-debug-hooks.md)
+
+> 关闭本 PR 不代表验收通过。P0 完成条件见
+> [`docs/devdocs/04-dev-tasks.md` §7](../devdocs/04-dev-tasks.md)，
+> 目前六层证据只完成前两层（源码单测、主机模拟），
+> 目标 Pi 构建 / Pi 实机 / ESP 板实机 / 环境实测均为零。

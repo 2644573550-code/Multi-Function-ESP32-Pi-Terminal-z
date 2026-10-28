@@ -291,3 +291,21 @@ bash scripts/configure-hotspot.sh
 `user_database_test`(10)、`card_matcher_test`(10)、`worker_isolation_test`(9)、
 `lane_gate_test`(8)、`module_page_host_test`(5)、`login_qml_test`(7)。
 （`auth_service_test` 含 4 条 RFC 6070 数据行，实际断言数 26。）
+
+---
+
+---
+
+## 合并说明（2026-10-29）
+
+本文所在的 PR 已并入 **`feat/p0-software-complete`**，本 PR 可以安全关闭。
+
+- **更新日志与测试详情**：[`docs/devdocs/11-changelog-and-tests.md`](11-changelog-and-tests.md)
+- **PR 关闭说明与包含关系验证**：[`docs/devdocs/10-pr-closure-notes.md`](10-pr-closure-notes.md)
+- **给 L 的硬件交接清单**：[`docs/devdocs/08-handoff-to-L.md`](08-handoff-to-L.md)
+- **调试钩子清单**：[`docs/devdocs/09-debug-hooks.md`](09-debug-hooks.md)
+
+> 关闭本 PR 不代表验收通过。P0 完成条件见
+> [`docs/devdocs/04-dev-tasks.md` §7](04-dev-tasks.md)，
+> 目前六层证据只完成前两层（源码单测、主机模拟），
+> 目标 Pi 构建 / Pi 实机 / ESP 板实机 / 环境实测均为零。

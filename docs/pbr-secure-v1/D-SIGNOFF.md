@@ -64,3 +64,21 @@
 3. **T-08 前半段**：解密 → `validate()` → `deriveUidIndex()`（密钥等 Z）
 
 不碰 ESP 仓库；实机项保持 `NOT_RUN`。
+
+---
+
+---
+
+## 合并说明（2026-10-29）
+
+本文所在的 PR 已并入 **`feat/p0-software-complete`**，本 PR 可以安全关闭。
+
+- **更新日志与测试详情**：[`docs/devdocs/11-changelog-and-tests.md`](../devdocs/11-changelog-and-tests.md)
+- **PR 关闭说明与包含关系验证**：[`docs/devdocs/10-pr-closure-notes.md`](../devdocs/10-pr-closure-notes.md)
+- **给 L 的硬件交接清单**：[`docs/devdocs/08-handoff-to-L.md`](../devdocs/08-handoff-to-L.md)
+- **调试钩子清单**：[`docs/devdocs/09-debug-hooks.md`](../devdocs/09-debug-hooks.md)
+
+> 关闭本 PR 不代表验收通过。P0 完成条件见
+> [`docs/devdocs/04-dev-tasks.md` §7](../devdocs/04-dev-tasks.md)，
+> 目前六层证据只完成前两层（源码单测、主机模拟），
+> 目标 Pi 构建 / Pi 实机 / ESP 板实机 / 环境实测均为零。

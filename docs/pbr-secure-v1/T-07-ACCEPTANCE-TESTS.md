@@ -151,3 +151,21 @@ QTEST_GUILESS_MAIN(PbrSessionTests)
 - **`HostIdentity` 的 `r‖s` 与 DER 往返**已在 `tests/host_identity_test.cpp` 覆盖（555 条断言，含 r 高位为 1 的分支）。T07-21 只需断言**会话层**确实用 64 字节 `r‖s`，不重复测底层。
 - **`PbrControl::validate()` 的字段校验**已在 `tests/protocol_test.cpp` 覆盖（F 交付，39 条断言）。T-07 只补"解密后进入校验器"之前的时序。
 - **`TrustStore` 的 key_id 碰撞**已在 `tests/trust_store_test.cpp` 覆盖。T07-23 只断言会话层**逐个验签**的行为。
+
+---
+
+---
+
+## 合并说明（2026-10-29）
+
+本文所在的 PR 已并入 **`feat/p0-software-complete`**，本 PR 可以安全关闭。
+
+- **更新日志与测试详情**：[`docs/devdocs/11-changelog-and-tests.md`](../devdocs/11-changelog-and-tests.md)
+- **PR 关闭说明与包含关系验证**：[`docs/devdocs/10-pr-closure-notes.md`](../devdocs/10-pr-closure-notes.md)
+- **给 L 的硬件交接清单**：[`docs/devdocs/08-handoff-to-L.md`](../devdocs/08-handoff-to-L.md)
+- **调试钩子清单**：[`docs/devdocs/09-debug-hooks.md`](../devdocs/09-debug-hooks.md)
+
+> 关闭本 PR 不代表验收通过。P0 完成条件见
+> [`docs/devdocs/04-dev-tasks.md` §7](../devdocs/04-dev-tasks.md)，
+> 目前六层证据只完成前两层（源码单测、主机模拟），
+> 目标 Pi 构建 / Pi 实机 / ESP 板实机 / 环境实测均为零。
