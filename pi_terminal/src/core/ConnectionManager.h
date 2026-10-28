@@ -36,6 +36,9 @@ public:
     bool bridgeConnected() const { return bridgeMonitor_.connected(); }
     bool bridgeMonitoring() const { return bridgeMonitor_.enabled(); }
     QVariantList cards() const;
+    // 物理槽位快照（T-05 界面接点）。只读：槽位是"可空的位置属性"，
+    // 业务身份仍由 cards() 表达。未绑定的槽也返回一条，bound=false。
+    Q_INVOKABLE QVariantList slotStatus() const;
     QString status() const { return status_; }
     ModuleCardModel *cardModel() { return &cards_; }
     PageProvider *pageProvider() { return &pages_; }

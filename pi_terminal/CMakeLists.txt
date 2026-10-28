@@ -88,11 +88,25 @@ add_library(terminal_core STATIC
     src/core/ModuleCardModel.cpp src/core/ModuleCardModel.h
     src/core/PageProvider.cpp src/core/PageProvider.h
     src/core/SessionStateMachine.cpp src/core/SessionStateMachine.h
-    src/core/PackageReceiver.cpp src/core/PackageReceiver.h)
+    src/core/PackageReceiver.cpp src/core/PackageReceiver.h
+    src/core/SecurityStatus.cpp src/core/SecurityStatus.h)
 target_include_directories(terminal_core PUBLIC src src/modules/api)
 target_link_libraries(terminal_core PUBLIC terminal_transports terminal_security terminal_routing Qt6::Core Qt6::Network Qt6::StateMachine)
 target_compile_definitions(terminal_core PRIVATE PI_PACKAGE_TOOL="${CMAKE_INSTALL_PREFIX}/libexec/orange-pi-terminal/package_tool.py")
 target_compile_options(terminal_core PRIVATE -Wall -Wextra -Wpedantic)
+# 界面接点需要在没有 mbedtls 的构建里也能编译：身份那一块按此宏降级为
+# "unavailable"，而不是让整个 terminal_core 依赖 mbedtls。
+if(TERMINAL_SECURITY_HAVE_MBEDTLS)
+    target_compile_definitions(terminal_core PRIVATE TERMINAL_HAVE_MBEDTLS=1)
+endif()
+# 安全状态页的独立预览程序（开发工具，不随产品安装）。
+# 只加载 qml/SecurityStatusPage.qml，不碰 Main.qml，因此与 Z 的 T-09 零重叠；
+# 也不链接 terminal_ui，所以不依赖 VLC SDK。
+add_executable(security_preview tools/security_preview/main.cpp)
+target_link_libraries(security_preview PRIVATE terminal_core Qt6::Quick)
+target_compile_definitions(security_preview PRIVATE
+    PREVIEW_PAGE="${CMAKE_CURRENT_SOURCE_DIR}/qml/SecurityStatusPage.qml")
+
 add_library(terminal_music SHARED
     src/ui/MusicPlayback.cpp src/ui/MusicPlayback.h
     src/ui/MusicService.cpp src/ui/MusicService.h)
@@ -228,6 +242,7 @@ set_source_files_properties(qml/TimeMath.js PROPERTIES QT_RESOURCE_ALIAS TimeMat
 list(APPEND UI_QML_FILES qml/DesktopPet.qml)
 list(APPEND UI_QML_FILES qml/PetManager.qml)
 list(APPEND UI_QML_FILES qml/TvPlayer.qml)
+list(APPEND UI_QML_FILES qml/SecurityStatusPage.qml)
 foreach(qml_file IN LISTS UI_QML_FILES)
     get_filename_component(qml_name "${qml_file}" NAME)
     set_source_files_properties("${qml_file}" PROPERTIES QT_RESOURCE_ALIAS "${qml_name}")
@@ -295,6 +310,14 @@ if(BUILD_TESTING)
     add_executable(slot_router_test tests/slot_router_test.cpp)
     target_link_libraries(slot_router_test PRIVATE terminal_routing)
     add_test(NAME pbr_slot_router COMMAND slot_router_test)
+    add_executable(security_status_test tests/security_status_test.cpp)
+    target_link_libraries(security_status_test PRIVATE terminal_core Qt6::Test)
+    # terminal_core 把该宏设为 PRIVATE，测试要按同一条件编译身份相关用例，
+    # 否则会出现"库里有身份、测试却跳过"的假阴性。
+    if(TERMINAL_SECURITY_HAVE_MBEDTLS)
+        target_compile_definitions(security_status_test PRIVATE TERMINAL_HAVE_MBEDTLS=1)
+    endif()
+    add_test(NAME pbr_security_status COMMAND security_status_test)
     add_executable(trust_store_test tests/trust_store_test.cpp)
     target_link_libraries(trust_store_test PRIVATE terminal_security)
     add_test(NAME pbr_trust_store COMMAND trust_store_test)

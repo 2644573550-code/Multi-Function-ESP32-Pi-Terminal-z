@@ -129,6 +129,24 @@ bool ConnectionManager::start(const QString &device) {
     bridgeMonitor_.enable(); emit bridgeConnectionChanged();
     return pogo_.open(device);
 }
+QVariantList ConnectionManager::slotStatus() const {
+    QVariantList list;
+    for (int slot = 0; slot < 2; ++slot) {
+        const SlotRouter::Binding binding = slotRouter_.binding(slot);
+        QVariantMap entry{{"slot", slot}, {"bound", binding.valid()}};
+        if (binding.valid()) {
+            entry.insert("bridgeId", binding.bridgeId);
+            entry.insert("deviceId", binding.deviceId);
+            entry.insert("generation", binding.generation);
+            entry.insert("instance", binding.instance);
+            entry.insert("boundAt", binding.boundAt);
+            entry.insert("bridgeOnline", slotRouter_.bridgeOnline(binding.bridgeId));
+        }
+        list.append(entry);
+    }
+    return list;
+}
+
 QVariantList ConnectionManager::cards() const {
     QVariantList list;
     for (auto s : sessions_) {
