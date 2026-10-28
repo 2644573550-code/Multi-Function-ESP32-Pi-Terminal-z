@@ -593,12 +593,17 @@ Item {
                     }
                 }
                 CarText {
-                    Layout.alignment: Qt.AlignHCenter
+                    // 340px 卡片 + 12 小时制时，日期行加“下午”会顶到卡片外：
+                    // 用 label 字号并把超长部分省略，保证永不越界。
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
                     maximumLineCount: 1
+                    elide: Text.ElideRight
+                    fontPixelSize: Theme.fontLabel
                     // 12 小时制时把 上午/下午 放在日期行前面，不挤数字钟的宽度。
                     text: (root.timeFormat === "12"
-                           ? (root.clockAfternoon ? I18n.t("下午") : I18n.t("上午")) + "  " : "")
-                          + root.clockDate + "  " + root.clockWeekday
+                           ? (root.clockAfternoon ? I18n.t("下午") : I18n.t("上午")) + " " : "")
+                          + root.clockDate + " " + root.clockWeekday
                 }
             }
 
