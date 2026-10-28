@@ -2,12 +2,13 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | `pbr-secure-v1`，`proto_ver = 1`，`env_ver = 1`，本文件修订 2 |
+| 版本 | `pbr-secure-v1`，`proto_ver = 1`，`env_ver = 1`，本文件修订 3 |
 | 状态 | **F 起草并裁决；D 技术签认后即由 D 拥有维护权，F 只审核变更。** |
 | 上游 | `docs/devdocs/04-dev-tasks-f-day1.md` §4；`docs/pbr-secure-v1/00-decisions-for-f.md` §6；`F-REVIEW-2.md` |
 | 向量 | `vectors.json`，由 `gen_vectors.py` 生成，可重跑 |
 | 实现基线 | ESP-IDF 5.5.4（mbedtls 3.6.5）；Pi Qt 6.5.3 + libmbedtls |
 | 修订 2 变更 | 握手加**桥板签名**（修订 1 是单向认证，见 §3.3）；`session_id` 与 `nonce_prefix` 拆分；`auth_seq` 单调规则按实际字段重写；`key_id` 统一 2 位 hex；诊断响应移出本规范 |
+| 修订 3 变更 | **纯文字补全，字节布局与修订 2 完全相同。** 补 §3.0 记法定义：`tag()`/`elem()` 此前从未定义，只能从 `gen_vectors.py` 反推；按裸字符串实现会使 T2 每元素少 2 字节，桥板签名永不通过。`vectors.json` 与 `mbedtls_check.c` **无需改动**，重跑结果不变 |
 
 本文只定义字节与语义。不做的事：不新增 PBR1 帧头字段、不改 CRC16 的检错定位、不在认证前接受任何业务事件。
 
@@ -128,6 +129,25 @@ record = { bridge_id, public_key(65B), fingerprint(8B), enrolled_at, revoked_at 
 
 `body` 是定长字节的 hex（小写），`sig` 是 64 字节 `r‖s` 的 hex（128 字符）。JSON 只是承载——参与哈希的永远是 `body` 解码后的字节，不是 JSON 文本，所以字段顺序与空格不影响结果。
 
+### 3.0 记法（修订 3 补）
+
+transcript 由若干**带长度前缀的元件**拼接而成，空串也必须保留前缀。全部长度为**字节数**，不含终止符：
+
+```text
+u16le(x)    = 2 字节小端无符号整数
+tag(name)   = u16le(len(name)) || name            // name 为 ASCII
+elem(name, body) = tag(name) || u16le(len(body)) || body
+```
+
+以 `msg1_body`（50 字节）为例，`elem("pbr_hello_req", msg1_body)` 的线上形态是：
+
+```text
+0d 00 | 'p','b','r','_','h','e','l','l','o','_','r','e','q' | 32 00 | <50 字节>
+└─ len=13 ─┘                  13 字节 name                    └ len=50 ┘
+```
+
+> **修订 2 的缺口（本修订补）**：修订 2 的 §3.3/§3.4 直接写 `tag("pbr_hello_req")`，但全文从未定义 `tag()` 的编码。只读规范的人会拼成裸 ASCII（13 字节），**少了 2 字节长度前缀**，`T2` 与向量不符，桥板签名永远验不过——且两侧都"看起来正常"。本节使它可从规范本身实现，不必反查 `gen_vectors.py`。
+
 ### 3.1 hello_req（Pi → 桥板）
 
 ```text
@@ -150,8 +170,8 @@ msg2_body = proto_ver(1) || suite_id(1) || bridge_eph_pub(32) || server_nonce(16
 ### 3.3 桥板签名（**修订 2 新增；修订 1 缺失，等于单向认证**）
 
 ```text
-T2 = tag("pbr_hello_req")  || u16le(50) || msg1_body
-   || tag("pbr_hello_resp") || u16le(55) || msg2_body
+T2 = elem("pbr_hello_req",  msg1_body)
+   || elem("pbr_hello_resp", msg2_body)                       // 定长 140 字节
 sig_bridge = ECDSA-P256-SHA256(bridge_identity_priv, T2)      // 64 字节 r‖s
 ```
 
@@ -171,9 +191,21 @@ Pi 的处理顺序（缺一不可）：
 
 ```text
 msg3_body = pi_key_id(1) || pi_identity_pub(65)                  // 66 字节
-T3        = T2 || tag("pbr_hello_finish") || u16le(66) || msg3_body
+T3        = T2 || elem("pbr_hello_finish", msg3_body)            // 定长 226 字节
 sig_pi    = ECDSA-P256-SHA256(pi_identity_priv, T3)              // 64 字节 r‖s，单独发送
 ```
+
+**长度自检**（实现时先断言再验签，能一秒钟定位拼接错误）：
+
+| 量 | 字节数 | 构成 |
+|---|---|---|
+| `elem("pbr_hello_req", msg1_body)` | 67 | `2+13` name + `2+50` body |
+| `elem("pbr_hello_resp", msg2_body)` | 73 | `2+14` name + `2+55` body |
+| `T2` | **140** | 67 + 73 |
+| `elem("pbr_hello_finish", msg3_body)` | 86 | `2+16` name + `2+66` body |
+| `T3` | **226** | 140 + 86 |
+
+`vectors.json` 的 `handshake.t2` / `handshake.t3` 解码后正好是 140 / 226 字节；长度不符说明 `tag`/`elem` 的编码理解有误，不必再往下查签名。
 
 签名不在 `msg3_body` 里：桥板必须先收到 `msg3_body` 才能算出完整 `T3`，签名本身不能参与 `T3`（否则自引用）。
 
