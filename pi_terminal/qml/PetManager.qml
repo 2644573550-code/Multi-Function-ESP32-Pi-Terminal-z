@@ -53,7 +53,7 @@ Dialog {
     readonly property var selectedModel: findModel(selectedModelId)
     readonly property int modelCount: sourceRows.length
     function t(text) { return typeof systemTools === "undefined" ? text : I18n.t(text) }
-    function characterName(row) { return row.character || row.name.split(" · ")[0] }
+    function characterName(row) { return row.character || row.name.split("，")[0] }
     function groupCharacters(rows, query) {
         const groups = {}, result = []
         const q = query.trim().toLowerCase()
@@ -132,7 +132,7 @@ Dialog {
                 Label { text: root.compact&&root.showModels?root.selectedCharacter:root.t("桌宠角色管理"); color: root.ink; font.pixelSize: root.compact?20:Theme.title; Layout.fillWidth:true; elide:Text.ElideRight }
                 Label {
                     visible: !root.shortScreen
-                    text: root.characters.length+root.t(" 位角色")+" · "+root.modelCount+root.t(" 款模型")
+                    text: root.characters.length+root.t(" 位角色")+"，"+root.modelCount+root.t(" 款模型")
                     color: root.secondaryInk; font.pixelSize: 12
                 }
             }
@@ -172,7 +172,7 @@ Dialog {
                 implicitWidth:48;implicitHeight:48
                 icon.source:"qrc:/icons/material/light/zoom_in.svg"
                 Accessible.name:root.t("大小与画质")
-                ToolTip.visible:hovered;ToolTip.text:root.t("角色大小")+" · "+Math.round(library.sizeMultiplier*100)+"%"
+                ToolTip.visible:hovered;ToolTip.text:root.t("角色大小")+"，"+Math.round(library.sizeMultiplier*100)+"%"
                 onClicked:sizeDialog.open()
             }
             ToolButton {
@@ -261,7 +261,7 @@ Dialog {
                 id:qualitySelector;objectName:"petQualitySelector"
                 Layout.fillWidth:true;Layout.minimumHeight:48
                 enabled:!library.busy
-                model:[root.t("流畅 · 128 px / 64 MiB"),root.t("标准 · 256 px / 128 MiB"),root.t("高清 · 384 px / 256 MiB")]
+                model:[root.t("流畅，128 px / 64 MiB"),root.t("标准，256 px / 128 MiB"),root.t("高清，384 px / 256 MiB")]
                 currentIndex:["economy","standard","high"].indexOf(library.quality)
                 onActivated:library.quality=["economy","standard","high"][currentIndex]
             }
@@ -335,7 +335,7 @@ Dialog {
                             ColumnLayout {
                                 Layout.fillWidth:true;spacing:4
                                 Label {text:modelData.name;color:root.ink;font.pixelSize:16;Layout.fillWidth:true;elide:Text.ElideRight}
-                                Label {text:modelData.count+root.t(" 款模型")+(modelData.installed?" · "+modelData.installed+root.t(" 已下载"):"");color:root.secondaryInk;font.pixelSize:12;Layout.fillWidth:true;elide:Text.ElideRight}
+                                Label {text:modelData.count+root.t(" 款模型")+(modelData.installed?"，"+modelData.installed+root.t(" 已下载"):"");color:root.secondaryInk;font.pixelSize:12;Layout.fillWidth:true;elide:Text.ElideRight}
                             }
                             Image {Layout.preferredWidth:24;Layout.preferredHeight:24;source:"qrc:/icons/material/light/chevron_right.svg";opacity:0.7}
                         }
@@ -382,7 +382,7 @@ Dialog {
                         Layout.fillWidth:true;spacing:6
                         Label {text:root.selectedModel?(root.selectedModel.modelName||root.selectedModel.name):"";color:root.ink;font.pixelSize:16;Layout.fillWidth:true;elide:Text.ElideRight}
                         Label {text:root.selectedModel?root.selectedModel.id:"";color:root.secondaryInk;font.pixelSize:12;Layout.fillWidth:true;elide:Text.ElideMiddle}
-                        Label {text:root.t("已下载模型预览 · 待机动作图集");color:root.primary;font.pixelSize:12;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Label {text:root.t("已下载模型预览，待机动作图集");color:root.primary;font.pixelSize:12;wrapMode:Text.Wrap;Layout.fillWidth:true}
                     }
                 }
             }
@@ -411,7 +411,7 @@ Dialog {
                         ColumnLayout {
                             Layout.fillWidth:true;spacing:4
                             Label {text:modelData.modelName||modelData.name;Layout.fillWidth:true;elide:Text.ElideRight;font.pixelSize:16;color:root.ink}
-                            Label {text:(modelData.category==="default"?root.t("默认模型"):modelData.category==="illustration"?root.t("动态立绘"):root.t("服装模型"))+" · "+modelData.id;Layout.fillWidth:true;elide:Text.ElideMiddle;font.pixelSize:12;color:root.secondaryInk}
+                            Label {text:(modelData.category==="default"?root.t("默认模型"):modelData.category==="illustration"?root.t("动态立绘"):root.t("服装模型"))+"，"+modelData.id;Layout.fillWidth:true;elide:Text.ElideMiddle;font.pixelSize:12;color:root.secondaryInk}
                         }
                         Label {
                             text:modelData.needsUpgrade?root.t("可升级动作"):modelData.current?root.t("使用中"):modelData.installed?root.t("已下载"):root.t("未下载")
@@ -434,7 +434,7 @@ Dialog {
             Label {
                 objectName:"petManagerStatus"
                 Layout.fillWidth:true;Layout.maximumHeight:root.shortScreen?36:52
-                text:library.status ? root.t(library.status) : (root.selectedModel ? root.selectedCharacter+" · "+(root.selectedModel.modelName||root.selectedModel.name) : root.t("选择角色后查看模型"))
+                text:library.status ? root.t(library.status) : (root.selectedModel ? root.selectedCharacter+"，"+(root.selectedModel.modelName||root.selectedModel.name) : root.t("选择角色后查看模型"))
                 wrapMode:Text.Wrap;maximumLineCount:2;elide:Text.ElideRight
                 color:root.secondaryInk;font.pixelSize:12
             }
@@ -482,7 +482,7 @@ Dialog {
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;text:root.t("角色素材仅限非商业使用。请确认适用的 Spine 工具许可；勾选确认不能替代实际授权。")}
             Label {
                 Layout.fillWidth:true;textFormat:Text.RichText;wrapMode:Text.Wrap
-                text:'<a href="https://github.com/isHarryh/Ark-Models#版权声明">'+root.t("素材版权说明")+'</a> · <a href="https://esotericsoftware.com/spine-editor-license">'+root.t("Spine 工具许可")+'</a>'
+                text:'<a href="https://github.com/isHarryh/Ark-Models#版权声明">'+root.t("素材版权说明")+'</a>，<a href="https://esotericsoftware.com/spine-editor-license">'+root.t("Spine 工具许可")+'</a>'
                 linkColor:root.primary
                 onLinkActivated:function(link){Qt.openUrlExternally(link)}
             }

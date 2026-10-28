@@ -218,7 +218,7 @@ Item {
         autoNetworkMode = false; mode = "online"
         const tracks = []
         for (let i = 0; i < 50; ++i) tracks.push({originalId: String(i + 1), encryptedId: String(i + 1), type: "song", playable: true,
-            name: i % 2 ? "A very long song title — live at the midnight concert" : "夜空中最亮的星 · 现场特别版与漫长的歌曲标题",
+            name: i % 2 ? "A very long song title — live at the midnight concert" : "夜空中最亮的星，现场特别版与漫长的歌曲标题",
             artist: i % 2 ? "The Midnight Orchestra / Guest Artist" : "逃跑计划 / 特邀歌手", album: "Live Collection", duration: 245000, index: i + 1})
         onlineRows = tracks; onlineQueue = tracks.slice(); onlineQueueIndex = 12; onlinePlayback = true
         currentTitle = tracks[12].name; currentArtist = tracks[12].artist; pendingOnlineId = "13"
@@ -596,7 +596,7 @@ Item {
                     }
                     MusicText {
                         objectName:"lyricsTrackMetadata"
-                        text: root.currentArtist + (root.currentAlbum ? "\n" + root.currentAlbum : "") + (root.currentYear ? " · " + root.currentYear : "")
+                        text: root.currentArtist + (root.currentAlbum ? "\n" + root.currentAlbum : "") + (root.currentYear ? "，" + root.currentYear : "")
                         subdued: true; Layout.fillWidth: true; Layout.minimumWidth:0
                         Layout.maximumHeight:Math.ceil(root.secondaryTextSize*1.35)*3
                         maximumLineCount:3;elide:Text.ElideRight;wrapMode:Text.WrapAnywhere;clip:true
@@ -846,7 +846,7 @@ Item {
                                     width:Math.max(0,localTrackContent.width-x-(modelData.directory?0:25*root.uiScale+Theme.gap/2))
                                     anchors.verticalCenter:parent.verticalCenter;spacing:2
                                       MusicText { text: modelData.directory ? modelData.name : (modelData.title || modelData.name); fontPixelSize: root.trackTextSize; color: currentRelative === ((root.folder ? root.folder + "/" : "") + modelData.name) ? "#1ed760" : "#ffffff"; heading: true; width:parent.width; maximumLineCount: 1; elide: Text.ElideMiddle }
-                                      MusicText { text: modelData.directory ? I18n.t("文件夹") : ((modelData.artist || "") + (modelData.album ? " · " + modelData.album : "")); fontPixelSize: root.secondaryTextSize; subdued: true; width:parent.width; maximumLineCount: 1; elide: Text.ElideRight }
+                                      MusicText { text: modelData.directory ? I18n.t("文件夹") : ((modelData.artist || "") + (modelData.album ? "，" + modelData.album : "")); fontPixelSize: root.secondaryTextSize; subdued: true; width:parent.width; maximumLineCount: 1; elide: Text.ElideRight }
                                 }
                                 MaterialIcon { name: "play_arrow"; anchors.right:parent.right; anchors.verticalCenter:parent.verticalCenter; width: 25 * root.uiScale; height: width; visible: !modelData.directory }
                             }
@@ -912,7 +912,7 @@ Item {
                                         ColumnLayout {
                                             Layout.fillWidth: true; spacing: 2
                                              MusicText { text: modelData.name; fontPixelSize: root.trackTextSize; color: root.pendingOnlineId === String(modelData.originalId) ? "#1ed760" : "#ffffff"; heading: true; Layout.fillWidth: true; maximumLineCount: 1; elide: Text.ElideRight }
-                                             MusicText { text: modelData.artist + (modelData.album ? " · " + modelData.album : ""); fontPixelSize: root.secondaryTextSize; subdued: true; Layout.fillWidth: true; maximumLineCount: 1; elide: Text.ElideRight }
+                                             MusicText { text: modelData.artist + (modelData.album ? "，" + modelData.album : ""); fontPixelSize: root.secondaryTextSize; subdued: true; Layout.fillWidth: true; maximumLineCount: 1; elide: Text.ElideRight }
                                         }
                                         MusicText { text: modelData.type === "song" ? root.formatTime(modelData.duration) : ""; subdued: true }
                                     }
@@ -961,7 +961,7 @@ Item {
                              background: Rectangle { radius: 8; color: parent.down || parent.hovered ? "#282828" : "transparent"; border.width: parent.activeFocus ? 2 : 0; border.color: "#1ed760" }
                               contentItem: MusicText { id: titleLabel; objectName: "musicNowPlayingTitle"; text: root.currentTitle || I18n.t("尚未播放歌曲"); fontPixelSize: root.trackTextSize; heading: true; horizontalAlignment: Text.AlignLeft; verticalAlignment: Text.AlignVCenter; maximumLineCount: 1; elide: Text.ElideRight }
                          }
-                          MusicText { objectName: "musicNowPlayingArtist"; text: root.currentArtist + (root.currentAlbum ? " · " + root.currentAlbum : ""); subdued: true; Layout.fillWidth: true; horizontalAlignment: Text.AlignLeft; maximumLineCount: 1; elide: Text.ElideRight }
+                          MusicText { objectName: "musicNowPlayingArtist"; text: root.currentArtist + (root.currentAlbum ? "，" + root.currentAlbum : ""); subdued: true; Layout.fillWidth: true; horizontalAlignment: Text.AlignLeft; maximumLineCount: 1; elide: Text.ElideRight }
                     }
                 }
                 ColumnLayout {

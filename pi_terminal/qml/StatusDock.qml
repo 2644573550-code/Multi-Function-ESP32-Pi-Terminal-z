@@ -70,7 +70,7 @@ Rectangle {
             id:statusButton;objectName:"deviceStatusButton";property bool auditControl:true
             font.pointSize:Theme.body;implicitHeight:Theme.hit;implicitWidth:Math.max(Theme.hit,indicators.implicitWidth)
             padding:0;leftPadding:0;rightPadding:0;topPadding:0;bottomPadding:0;leftInset:0;rightInset:0;topInset:0;bottomInset:0
-            Accessible.name:I18n.t("设备状态和快捷设置")+" · "+dock.powerLabel;onClicked:dock.statusRequested()
+            Accessible.name:I18n.t("设备状态和快捷设置")+"，"+dock.powerLabel;onClicked:dock.statusRequested()
             background:Rectangle{radius:Theme.shapeLarge;color:statusButton.down?Theme.pressed:"transparent";border.width:statusButton.activeFocus?2:0;border.color:Theme.accent}
             contentItem:RowLayout {
                 id:indicators;spacing:Theme.gap

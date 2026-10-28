@@ -279,6 +279,23 @@ void SystemTools::setModuleOpacity(double value) {
     if(!std::isfinite(value))return;
     settings_.setValue("moduleOpacity",qBound(0.0,value,1.0));emit changed();
 }
+void SystemTools::setLargeText(bool value) {
+    if (largeText() == value) return;
+    settings_.setValue("accessibility/largeText", value);
+    settings_.sync();
+    emit changed();
+}
+
+bool SystemTools::setRetentionDays(int days) {
+    // 只允许四个明确档位；0 表示永久保留。
+    if (days != 0 && days != 30 && days != 90 && days != 180) return false;
+    if (retentionDays() == days) return true;
+    settings_.setValue("privacy/retentionDays", days);
+    settings_.sync();
+    emit changed();
+    return true;
+}
+
 void SystemTools::setEnergySaving(bool value) {
     if (energySaving() == value) return;
     settings_.setValue("energySaving", value); settings_.sync(); emit changed();

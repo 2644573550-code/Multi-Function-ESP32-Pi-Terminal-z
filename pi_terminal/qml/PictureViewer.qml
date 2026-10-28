@@ -68,6 +68,6 @@ Dialog {
                 contentItem: Image { source: systemTools.fileUrl(modelData.relative); sourceSize: Qt.size(128, 96); asynchronous: true; autoTransform: true; fillMode: Image.PreserveAspectFit }
             }
         }
-        CarText { text: (root.currentIndex + 1) + " / " + root.pictures.length + (picture.sourceSize.width ? " · " + picture.sourceSize.width + " × " + picture.sourceSize.height : ""); subdued: true }
+        CarText { text: (root.currentIndex + 1) + " / " + root.pictures.length + (picture.sourceSize.width ? "，" + picture.sourceSize.width + " × " + picture.sourceSize.height : ""); subdued: true }
     }
 }

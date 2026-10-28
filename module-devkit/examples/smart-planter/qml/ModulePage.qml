@@ -4,11 +4,41 @@ import QtQuick.Controls.Material
 
 Rectangle {
     id: page
-    property var sessionModel: null
-    property real hostUiScale: 1
     property bool weekView: false
     property double clock: Date.now()
     readonly property var latest: sessionModel ? sessionModel.data : ({})
+    // 报告 §6.1：模块页通过宿主注入的 moduleData 接口读写**当前用户**的数据。
+    // 这里不是直接访问数据库，而是语义化接口（无 SQL、无文件路径）。
+    property var historyPoints: []
+    property string storeMessage: ""
+
+    function refreshHistory() {
+        if (typeof moduleData === "undefined" || !moduleData) return
+        historyPoints = moduleData.historySeries(7 * 24 * 3600 * 1000, 60 * 60 * 1000)
+    }
+
+    // 把当前读数落库（去重由 source 与时间保证）。
+    function persistReading() {
+        if (typeof moduleData === "undefined" || !moduleData) return
+        const t = page.number(page.latest.temperature_C)
+        if (!isFinite(t)) return
+        const ok = moduleData.appendSample({
+            "temperature_c": t,
+            "humidity_rh": page.number(page.latest.humidity_RH),
+            "light_lux": page.number(page.latest.light_lux),
+            "source": "device.auto",
+            "valid": true
+        })
+        if (!ok) storeMessage = "数据存储不可用"
+        else { storeMessage = ""; page.refreshHistory() }
+    }
+
+    Component.onCompleted: refreshHistory()
+
+    Connections {
+        target: typeof moduleData !== "undefined" ? moduleData : null
+        function onDataChanged() { page.refreshHistory() }
+    }
     readonly property bool fresh: latest.received_at !== undefined && clock - Number(latest.received_at) < 15000
     readonly property real temperature: number(latest.temperature_C)
     readonly property real humidity: number(latest.humidity_RH)

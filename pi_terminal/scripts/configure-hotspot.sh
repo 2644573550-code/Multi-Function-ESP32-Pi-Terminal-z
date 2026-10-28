@@ -31,10 +31,13 @@ if [[ "$open_ap" == false && ! -t 0 ]]; then
     exit 1
 fi
 printf 'Creating PI_MODULE_NET on %s (192.168.50.1/24, channel 6).\n' "$interface"
+# 不用 ipv4.method shared：它会开 NAT/转发，模块就能经热点访问公网。
+# 模块只允许访问 Pi 本身，故用 manual + never-default，并关掉转发（见下）。
 if [[ "$open_ap" == true ]]; then
     nmcli connection add type wifi ifname "$interface" con-name pi-module-ap ssid PI_MODULE_NET \
         802-11-wireless.mode ap 802-11-wireless.band bg 802-11-wireless.channel 6 \
-        ipv4.method shared ipv4.addresses 192.168.50.1/24 ipv6.method disabled \
+        ipv4.method manual ipv4.addresses 192.168.50.1/24 ipv4.never-default yes ipv4.gateway "" \
+        ipv4.route-metric 1000 ipv6.method disabled \
         connection.autoconnect no
     printf '%s\n' 'Open hotspot profile created with autoconnect disabled. Enable it explicitly from the Pi quick panel only when a module needs hotspot LAN.'
     exit 0
@@ -49,7 +52,8 @@ fi
 nmcli connection add type wifi ifname "$interface" con-name pi-module-ap ssid PI_MODULE_NET \
     802-11-wireless.mode ap 802-11-wireless.band bg 802-11-wireless.channel 6 \
     wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn wifi-sec.psk "$ap_password" \
-    ipv4.method shared ipv4.addresses 192.168.50.1/24 ipv6.method disabled \
+    ipv4.method manual ipv4.addresses 192.168.50.1/24 ipv4.never-default yes ipv4.gateway "" \
+    ipv4.route-metric 1000 ipv6.method disabled \
     connection.autoconnect no
 unset ap_password
 printf '%s\n' 'Hotspot profile created with autoconnect disabled. Enable it explicitly from the Pi quick panel only when a module needs hotspot LAN.'

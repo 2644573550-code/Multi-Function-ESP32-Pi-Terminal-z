@@ -1,0 +1,38 @@
+[Unit]
+Description=Orange Pi Terminal module worker (%i)
+Documentation=file:///usr/share/doc/orange-pi-terminal/worker-isolation.md
+After=network.target
+
+[Service]
+# 不建持久账号：systemd 每次启动分配临时 UID。
+# 判定标准是「worker UID ≠ 宿主 UID」，不要求固定值（§0.4）。
+DynamicUser=yes
+PrivateNetwork=yes
+PrivateTmp=yes
+# read-only 而非 yes：模块 .so 解包在用户数据目录下，完全屏蔽会让 worker
+# 加载不到库。写权限仍然没有 —— worker 不能改用户目录、不能落盘。
+ProtectHome=read-only
+ProtectSystem=strict
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+# worker 专用运行目录由 systemd 分配属主，不要手工 chown。
+# 0755 是必须的：宿主（普通用户）要能进入该目录读 socket 文件。
+# socket 本身 0666，只允许单连接，由 worker 侧 accept 一次。
+RuntimeDirectory=orange-pi-worker-%i
+RuntimeDirectoryMode=0755
+StateDirectory=orange-pi-worker-%i
+StateDirectoryMode=0700
+
+# 模块库只读挂载；不挂 DB、不挂宿主配置文件。
+# 注意：DynamicUser 每次 UID 不同，因此这里不能用固定属主。
+ReadOnlyPaths=/usr/lib/orange-pi-terminal/modules
+
+ExecStart=/usr/libexec/orange-pi-terminal/module_worker
+
+[Install]
+WantedBy=multi-user.target

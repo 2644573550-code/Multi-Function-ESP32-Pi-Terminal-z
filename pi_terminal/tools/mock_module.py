@@ -6,9 +6,11 @@ import binascii
 import hashlib
 import json
 import math
+import ssl
 import socketserver
 import struct
 import threading
+import time
 import zlib
 from pathlib import Path
 from functools import partial
@@ -40,13 +42,47 @@ def exact(sock, n):
         if not chunk: raise EOFError
         data += chunk
     return data
+
+def _fence_stream(server, send):
+    """啸天围界（82）的 1 Hz 模拟上报，直到 socket 出错或进程退出。"""
+    while True:
+        now_ms = int(time.monotonic() * 1000)
+        sample = dict(
+            armed=getattr(server, 'armed', False),
+            sensor_online=True,
+            fault_code='',
+            trigger_count=getattr(server, 'triggers', 0),
+            trigger_ms=now_ms,
+            heartbeat_ms=now_ms,
+            power_known=True,
+            power_source='external',
+            has_battery=True,
+            battery_percent=82,
+            segments=[
+                {'segment_id': 'A',
+                 'blocked': getattr(server, 'blocked', False),
+                 'sample_ms': now_ms, 'valid': True},
+                {'segment_id': 'B', 'blocked': False,
+                 'sample_ms': now_ms, 'valid': True},
+            ])
+        try:
+            send('data', payload=base64.b64encode(
+                json.dumps(sample).encode()).decode())
+        except (OSError, BrokenPipeError):
+            return
+        time.sleep(1.0)
+
+
 class Handler(socketserver.BaseRequestHandler):
     def handle(self):
         session = None; seq = 0; count = 0; streaming=False
+        stream_thread = None   # 每条连接自己的上报线程（重连会重建）
+        lock = threading.Lock()
         def send(kind, **body):
             nonlocal seq
-            seq += 1
-            self.request.sendall(wire(dict(event=kind, module_id=self.server.module_id, module_instance=session, seq=seq, version=1, **body)))
+            with lock:
+                seq += 1
+                self.request.sendall(wire(dict(event=kind, module_id=self.server.module_id, module_instance=session, seq=seq, version=1, **body)))
         try:
             self.request.settimeout(10)
             while True:
@@ -58,6 +94,13 @@ class Handler(socketserver.BaseRequestHandler):
                 if e['event'] == 'session_open':
                     if e.get('token') != self.server.token or e.get('module_id') != self.server.module_id: return
                     session = e['module_instance']; send('session_ready', token=self.server.token)
+                    # 真固件连上就上报，不等 action：Pi 切 lane 会重建连接，
+                    # action 不会重放，等 action 会让页面在重连后一直无数据。
+                    if self.server.module_id == 82:
+                        stream_thread = threading.Thread(
+                            target=_fence_stream, args=(self.server, send), daemon=True)
+                        stream_thread.start()
+
                 elif not session or e.get('module_instance') != session: return
                 elif e['event'] == 'ping': send('pong')
                 elif e['event'] == 'package_get':
@@ -78,6 +121,34 @@ class Handler(socketserver.BaseRequestHandler):
                         if command!='stop':count+=1
                         sample=dict(frame='data:image/png;base64,'+base64.b64encode(camera_png(count)).decode(),sequence=count,running=streaming,simulated=True)
                         send('data',payload=base64.b64encode(json.dumps(sample).encode()).decode())
+                    elif self.server.module_id == 82:
+                        # 啸天围界（82）：两路遮挡 + 心跳 + 电池。
+                        # 真固件是**持续上报**的（去抖要连续 2 帧、心跳 9 秒过期），
+                        # 所以这里起 1 Hz 上报线程；Pi 切 lane 会重建连接，
+                        # 每条连接各自建线程，不共享。
+                        server = self.server
+                        if command == 'arm':
+                            server.armed = True
+                            server.blocked = True
+                            server.triggers = getattr(server, 'triggers', 0)
+                        elif command == 'disarm':
+                            server.armed = False
+                            server.blocked = False
+                        if stream_thread is None or not stream_thread.is_alive():
+                            stream_thread = threading.Thread(
+                                target=_fence_stream, args=(server, send), daemon=True)
+                            stream_thread.start()
+                    elif self.server.module_id == 83:
+                        # 血压（83）：模拟一次完整测量。
+                        sample = dict(systolic=118 + count % 4,
+                                      diastolic=76 + count % 3,
+                                      pulse=68 + count % 5,
+                                      unit='mmHg',
+                                      source='device.auto',
+                                      measured_at_ms=int(time.monotonic() * 1000))
+                        count += 1
+                        send('data', payload=base64.b64encode(
+                            json.dumps(sample).encode()).decode())
                     elif self.server.module_id in (129,130) and command in ('start','stop','reset','increment','decrement'):
                         if command == 'reset': count=0
                         elif command in ('start','increment'): count+=1
@@ -106,9 +177,18 @@ class Handler(socketserver.BaseRequestHandler):
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
-def services(folder, token, tcp_port=0, http_port=0, module_id=80):
+def services(folder, token, tcp_port=0, http_port=0, module_id=80, tls=None):
+    """tls=(certfile, keyfile) 时把业务面升级为 TLS。
+
+    §0.8.1：模块是 TLS server，Pi 是 client；Pi 用 SHA-256 指纹固定。
+    测试必须走真实 TLS 握手，否则"指纹不匹配即拒绝"无法验证。
+    """
     tcp = Server(('127.0.0.1',tcp_port), Handler); tcp.token = token; tcp.folder = folder
     tcp.module_id = module_id
+    if tls:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=str(tls[0]), keyfile=str(tls[1]))
+        tcp.socket = context.wrap_socket(tcp.socket, server_side=True)
     http = ThreadingHTTPServer(('127.0.0.1',http_port), partial(SimpleHTTPRequestHandler,directory=str(folder)))
     for s in (tcp,http): threading.Thread(target=s.serve_forever,daemon=True).start()
     return tcp,http

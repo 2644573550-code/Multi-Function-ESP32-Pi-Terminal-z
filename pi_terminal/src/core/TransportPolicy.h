@@ -18,7 +18,9 @@ struct TransportPolicy final {
         const auto packageName = moduleConfig.value("package_transport").toString();
         if ((mode != "fixed_ble" && mode != "fixed_hotspot_lan") ||
             (packageName != "data" && packageName != "hotspot_lan")) return false;
-        if (mode == "fixed_hotspot_lan" && packageName != "data") return false;
+        // 四种组合都合法：包走业务 lane 或走临时热点租约，与业务 lane 是
+        // 两条独立决策。fixed_hotspot_lan + hotspot_lan 表示业务走 LAN、
+        // 插件包另租一次热点（例如包源在另一台设备上）。
         (*hostProfile)["transport_mode"] = mode;
         (*hostProfile)["package_transport"] = packageName;
         return true;
@@ -39,6 +41,8 @@ struct TransportPolicy final {
         if (packageName == "data") policy.package = Package::ActiveDataLane;
         else if (packageName == "http") policy.package = Package::HttpUrl;
         else if (packageName == "hotspot_lan") policy.package = Package::HotspotHttp;
+        // 与 applyModuleConfig() 保持同一判定：四种组合都合法。
+        // 业务 lane 与包通道是两个独立决策，不互相约束。
         return policy;
     }
 

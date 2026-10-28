@@ -17,7 +17,7 @@ Button {
     implicitWidth:200*Theme.scaleFactor
     padding:Theme.gap/1.5
     topInset:0;bottomInset:0;leftInset:0;rightInset:0
-    Accessible.name:label+" · "+detail
+    Accessible.name:label+"，"+detail
     background:GlassSurface {
         objectName:root.blurObjectName
         color:root.active?Theme.accent:Theme.raised

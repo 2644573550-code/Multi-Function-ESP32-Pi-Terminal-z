@@ -523,7 +523,7 @@ Item {
                 iconName: "schedule"
                 accentColor: "#8f7bff"
                 title: I18n.t("中国时间")
-                subtitle: I18n.t("系统时钟") + " · " + TimeMath.formatOffset(root.localOffset)
+                subtitle: I18n.t("系统时钟") + "，" + TimeMath.formatOffset(root.localOffset)
 
                 // 报时入口放在卡片头部右上角：不再占正文一行，也不会像整卡热区那样
                 // 盖住其它控件。按钮按 48px 下限定尺寸，避免把头部撑得比一行还高。
@@ -639,7 +639,7 @@ Item {
                     Layout.fillWidth: true
                     wrapMode: Text.Wrap
                     subdued: true
-                    text: I18n.t("夏令时未知 · 校时见设置")
+                    text: I18n.t("夏令时未知，校时见设置")
                 }
                 CarText {
                     objectName: "worldClockUnavailable"
@@ -1188,7 +1188,7 @@ Item {
                             Layout.fillWidth: true
                             maximumLineCount: 1
                             elide: Text.ElideMiddle
-                            text: I18n.t("铃声") + " · " +
+                            text: I18n.t("铃声") + "，" +
                                 (root.alarmEngine ? root.alarmEngine.ringtoneLabel(root.alarmRingtone)
                                                   : I18n.t("未选择（仅语音播报）"))
                         }
@@ -1229,7 +1229,7 @@ Item {
                             CarText {
                                 Layout.fillWidth: true
                                 maximumLineCount: 1
-                                text: I18n.t("片段起点") + " · " + I18n.t("15 秒")
+                                text: I18n.t("片段起点") + "，" + I18n.t("15 秒")
                             }
                             IconButton {
                                 objectName: "alarmClipBack"
@@ -1382,8 +1382,8 @@ Item {
                                             maximumLineCount: 1
                                             elide: Text.ElideRight
                                             fontPixelSize: Theme.fontCaption
-                                            text: (alarmRow.repeatDaily ? I18n.t("每天") : I18n.t("仅一次")) + " · " +
-                                                  alarmRow.ringSeconds + I18n.t("秒") + " · " +
+                                            text: (alarmRow.repeatDaily ? I18n.t("每天") : I18n.t("仅一次")) + "，" +
+                                                  alarmRow.ringSeconds + I18n.t("秒") + "，" +
                                                   I18n.t("再响") + " " + alarmRow.snoozeMinutes + I18n.t("分")
                                         }
                                     }

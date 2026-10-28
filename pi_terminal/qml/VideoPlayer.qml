@@ -39,7 +39,7 @@ Item {
     ]
     readonly property real outputFormatMenuWidth:
         Math.max(150 * root.uiScale,
-                 ( ("1080p · " + I18n.t("高规格")).length * Theme.body * 0.72) + Theme.gap * 2)
+                 ( ("1080p，" + I18n.t("高规格")).length * Theme.body * 0.72) + Theme.gap * 2)
     property real announcementGain: systemTools.mediaGain
     Behavior on announcementGain { NumberAnimation { duration: 120 } }
     property bool fullscreenControlsVisible: true

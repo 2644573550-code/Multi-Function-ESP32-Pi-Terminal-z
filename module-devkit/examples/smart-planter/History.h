@@ -1,4 +1,5 @@
 #pragma once
+#include <QtGlobal>
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
@@ -12,11 +13,18 @@
 
 // No QObject, retained host callbacks or background work crosses unload.
 // One-minute real observations; seven-day bounded retention. Never fill gaps.
+//
+// 报告 §6.1：模块**不再**把历史写成明文 JSON。持久化改为宿主侧可信存储：
+// 模块只把原始观测经 emit_event 发出去，宿主写进当前用户的 SQLCipher 库。
+// 本类保留为纯内存聚合（页面实时曲线用），save()/load() 默认关闭，
+// 只有显式 ORANGE_PI_PLANTER_LEGACY_JSON=1 时才落盘，供旧数据迁移使用。
 class History {
     struct Bucket { double sum = 0, low = 0, high = 0; int count = 0; };
     QMap<qint64, Bucket> minutes;
     QString path;
     qint64 persistedMinute = -1;
+    // 默认关闭明文 JSON 持久化；仅在迁移旧数据的显式开关下打开。
+    bool legacyJsonEnabled = qEnvironmentVariableIsSet("ORANGE_PI_PLANTER_LEGACY_JSON");
 public:
     static constexpr qint64 minute = 60000;
     static constexpr qint64 week = 7LL * 24 * 60 * minute;
@@ -54,7 +62,8 @@ public:
         if (!b.count) b.low = b.high = temperature;
         b.low = qMin(b.low, temperature); b.high = qMax(b.high, temperature);
         b.sum += temperature; ++b.count;
-        if (persistedMinute != t) { save(); persistedMinute = t; }
+        // 报告 §6.1：默认不写明文 JSON。历史由宿主写入加密库。
+        if (legacyJsonEnabled && persistedMinute != t) { save(); persistedMinute = t; }
     }
     bool save() {
         if (path.isEmpty()) { error = QStringLiteral("未提供历史存储目录"); return false; }

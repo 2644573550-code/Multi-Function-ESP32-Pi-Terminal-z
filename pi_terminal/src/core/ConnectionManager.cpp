@@ -1,4 +1,6 @@
 #include "ConnectionManager.h"
+
+#include "LaneGate.h"
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QFile>
@@ -11,14 +13,64 @@
 #include <QDir>
 
 static qint64 now() { return QDateTime::currentMSecsSinceEpoch(); }
+
+namespace {
+// 位置事件的可路由形态（pbr-secure-v1 §4.3）。
+// 四项缺一不可：旧版桥板不发这些字段，缺失时保持既有行为、不路由，
+// 避免把兼容性做成回归。
+struct SlotPosition
+{
+    QString bridgeId;
+    QString deviceId;
+    QString generation;
+    int slotId = -1;
+    bool valid() const
+    {
+        return slotId >= 0 && !bridgeId.isEmpty() && !generation.isEmpty() && !deviceId.isEmpty();
+    }
+};
+
+SlotPosition slotPositionOf(const QJsonObject &event)
+{
+    SlotPosition position;
+    const QJsonValue slot = event.value(QStringLiteral("slot_id"));
+    if (slot.isDouble()) position.slotId = slot.toInt(-1);
+    position.bridgeId = event.value(QStringLiteral("bridge_id")).toString();
+    position.deviceId = event.value(QStringLiteral("device_id")).toString();
+    position.generation = event.value(QStringLiteral("binding_generation")).toString();
+    return position;
+}
+} // namespace
+
 ConnectionManager::ConnectionManager(QObject *parent) : QObject(parent), modules_(this), pogo_(this) {
     connect(this, &ConnectionManager::cardsChanged, this, [this] { cards_.synchronize(cards()); });
     connect(&pogo_, &TransportBase::connected, &hostEvents_, &HostEventDetector::reset);
     connect(&pogo_, &TransportBase::connected, this, [this] { bridgeMonitor_.setConnected(true); });
     connect(&bridgeMonitor_, &BridgeConnectionMonitor::connectionChanged, this, [this](bool) { emit bridgeConnectionChanged(); });
-    connect(&bridgeMonitor_, &BridgeConnectionMonitor::unavailable, this, &ConnectionManager::bridgeUnavailable);
+    connect(&bridgeMonitor_, &BridgeConnectionMonitor::unavailable, this, [this] {
+        handleBridgeUnavailable();
+    });
+    // 桥板重新连上：解除位置 unknown 并允许新的物理插入判定。
+    connect(&bridgeMonitor_, &BridgeConnectionMonitor::connectionChanged, this,
+            [this](bool connected) {
+        if (connected) handleBridgeRestored();
+    });
     connect(&pogo_, &TransportBase::controlEvent, &hostEvents_, &HostEventDetector::consume);
-    connect(&hostEvents_, &HostEventDetector::detected, this, &ConnectionManager::attach);
+    connect(&hostEvents_, &HostEventDetector::detected, this, [this](const QJsonObject &event) {
+        // T-08：RC522 是桥板级事件，不进入 attach 路径。
+        if (event.value("event").toString() == QLatin1String("rfid_card")) {
+            if (!positionOpsAllowed()) {
+                // §10.3：桥板失联时位置未知，禁止新的刷卡。
+                qWarning().noquote() << "rfid_card dropped: bridge unavailable";
+                return;
+            }
+            // raw UID 只经信号传递一次，接收方必须立即派生并丢弃。
+            emit cardPresented(event.value("uid").toString(),
+                               event.value("uid_len").toInt(-1));
+            return;
+        }
+        attach(event);
+    });
     connect(&pogo_, &TransportBase::disconnected, this, [this](const auto &reason) {
         bridgeMonitor_.setConnected(false);
         status_ = "控制桥断开：" + reason;
@@ -28,15 +80,31 @@ ConnectionManager::ConnectionManager(QObject *parent) : QObject(parent), modules
     connect(&modules_, &ModuleManager::error, this, [this](const auto &id, const auto &m) {
         auto s = sessions_.value(id); if (s) state(s, "error", m);
     });
-    connect(&modules_, &ModuleManager::event, this, [this](const auto &id, const auto &, const auto &json) {
+    connect(&modules_, &ModuleManager::event, this, [this](const auto &id, const auto &type, const auto &json) {
         auto s = sessions_.value(id); if (s && !s->stopping) {
-            pages_.update(id, QJsonDocument::fromJson(json.toUtf8()).object().toVariantMap());
+            const QJsonObject payload = QJsonDocument::fromJson(json.toUtf8()).object();
+
+            // 报告 §6.1：模块只发原始观测，历史写进当前用户的加密库。
+            // 模块自己不再写明文 JSON；这里拿不到 DB 就不写，不伪造归属。
+            if (type == QLatin1String("sample")) {
+                const QJsonValue temperature = payload.value(QStringLiteral("temperature_C"));
+                if (temperature.isDouble() && observationSink)
+                    observationSink(id, temperature.toDouble());
+            }
+
+            pages_.update(id, payload.toVariantMap());
             s->message = json.left(2048); emit cardsChanged();
         }
     });
     modules_.sender = [this](const QString &id, quint8 t, const QByteArray &data) {
         auto s = sessions_.value(id);
-        return s && s->loaded && s->ready && !s->stopping && send(s, "data", {{"payload", QString::fromLatin1(data.toBase64())}}, t);
+        const bool allowed = s && s->loaded && s->ready && !s->stopping;
+        if (!allowed) {
+            qWarning().noquote() << "module data blocked: loaded=" << (s ? s->loaded : false)
+                                 << "ready=" << (s ? s->ready : false) << "session=" << id;
+            return false;
+        }
+        return send(s, "data", {{"payload", QString::fromLatin1(data.toBase64())}}, t);
     };
     modules_.controlSender = [this](const QString &id, quint8 cmd, const QByteArray &payload, quint16 *seq) {
         auto s = sessions_.value(id); if (!s || s->stopping) return false;
@@ -100,6 +168,32 @@ bool ConnectionManager::start(const QString &device) {
     bridgeMonitor_.enable(); emit bridgeConnectionChanged();
     return pogo_.open(device);
 }
+QVariantList ConnectionManager::slotStatus() const {
+    QVariantList list;
+    for (int slot = 0; slot < 2; ++slot) {
+        const SlotRouter::Binding binding = slotRouter_.binding(slot);
+        QVariantMap entry{{"slot", slot}, {"bound", binding.valid()}};
+        if (binding.valid()) {
+            entry.insert("bridgeId", binding.bridgeId);
+            entry.insert("deviceId", binding.deviceId);
+            entry.insert("generation", binding.generation);
+            entry.insert("instance", binding.instance);
+            entry.insert("boundAt", binding.boundAt);
+            entry.insert("bridgeOnline", slotRouter_.bridgeOnline(binding.bridgeId));
+        }
+        list.append(entry);
+    }
+    return list;
+}
+
+QVariantMap ConnectionManager::slotStats() const {
+    return QVariantMap{
+        {"accepted", QVariant::fromValue(slotRouter_.acceptedCount())},
+        {"rejected", QVariant::fromValue(slotRouter_.rejectedCount())},
+        {"lastRejection", slotRouter_.lastRejection()},
+    };
+}
+
 QVariantList ConnectionManager::cards() const {
     QVariantList list;
     for (auto s : sessions_) {
@@ -128,6 +222,18 @@ void ConnectionManager::attach(const QJsonObject &e) {
                           << "package=" << moduleConfig.value("package_transport").toString();
     }
     if (type == "detach") {
+        // 位置事件先过槽位路由：迟到的 detach 不得解掉新设备的绑定，
+        // 也不得把新会话的 contact 清掉。旧格式事件不带这些字段，跳过。
+        const SlotPosition position = slotPositionOf(e);
+        if (position.valid()) {
+            const auto decision = slotRouter_.release(position.bridgeId, position.slotId,
+                                                      position.generation, now());
+            if (decision.verdict != SlotRouter::Verdict::Accepted) {
+                qWarning().noquote() << "Slot detach rejected:" << instance
+                                     << SlotRouter::verdictName(decision.verdict) << decision.detail;
+                return;
+            }
+        }
         suppressedInstances_.remove(instance);
         auto s = sessions_.value(instance);
         if (s && e.value("module_id").toInt(-1) == s->id) {
@@ -142,6 +248,21 @@ void ConnectionManager::attach(const QJsonObject &e) {
     const double numericId = e.value("module_id").toDouble(-1);
     if (type != "attach" || numericId < 1 || numericId > 255 || numericId != int(numericId) ||
         !QRegularExpression("^[A-Za-z0-9_-]{1,64}$").match(instance).hasMatch()) return;
+    {
+        // 双槽路由：同一槽换设备必换 binding_generation，旧代次的迟到 attach
+        // 在这里被拒，不会建立/覆盖会话。重复上报同代次是幂等的。
+        const SlotPosition position = slotPositionOf(e);
+        if (position.valid()) {
+            const auto decision = slotRouter_.bind(position.bridgeId, position.slotId,
+                                                   position.deviceId, position.generation,
+                                                   instance, now());
+            if (decision.verdict != SlotRouter::Verdict::Accepted) {
+                qWarning().noquote() << "Slot attach rejected:" << instance
+                                     << SlotRouter::verdictName(decision.verdict) << decision.detail;
+                return;
+            }
+        }
+    }
     if (sessions_.contains(instance)) {
         auto s = sessions_[instance];
         if (s->id != int(numericId) || s->stopping) return;
@@ -199,6 +320,8 @@ void ConnectionManager::attach(const QJsonObject &e) {
         s->lan = new HotspotLanTransport(this);
         connect(s->lan, &TransportBase::connected, this, [this, instance] {
             auto s = sessions_.value(instance); if (!s || s->stopping) return; s->lanConnected = true;
+            // TLS 指纹已比对通过（HotspotLanTransport 只在 pinnedVerified 后 emit connected）。
+            if (s->laneGate) s->laneGate->markAuthenticated(LaneGate::Lane::Lan);
             send(s, "session_open", {{"token", s->profile.value("token")}, {"transport_choice", "hotspot_lan"}}, 2);
         });
         connect(s->lan, &TransportBase::payloadReceived, this, [this, instance](quint8 t, const auto &p) { receive(instance, t, p); });
@@ -213,6 +336,8 @@ void ConnectionManager::attach(const QJsonObject &e) {
         s->ble = new BleTransport(this);
         connect(s->ble, &TransportBase::connected, this, [this, instance] {
             auto s = sessions_.value(instance); if (!s || s->stopping) return; s->bleConnected = true;
+            // 挑战-响应已通过（BleTransport 只在 authenticated 后 emit connected）。
+            if (s->laneGate) s->laneGate->markAuthenticated(LaneGate::Lane::Ble);
             send(s, "session_open", {{"token", s->profile.value("token")}, {"transport_choice", "ble"}}, 1);
         });
         connect(s->ble, &TransportBase::payloadReceived, this, [this, instance](quint8 t, const auto &p) { receive(instance, t, p); });
@@ -220,6 +345,27 @@ void ConnectionManager::attach(const QJsonObject &e) {
         connect(s->ble, &TransportBase::disconnected, this, [this, instance](const auto &m) { auto s = sessions_.value(instance); if (s) transportLost(s, 1, m); });
     }
     s->lostAt = 0; s->retryAt = 0;
+
+    // §0.8.5：本次 attach 的 lane 门控。绑定当前用户；未登录时为匿名会话，
+    // 业务数据在 requestSwitch 时会被 RejectedNoSession/RejectedUnbound 拦下。
+    if (!s->laneGate) {
+        s->laneGate = new LaneGate();
+        const QString gateSession = s->instance;
+        connect(s->laneGate, &LaneGate::invalidated, this, [this, gateSession](const QString &reason) {
+            auto session = sessions_.value(gateSession);
+            if (!session) return;
+            qInfo().noquote() << "lane gate invalidated:" << gateSession << reason;
+        });
+        connect(s->laneGate, &LaneGate::switchRequired, this, [this, gateSession](int lane) {
+            auto session = sessions_.value(gateSession);
+            if (!session) return;
+            // 切换时丢弃未完成分片，不重传；由连接重跑一次 connectData。
+            qInfo().noquote() << "lane switch required:" << gateSession
+                              << (lane == int(LaneGate::Lane::Lan) ? "hotspot_lan" : "ble");
+        });
+    }
+    s->laneGate->beginAttach(activeUserId_, s->instance);
+
     state(s, "connecting", "正在连接模块"); connectData(s);
 }
 void ConnectionManager::connectData(const QSharedPointer<Session> &s) {
@@ -235,11 +381,88 @@ void ConnectionManager::connectData(const QSharedPointer<Session> &s) {
         return;
     }
     if (s->candidateTransport == 2 && s->lan) {
-        s->lan->connectToModule(QHostAddress(s->profile.value("address").toString()), quint16(s->profile.value("port").toInt()));
+        // §0.8.1：LAN 必须指纹固定。profile 里没有 pin_sha256 就不连——
+        // 空指纹等于不校验，宁可连不上也不降级明文。
+        const QByteArray pinned =
+            QByteArray::fromHex(s->profile.value("pin_sha256").toString().toLatin1());
+        if (pinned.size() != 32) {
+            state(s, "error", "LAN 缺少已登记的证书指纹（pin_sha256）");
+            return;
+        }
+        const QString sessionName = s->instance;
+        connect(s->lan, &HotspotLanTransport::identityRejected, this,
+                [this, sessionName](const QString &reason) {
+            auto session = sessions_.value(sessionName);
+            if (!session || session->stopping) return;
+            qWarning().noquote() << "LAN identity rejected:" << sessionName << reason;
+            state(session, "error", "IDENTITY_REJECTED");
+        }, Qt::UniqueConnection);
+        s->lan->connectToModule(QHostAddress(s->profile.value("address").toString()),
+                                quint16(s->profile.value("port").toInt()), pinned,
+                                QString::number(s->id));
     } else if (s->candidateTransport == 1 && s->ble) {
-        s->ble->start(s->profile.value("ble").toObject());
+        QJsonObject bleConfig = s->profile.value("ble").toObject();
+        // §0.8.2 应用层认证参数：密钥来自配对下发（T-03），只在内存里传。
+        bleConfig.insert("module_id", s->id);
+        bleConfig.insert("boot_id", s->profile.value("boot_id").toString());
+        bleConfig.insert("session_key", s->profile.value("session_key").toString());
+        const QString sessionName = s->instance;
+        connect(s->ble, &BleTransport::authenticationFailed, this,
+                [this, sessionName](const QString &reason) {
+            auto session = sessions_.value(sessionName);
+            if (!session || session->stopping) return;
+            qWarning().noquote() << "BLE authentication failed:" << sessionName << reason;
+            state(session, "error", "TRANSPORT_SECURITY_REQUIRED");
+        }, Qt::UniqueConnection);
+        s->ble->start(bleConfig);
     }
 }
+void ConnectionManager::handleBridgeUnavailable() {
+    // 报告 §10.3：桥板 USB 失联只使位置变为 unknown 并禁止**新的**
+    // 刷卡/绑卡/物理接入确认；已登记用户仍可用本机 PIN 解锁查看、停止或撤权。
+    // 已认证且仍有效的无线业务**不因此中断**。
+    bridgeUnavailable_ = true;
+    // 把当前所有已绑定桥板在 SlotRouter 里标成离线，位置判定转 unknown。
+    for (const auto &binding : slotRouter_.bindings()) {
+        if (binding.valid()) slotRouter_.setBridgeOnline(binding.bridgeId, false);
+    }
+    status_ = "控制桥失联：位置未知，禁止新的刷卡/绑卡";
+    qWarning().noquote() << "bridge unavailable; position-based operations blocked";
+    emit bridgeUnavailable();
+    emit bridgeAvailabilityChanged(false);
+    emit cardsChanged();
+}
+
+void ConnectionManager::handleBridgeRestored() {
+    if (!bridgeUnavailable_) return;
+    bridgeUnavailable_ = false;
+    for (const auto &binding : slotRouter_.bindings()) {
+        if (binding.valid()) slotRouter_.setBridgeOnline(binding.bridgeId, true);
+    }
+    // 恢复后仍须重新认证与核对位置；这里不重建任何旧业务会话。
+    status_ = "控制桥已恢复：需重新认证与核对位置";
+    qInfo().noquote() << "bridge restored; re-authentication required";
+    emit bridgeAvailabilityChanged(true);
+    emit cardsChanged();
+}
+
+bool ConnectionManager::positionOpsAllowed() const {
+    // 桥板在线才允许基于物理位置的新操作。
+    return !bridgeUnavailable_;
+}
+
+void ConnectionManager::setActiveUserId(const QString &userId) {
+    if (activeUserId_ == userId) return;
+    activeUserId_ = userId;
+    // 切用户/退出：所有已建立的 lane 认证立即作废，业务数据不得继续流入。
+    for (auto it = sessions_.begin(); it != sessions_.end(); ++it) {
+        if (it.value() && it.value()->laneGate)
+            it.value()->laneGate->invalidateAll(
+                userId.isEmpty() ? QStringLiteral("logged out")
+                                 : QStringLiteral("active user changed"));
+    }
+}
+
 void ConnectionManager::requestHotspot(const QSharedPointer<Session> &s, bool forPackage) {
     if (!s || s->stopping || s->hotspotLease || s->hotspotPending) return;
     s->hotspotPending = true;
@@ -355,6 +578,28 @@ void ConnectionManager::receive(const QString &instance, quint8 t, const QByteAr
         send(s, "disconnect_ack", {{"accepted", accepted}, {"reason", rejectReason}});
         if (accepted) { s->closePending = true; s->awaitingPeerClose = true; s->closeDeadline = now() + 3000; }
     } else if (type == "data" && s->loaded) {
+        // §0.8.4：单条业务 payload ≤512 字节，超出直接拒绝（INVALID_MESSAGE）。
+        // 不截断、不重试、不降级 —— 交给上层按 INVALID_MESSAGE 处理。
+        if (!LaneGate::payloadAcceptable(decodedPayload.size())) {
+            state(s, "error", "INVALID_MESSAGE");
+            return;
+        }
+        // §0.8.5：业务数据必须挂在已认证的 lane 与已绑定用户的会话上。
+        // 未通过指纹固定 / 挑战-响应的连接一条数据都不放行。
+        if (s->laneGate) {
+            const auto lane = (t == 2) ? LaneGate::Lane::Lan : LaneGate::Lane::Ble;
+            const auto verdict = s->laneGate->requestSwitch(lane);
+            if (verdict != LaneGate::Verdict::Accepted) {
+                qWarning().noquote() << "business data rejected by lane gate:" << instance
+                                     << s->laneGate->lastReason();
+                state(s, "error",
+                      verdict == LaneGate::Verdict::RejectedNoSession ||
+                              verdict == LaneGate::Verdict::RejectedUnbound
+                          ? "STORAGE_UNAVAILABLE"
+                          : "TRANSPORT_SECURITY_REQUIRED");
+                return;
+            }
+        }
         if (!s->firstDataLogged) {
             qInfo().noquote() << "Module data received: module_id=" << s->id
                               << "instance=" << instance
@@ -431,11 +676,19 @@ void ConnectionManager::install(const QSharedPointer<Session> &s) {
         const auto policy = TransportPolicy::fromProfile(s->profile);
         if (policy.mode == TransportPolicy::Mode::BleOnly && policy.packageNeedsHotspot()) releaseHotspot(s);
         QSettings settings;
-        if (settings.value("trusted/" + s->trustKey, false).toBool()) loadVerified(s);
+        // 调试/演示：ORANGE_PI_AUTO_TRUST=1 跳过首次信任弹窗（见
+        // docs/devdocs/09-debug-hooks.md）。生产不设置即可，默认行为不变。
+        const bool autoTrust =
+            qEnvironmentVariable("ORANGE_PI_AUTO_TRUST") == QLatin1String("1");
+        if (autoTrust || settings.value("trusted/" + s->trustKey, false).toBool())
+            loadVerified(s);
         else {
             state(s, "awaiting_trust", "签名验证通过，请确认模块权限");
             QStringList permissions;
             for (const auto &v : s->verifiedManifest.value("permissions").toArray()) permissions.append(v.toString());
+            // manifest 的 permissions 只是请求；把请求记录给安全服务，
+            // 由授权页展示"请求了什么 / 实际授予了什么"，不自动授予。
+            if (requestedCapabilitiesSink) requestedCapabilitiesSink(id.toInt(), permissions);
             emit trustRequired(id, s->verifiedManifest.value("name").toString(), permissions);
         }
     });
@@ -464,6 +717,33 @@ void ConnectionManager::loadVerified(const QSharedPointer<Session> &s) {
     if (s->ready) { modules_.connected(s->instance, s->activeTransport ? s->activeTransport : (s->lanConnected ? 2 : 1)); state(s, "ready", "模块已连接"); }
     else state(s, "data_lost", "数据连接中断，功能已缓存");
 }
+bool ConnectionManager::refreshModule(const QString &instance) {
+    auto s = sessions_.value(instance);
+    if (!s || s->stopping || !s->loaded || s->packagePath.isEmpty()) return false;
+
+    const QString previousVersion = modules_.packageVersion(instance);
+    // 先卸页面与插件：顺序不能反，否则新页面会指向已释放的 model。
+    pages_.registerPage(instance, {});
+    modules_.unload(instance);
+    pages_.remove(instance);
+
+    const QJsonObject transport = s->profile;
+    if (!modules_.load(instance, s->id, s->packagePath, transport)) {
+        state(s, "error", "热更新失败：模块无法重新加载");
+        return false;
+    }
+    pages_.registerPage(instance, modules_.page(instance));
+    const QString newVersion = modules_.packageVersion(instance);
+    if (s->ready)
+        modules_.connected(instance, s->activeTransport ? s->activeTransport
+                                                        : (s->lanConnected ? 2 : 1));
+    qInfo().noquote() << "module refreshed:" << instance
+                      << previousVersion << "->" << newVersion
+                      << "page schema" << modules_.pageSchemaVersion(instance);
+    emit moduleRefreshed(instance, newVersion);
+    return true;
+}
+
 void ConnectionManager::retry(const QString &id) {
     auto s = sessions_.value(id); if (!s || s->stopping || s->installer || s->state != "error") return;
     s->packagePath.clear(); s->trustKey.clear(); s->incoming.clear();
@@ -519,6 +799,12 @@ void ConnectionManager::sendCloseRequest(const QSharedPointer<Session> &s) {
 void ConnectionManager::stop(const QSharedPointer<Session> &s, const QString &reason) {
     if (s->stopping) return;
     s->stopping = true; s->ready = false;
+    // 会话关闭时释放它占用的物理槽，避免槽位绑定泄漏到下一次插入。
+    for (int slot = 0; slot < 2; ++slot) {
+        const SlotRouter::Binding binding = slotRouter_.binding(slot);
+        if (binding.valid() && binding.instance == s->instance)
+            slotRouter_.release(binding.bridgeId, slot, binding.generation, now());
+    }
     s->closePending = false;
     s->awaitingPeerClose = false;
     if (s->receiver) s->receiver->cancel();
