@@ -109,6 +109,7 @@ def run(binary, output, host_test=False, selected=None, quit_after_ms=6500, sett
         cases.append((f'startup-settings-{language}', dict(startup=True, energy=True, language=language, page=4)))
         cases.append((f'volume-{language}', dict(energy=True, language=language, volumePanel=True)))
         cases.append((f'sound-settings-{language}', dict(energy=True, language=language, page=4, soundSettings=True)))
+        cases.append((f'voice-settings-{language}', dict(energy=True, language=language, page=13)))
     for enabled in (True, False):
         cases.append((f'speech-duck-{enabled}', dict(energy=True, language='en', duckPreview=enabled, quickMedia='music', mediaAction='play')))
     cases.append(('speech-duck-video', dict(energy=True, language='zh', duckPreview=True, quickMedia='video', mediaAction='play')))
@@ -128,8 +129,10 @@ def run(binary, output, host_test=False, selected=None, quit_after_ms=6500, sett
         ('default-wallpaper-raw', dict(energy=True, language='zh', resetWallpaper=True, rawDefault=True, backdrop=True)),
         ('wallpaper-restored-default-blur', dict(energy=True, language='zh', resetWallpaper=True)),
     ]
+    cases.append(('voice-test-mode-zh', dict(energy=True, language='zh', page=13, voiceTest=True)))
+    cases.append(('voice-egg-confirm-zh', dict(energy=True, language='zh', page=4, eggPopup=True)))
     for language in ('zh', 'en'):
-        for page in (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 12):
+        for page in (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 12, 13):
             cases.append((f'language-{language}-{page}', dict(energy=True, language=language, page=page)))
     cases += [('wallpaper-picker', dict(energy=False, language='en', page=4, picker=True)),
               ('paint-input-stress', dict(energy=True, language='zh', page=7, paint=True))]
@@ -255,6 +258,16 @@ def run(binary, output, host_test=False, selected=None, quit_after_ms=6500, sett
                 if spec.get('soundSettings'):
                     expected = 'Lower media volume during announcements' if spec['language'] == 'en' else '播报时降低媒体音量'
                     assert expected in audit['texts'], (name, audit['texts'])
+                    output_label = 'Announcement output' if spec['language'] == 'en' else '播报输出设备'
+                    assert output_label in audit['texts'], (name, audit['texts'])
+                if name.startswith('voice-settings') or name.startswith('voice-test'):
+                    microsoft = '微软声音' if spec['language'] == 'zh' else 'Microsoft voices'
+                    bangdream = 'BanG Dream 测试音色'
+                    assert microsoft in audit['texts'], (name, 'missing Microsoft voice section')
+                    if spec.get('voiceTest'):
+                        assert bangdream in audit['texts'], (name, 'test mode enabled but BanG Dream section missing')
+                    else:
+                        assert bangdream not in audit['texts'], (name, 'BanG Dream leaked without the easter egg')
                 if 'duckPreview' in spec:
                     focus = audit['audioFocus']
                     expected = 0.2 if spec['duckPreview'] else 1.0

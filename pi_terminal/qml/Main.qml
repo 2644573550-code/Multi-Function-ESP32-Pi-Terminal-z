@@ -123,6 +123,8 @@ ApplicationWindow {
         if(spec.wallpaper)systemTools.setWallpaper(spec.wallpaper)
         if(spec.resetWallpaper)systemTools.setWallpaper("")
         repairBackdropOnly=!!spec.backdrop;repairRawWallpaper=!!spec.raw;repairRawDefault=!!spec.rawDefault;repairRawQuickBlur=!!spec.rawQuickBlur;repairRawAppBlur=!!spec.rawAppBlur
+        if(spec.voiceTest) systemTools.setVoiceTestMode(true)
+        if(spec.eggPopup) Qt.callLater(function(){voiceTestConfirm.open()})
         if(spec.page) auditPage(spec.page)
         if(spec.cacheMaximized)appMaximized=true
         if(spec.cacheLayout)cacheLayoutAuditTimer.start()
@@ -524,7 +526,8 @@ ApplicationWindow {
                  9:{entryId:"music",title:I18n.t("音乐播放器"),iconName:"volume_up",accentColor:"#d889e8",route:9,instance:"",ready:true},
                  10:{entryId:"video",title:I18n.t("视频播放器"),iconName:"play_arrow",accentColor:"#65c9bd",route:10,instance:"",ready:true},
                  11:{entryId:"tv",title:I18n.t("网络电视"),iconName:"tv",accentColor:"#ff7a59",route:11,instance:"",ready:true},
-                 12:{entryId:"time",title:I18n.t("时间"),iconName:"schedule",accentColor:"#8f7bff",route:12,instance:"",ready:true}})[page]
+                 12:{entryId:"time",title:I18n.t("时间"),iconName:"schedule",accentColor:"#8f7bff",route:12,instance:"",ready:true},
+                 13:{entryId:"voice",title:I18n.t("语音音色"),iconName:"volume_up",accentColor:"#10b7a8",route:13,instance:"",ready:true}})[page]
     }
     function rememberApp(entry) {
         for(let i=recentApps.count-1;i>=0;--i)if(recentApps.get(i).entryId===entry.entryId)recentApps.remove(i)
@@ -555,6 +558,8 @@ ApplicationWindow {
         visit(modulePageHost.page)
     }
     function announce(text) { if(systemTools.speechEnabled) systemTools.speak(text) }
+    // 指定音色播报（后续功能用）；同样受总开关/300 字/降音约束。
+    function announceWithVoice(text, voiceId) { if(systemTools.speechEnabled) systemTools.speakWithVoice(text, voiceId) }
     function refreshFiles() {
         if(filesRecent){fileRows=systemTools.recentFiles();return}
         fileRows=systemTools.files(folder).sort(function(a,b) {
@@ -848,6 +853,9 @@ ApplicationWindow {
     function approveTrustOnce() {
         if (!trustDialog.opened) return
         connectionManager.trust(trustItem.instance,false); trustDialog.close()
+    }
+    function openVoicePage() {
+        launch(builtin(13), width/2, contentItem.height/2)
     }
     function openAlarms() {
         launch(builtin(12), width/2, contentItem.height/2)
@@ -1827,10 +1835,33 @@ ApplicationWindow {
                     }
                 }
                 SettingsGroup {
+                    id:speechSettingsGroup
                     Layout.fillWidth:true
-                    visible:!settingsQuery || /声音|语音|播报|音量|sound|speech|volume|duck/i.test(settingsQuery)
+                    visible:!settingsQuery || /声音|语音|播报|音量|音色|输出|sound|speech|voice|volume|output|duck/i.test(settingsQuery)
+                    // 五次点击分组标题开启「测试音色」彩蛋；与显示与个性化彩蛋同构。
+                    titleTapEnabled:true
+                    // 五击始终先确认；已开启时确认后直接进音色页。
+                    onTitleTapped: voiceTestConfirm.open()
                     iconName:"volume_up";accentColor:"#10b7a8";title:systemTools.uiLanguage==="en"?"Sound & speech":I18n.t("声音与语音");subtitle:systemTools.uiLanguage==="en"?"Speech preferences":I18n.t("语音播报偏好")
                     Switch {Layout.fillWidth:true;text:I18n.t("中文语音播报");font.pointSize:Theme.body;implicitHeight:Theme.hit;checked:systemTools.speechEnabled;onToggled:systemTools.setSpeechEnabled(checked)}
+                    RowLayout {Layout.fillWidth:true;spacing:Theme.gap/2
+                        ColumnLayout {Layout.fillWidth:true;spacing:0
+                            CarText {Layout.fillWidth:true;text:I18n.t("语音音色");maximumLineCount:1}
+                            CarText {Layout.fillWidth:true;maximumLineCount:1;elide:Text.ElideRight;subdued:true;fontPixelSize:Theme.fontCaption
+                                text:I18n.t("当前音色：")+I18n.t(systemTools.voiceName)}
+                        }
+                        CarButton {objectName:"voiceSettingsEntry";text:I18n.t("选择");onClicked:win.openVoicePage()}
+                    }
+                    RowLayout {Layout.fillWidth:true;spacing:Theme.gap/2
+                        ColumnLayout {Layout.fillWidth:true;spacing:0
+                            CarText {Layout.fillWidth:true;text:I18n.t("播报输出设备");maximumLineCount:1}
+                            CarText {Layout.fillWidth:true;maximumLineCount:1;elide:Text.ElideRight;subdued:true;fontPixelSize:Theme.fontCaption
+                                text:systemTools.audioOutputDevice===""
+                                     ? I18n.t("跟随系统")+(systemTools.audioOutputName!==""?"（"+systemTools.audioOutputName+"）":"")
+                                     : systemTools.audioOutputName}
+                        }
+                        CarButton {objectName:"audioOutputEntry";text:I18n.t("选择");onClicked:audioOutputPopup.open()}
+                    }
                     Switch {id:duckSpeechSwitch;objectName:"duckSpeechSwitch";Layout.fillWidth:true;text:I18n.t("播报时降低媒体音量");font.pointSize:Theme.body;implicitHeight:Theme.hit
                         Binding {target:duckSpeechSwitch;property:"checked";value:systemTools.duckMediaForSpeech}
                         onClicked:systemTools.setDuckMediaForSpeech(!systemTools.duckMediaForSpeech)
@@ -2126,6 +2157,81 @@ ApplicationWindow {
             onNotifyRequested:function(title,message,important){win.notify(title,message,important,I18n.t("时间"),"schedule")}
             onAnnounceRequested:function(text){win.announce(text)}
             onKeyboardRequested:if(!screenKeyboard.visible)screenKeyboard.show()}
+        VoiceSettings {id:voicePage;objectName:"voiceSettingsPage";active:win.section===13 && win.phase!=="home";uiScale:win.uiScale}
+        // 播报输出设备：跟随系统（默认）或固定到某个 Qt Multimedia 输出设备。
+        Popup {
+            id:audioOutputPopup
+            objectName:"audioOutputPopup"
+            parent:Overlay.overlay
+            anchors.centerIn:Overlay.overlay
+            modal:true;dim:true;closePolicy:Popup.CloseOnEscape
+            padding:Theme.gap
+            width:Math.min(560*Theme.scaleFactor,(parent?parent.width:800)-Theme.gap*4)
+            background:Rectangle{radius:Theme.shapeLarge;color:Theme.surface;border.color:Theme.outline;border.width:1}
+            contentItem:ColumnLayout {
+                spacing:Theme.gap/2
+                CarText {Layout.fillWidth:true;text:I18n.t("播报输出设备");heading:true}
+                CarText {Layout.fillWidth:true;wrapMode:Text.Wrap;subdued:true;fontPixelSize:Theme.fontCaption
+                    text:I18n.t("仅影响语音播报；音乐、视频与铃声仍跟随系统输出。")}
+                CarButton {objectName:"audioOutputFollowSystem";Layout.fillWidth:true
+                    text:I18n.t("跟随系统")+(systemTools.audioOutputDevice===""?"  ✓":"")
+                    onClicked:{systemTools.setAudioOutputDevice("");audioOutputPopup.close()}
+                }
+                Flickable {
+                    Layout.fillWidth:true
+                    Layout.preferredHeight:Math.min(outputColumn.implicitHeight,280*Theme.scaleFactor)
+                    contentHeight:outputColumn.implicitHeight
+                    clip:true
+                    boundsBehavior:Flickable.StopAtBounds
+                    ColumnLayout {id:outputColumn;width:parent.width;spacing:0
+                        Repeater {
+                            model:systemTools.audioOutputs
+                            delegate:OutputDeviceRow{rowData:modelData}
+                        }
+                    }
+                }
+                RowLayout {Layout.fillWidth:true;spacing:Theme.gap/2
+                    Item{Layout.fillWidth:true}
+                    CarButton {text:I18n.t("关闭");onClicked:audioOutputPopup.close()}
+                }
+            }
+        }
+        component OutputDeviceRow: CarButton {
+            property var rowData: null
+            Layout.fillWidth:true
+            text:(rowData?rowData.name:"")+(rowData&&rowData.selected?"  ✓":"")
+            onClicked:{if(rowData){systemTools.setAudioOutputDevice(rowData.id);audioOutputPopup.close()}}
+        }
+        // 「测试音色」彩蛋确认：开启后 BanG Dream 分类才会出现在音色页。
+        Popup {
+            id:voiceTestConfirm
+            objectName:"voiceTestConfirm"
+            parent:Overlay.overlay
+            anchors.centerIn:Overlay.overlay
+            modal:true;dim:true;closePolicy:Popup.CloseOnEscape
+            padding:Theme.gap
+            width:Math.min(520*Theme.scaleFactor,(parent?parent.width:800)-Theme.gap*4)
+            background:Rectangle{radius:Theme.shapeLarge;color:Theme.surface;border.color:Theme.outline;border.width:1}
+            contentItem:ColumnLayout {
+                spacing:Theme.gap/2
+                CarText {
+                    Layout.fillWidth:true;wrapMode:Text.Wrap
+                    text:I18n.t("即将开启语音播报测试模式，此类声音为测试版效果较差，可能降低使用体验")
+                }
+                CarText {
+                    Layout.fillWidth:true;wrapMode:Text.Wrap;subdued:true;fontPixelSize:Theme.fontCaption
+                    text:I18n.t("可在音色页随时关闭；关闭后自动切回晓晓。")
+                }
+                RowLayout {
+                    Layout.fillWidth:true;spacing:Theme.gap/2
+                    Item{Layout.fillWidth:true}
+                    CarButton {objectName:"voiceTestCancel";text:I18n.t("取消");onClicked:voiceTestConfirm.close()}
+                    CarButton {objectName:"voiceTestConfirmButton";text:I18n.t("确认开启");accent:true
+                        onClicked:{systemTools.setVoiceTestMode(true);voiceTestConfirm.close();win.openVoicePage()}
+                    }
+                }
+            }
+        }
             }
         }
     }

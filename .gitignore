@@ -20,6 +20,8 @@ dependencies.lock
 
 # Compiled output
 *.bin
+# 中文语音词典是随包数据，不是固件/编译产物
+!pi_terminal/assets/tts/zh_dict.bin
 *.elf
 *.map
 *.o

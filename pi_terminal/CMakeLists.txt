@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(orange_pi_terminal VERSION 1.0 LANGUAGES CXX)
+project(orange_pi_terminal VERSION 1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -202,7 +202,9 @@ target_include_directories(terminal_system PRIVATE
     ../third_party/Viper-Browser/src/ui/cookies
     ../third_party/Viper-Browser/src/ui/downloads)
 target_link_libraries(terminal_system PUBLIC terminal_music Qt6::Gui Qt6::Bluetooth Qt6::TextToSpeech Qt6::WebEngineQuick
-    PRIVATE Qt6::Widgets Qt6::WebEngineWidgets viper-core viper-ui)
+    PRIVATE Qt6::Widgets Qt6::WebEngineWidgets Qt6::Multimedia viper-core viper-ui)
+# 语音引擎数据目录：构建树内直接可用；安装后优先读 share/orange-pi-terminal。
+target_compile_definitions(terminal_system PRIVATE TERMINAL_TTS_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
 
 qt_add_library(terminal_ui SHARED
     src/ui/TerminalUi.cpp src/ui/TerminalUi.h
@@ -213,6 +215,62 @@ qt_add_library(terminal_ui SHARED
 target_compile_definitions(terminal_ui PRIVATE ARKPETS_CONVERTER_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/tools/arkpets")
 target_include_directories(terminal_ui PUBLIC src)
 target_link_libraries(terminal_ui PUBLIC Qt6::Quick Qt6::Qml PRIVATE terminal_vlc Qt6::QuickControls2 Qt6::OpenGL)
+
+# ── 中文语音引擎：vendored flite + 音节单元拼接 ──
+# 默认直接构建 third_party/flite（免安装、无外部依赖）；
+# 交叉编译或想复用系统 flite 时，用 -DFLITE_ROOT=<已构建的 flite 源码树> 覆盖。
+set(FLITE_ROOT "" CACHE PATH "可选：已构建的 flite 源码树（含 include/ 与 build/<arch>/lib/libflite.a）")
+if(FLITE_ROOT)
+    set(FLITE_INCLUDE_DIR "${FLITE_ROOT}/include")
+    set(FLITE_LIBRARY "${FLITE_ROOT}/build/${CMAKE_LIBRARY_ARCHITECTURE}/lib/libflite.a")
+    set(FLITE_LEX_LIBRARY "${FLITE_ROOT}/build/${CMAKE_LIBRARY_ARCHITECTURE}/lib/libflite_cmulex.a")
+    set(FLITE_EN_LIBRARY "${FLITE_ROOT}/build/${CMAKE_LIBRARY_ARCHITECTURE}/lib/libflite_usenglish.a")
+    if(NOT EXISTS "${FLITE_LIBRARY}")
+        message(FATAL_ERROR "找不到 ${FLITE_LIBRARY}，请先在 flite 源码树里 make -C src")
+    endif()
+else()
+    set(FLITE_BUILD_DIR "${CMAKE_BINARY_DIR}/third_party-flite")
+    set(FLITE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/flite")
+    set(FLITE_INCLUDE_DIR "${FLITE_BUILD_DIR}/include")
+    set(FLITE_LIBRARY "${FLITE_BUILD_DIR}/build/${CMAKE_LIBRARY_ARCHITECTURE}/lib/libflite.a")
+    set(FLITE_LEX_LIBRARY "${FLITE_BUILD_DIR}/build/${CMAKE_LIBRARY_ARCHITECTURE}/lib/libflite_cmulex.a")
+    set(FLITE_EN_LIBRARY "${FLITE_BUILD_DIR}/build/${CMAKE_LIBRARY_ARCHITECTURE}/lib/libflite_usenglish.a")
+    # 交叉编译时把目标 triplet 传给 flite 的 configure，避免它按宿主编译器猜 host。
+    set(FLITE_HOST_ARG "")
+    if(CMAKE_CROSSCOMPILING)
+        get_filename_component(_flite_cc_name "${CMAKE_C_COMPILER}" NAME_WE)
+        string(REGEX REPLACE "-gcc.*$" "" _flite_triplet "${_flite_cc_name}")
+        set(FLITE_HOST_ARG "--host=${_flite_triplet}")
+    endif()
+    add_custom_command(
+        OUTPUT "${FLITE_LIBRARY}"
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${FLITE_BUILD_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${FLITE_SOURCE_DIR}" "${FLITE_BUILD_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E chdir "${FLITE_BUILD_DIR}"
+                ${CMAKE_COMMAND} -E env "CC=${CMAKE_C_COMPILER}" "CXX=${CMAKE_CXX_COMPILER}"
+                ./configure -q --with-audio=none ${FLITE_HOST_ARG}
+        COMMAND ${CMAKE_COMMAND} -E chdir "${FLITE_BUILD_DIR}" make -C src -j
+        COMMAND ${CMAKE_COMMAND} -E chdir "${FLITE_BUILD_DIR}" make -C lang/cmulex -j
+        COMMAND ${CMAKE_COMMAND} -E chdir "${FLITE_BUILD_DIR}" make -C lang/usenglish -j
+        BYPRODUCTS "${FLITE_LEX_LIBRARY}" "${FLITE_EN_LIBRARY}"
+        DEPENDS "${FLITE_SOURCE_DIR}/configure"
+        COMMENT "构建 vendored flite（只构建 libflite，跳过音色与文档）"
+        VERBATIM)
+    add_custom_target(flite_vendored DEPENDS "${FLITE_LIBRARY}")
+endif()
+add_executable(terminal_flite_zh tts/flite/zh_engine.c tts/flite/zh_main.c)
+target_include_directories(terminal_flite_zh PRIVATE "${FLITE_INCLUDE_DIR}")
+# 英文前端（cmulex + usenglish）只在有 slt flitevox 时用得到，但一起链进来最简单
+target_link_libraries(terminal_flite_zh PRIVATE "${FLITE_EN_LIBRARY}" "${FLITE_LEX_LIBRARY}" "${FLITE_LIBRARY}" m pthread)
+if(TARGET flite_vendored)
+    add_dependencies(terminal_flite_zh flite_vendored)
+endif()
+install(TARGETS terminal_flite_zh RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT TerminalRuntime)
+install(DIRECTORY assets/voices DESTINATION share/orange-pi-terminal COMPONENT TerminalRuntime)
+install(FILES assets/tts/zh_dict.bin assets/tts/cmu_us_slt.flitevox DESTINATION share/orange-pi-terminal/tts COMPONENT TerminalRuntime)
+install(FILES tts/flite/LICENSE-flite.txt DESTINATION share/orange-pi-terminal/licenses/flite COMPONENT TerminalRuntime)
+install(FILES ../third_party/flite/COPYING ../third_party/flite/ACKNOWLEDGEMENTS
+        DESTINATION share/orange-pi-terminal/licenses/flite/upstream COMPONENT TerminalRuntime)
 
 # ── 自研 GStreamer 播放内核 ──
 # 开发头文件随仓库提供（third_party/gst/<arch>，由 tools/fetch_gst_headers.sh 生成），
@@ -297,6 +355,7 @@ list(APPEND UI_QML_FILES qml/AlarmEngine.qml)
 list(APPEND UI_QML_FILES qml/TimePane.qml)
 list(APPEND UI_QML_FILES qml/TimeSync.qml)
 list(APPEND UI_QML_FILES qml/TimeSyncSettings.qml)
+list(APPEND UI_QML_FILES qml/VoiceSettings.qml)
 set_source_files_properties(qml/TimeMath.js PROPERTIES QT_RESOURCE_ALIAS TimeMath.js)
 list(APPEND UI_QML_FILES qml/DesktopPet.qml)
 list(APPEND UI_QML_FILES qml/PetManager.qml)
