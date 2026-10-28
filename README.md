@@ -93,6 +93,7 @@ python3 -m http.server 8000 --bind 127.0.0.1
 | 基础触屏浏览器 | Qt WebEngine + Viper 核心能力，导航、标签、书签、历史、下载与权限提示 | [浏览器范围](docs/viper-browser-port.md)。不是完整移植 Viper；不提供用户脚本、凭据自动填充等全部上游功能。 |
 | 音乐 | 原生音乐服务、在线 API、本地播放、歌词与整曲缓存后的跳转 | [音乐实现](docs/native-music.md)。在线 API 按需拉起；可用性受上游服务及网络影响。 |
 | 本地视频与网络电视 | 本地视频使用 VLC（`VlcVideoItem`，已并入主线）；电视页面使用 `GstVideoItem` / GStreamer，含频道与线路选择 | [电视内核说明](docs/tv-hls-player-notes.md) · [VLC 说明](docs/vlc-joystick.md)。VLC 后端尚未做树莓派实机性能验证。 |
+| 语音播报 | 本地 flite 前端 + 单文件声库（9 套，仓库无 wav）；英文走离线 slt；五击彩蛋解锁角色测试音色 | [语音播报](docs/voice-tts.md)。运行时临时 wav 播完即删；未做实机听感验收。 |
 | 文件与系统 | 文件操作、图片预览、文本编辑、受限 USB 存储访问、系统音量及播报时媒体降音 | [系统库与运行时](docs/native-runtime-modules.md)。USB 与音量控制需要相应系统服务。 |
 | 时间 | 时钟、世界时钟（20 城市可选，最多 8 个）、计时器、秒表与闹钟；闹钟、城市与最近设置写入本机设置 | [时间页说明](docs/time-tools.md)。世界时钟默认用内置标准时区，校时依赖第三方公开接口，失败显式报错、不改用猜测值；闹钟按分钟匹配，终端休眠跨过整分钟不会补响。 |
 | 渲染与个性化 | 双槽背景模糊缓存、普通/节能渲染模式 | [模糊设计](docs/blur-performance.md)。 |
