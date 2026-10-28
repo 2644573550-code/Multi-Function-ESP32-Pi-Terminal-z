@@ -181,6 +181,9 @@ target_include_directories(terminal_ui PUBLIC
 target_link_libraries(terminal_ui PRIVATE gstreamer-1.0 gstapp-1.0 gstvideo-1.0 gobject-2.0 glib-2.0)
 
 # 最小视频探针（开发/性能测试用，不参与安装）
+qt_add_executable(kdf_bench tools/kdf_bench.cpp)
+target_link_libraries(kdf_bench PRIVATE terminal_security Qt6::Core)
+
 qt_add_executable(tv_probe tools/tv_probe.cpp)
 target_link_libraries(tv_probe PRIVATE terminal_ui Qt6::Quick)
 

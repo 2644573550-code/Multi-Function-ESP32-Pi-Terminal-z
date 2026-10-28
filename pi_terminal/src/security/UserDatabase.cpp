@@ -69,11 +69,33 @@ bool UserDatabase::openForSession(const QString &userId, const QByteArray &dbKey
                      .arg(kSchemaVersion));
     const QString cipher = store_->cipherVersion();
     if (!cipher.isEmpty()) {
+        const QString major = cipher.section(QLatin1Char(' '), 0, 0).section(QLatin1Char('.'), 0, 0);
+        // 已有库记着别的大版本就必须拒绝打开：4.x 与 3.x 的默认 KDF 参数不同，
+        // 强行打开会得到乱码而不是错误，比失败更危险。
+        if (!checkCipherMajor(major)) {
+            close();
+            return false;
+        }
         store_->exec(QStringLiteral("INSERT OR IGNORE INTO meta(key, value) VALUES('cipher_version', '%1')")
-                         .arg(cipher.section(QLatin1Char(' '), 0, 0)));
+                         .arg(major));
     }
     openUserId_ = userId;
     return true;
+}
+
+bool UserDatabase::checkCipherMajor(const QString &currentMajor) {
+    if (currentMajor.isEmpty()) return true;
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral("SELECT value FROM meta WHERE key='cipher_version'"), &stmt))
+        return true;   // 新库还没有这条记录
+    bool ok = true;
+    if (store_->step(stmt)) {
+        const QString stored = store_->columnText(stmt, 0).section(QLatin1Char('.'), 0, 0);
+        // 只比较大版本；小版本差异由 SQLCipher 自己兼容。
+        if (!stored.isEmpty() && stored != currentMajor) ok = false;
+    }
+    store_->finalize(stmt);
+    return ok;
 }
 
 void UserDatabase::close() {

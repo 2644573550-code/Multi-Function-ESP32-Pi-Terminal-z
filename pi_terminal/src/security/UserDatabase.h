@@ -61,6 +61,8 @@ public:
     QString cipherVersion() const;
 
 private:
+    bool checkCipherMajor(const QString &currentMajor);
+
     QString root_;
     QString openUserId_;
     SqlCipherStore *store_ = nullptr;

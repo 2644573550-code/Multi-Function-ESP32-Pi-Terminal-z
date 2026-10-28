@@ -1,6 +1,5 @@
 #include "security/SqlCipherStore.h"
 
-#include <QFile>
 
 #include <sqlite3.h>
 

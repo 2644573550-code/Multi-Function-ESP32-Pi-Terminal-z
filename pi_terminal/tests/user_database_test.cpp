@@ -138,6 +138,38 @@ private slots:
         // f-day1 §5：分页每页 ≤100。
         QVERIFY(db.queryRecent(1000).size() <= 100);
     }
+
+    void cipherMajorVersionIsRecordedAndEnforced() {
+        {
+            UserDatabase db(root_());
+            QVERIFY(db.openForSession(QStringLiteral("userF"), keyOf('f')));
+            QVERIFY(db.appendSample(sampleWith(22.0, 1)));
+        }
+        // 篡改 meta 里的大版本，模拟"在 4.x 建库、拿到 3.x 上打开"。
+        const QString path = UserDatabase(root_()).databasePathFor(QStringLiteral("userF"));
+        {
+            SqlCipherStore store;
+            QVERIFY(store.open(path, keyOf('f')));
+            QVERIFY(store.exec(QStringLiteral(
+                "UPDATE meta SET value='3' WHERE key='cipher_version'")));
+        }
+        // 大版本不符必须拒绝打开，不能读出乱码当数据。
+        UserDatabase db(root_());
+        QVERIFY2(!db.openForSession(QStringLiteral("userF"), keyOf('f')),
+                 "must refuse to open a DB created by a different SQLCipher major version");
+    }
+
+    void sameMajorVersionReopens() {
+        {
+            UserDatabase db(root_());
+            QVERIFY(db.openForSession(QStringLiteral("userG"), keyOf('g')));
+            QVERIFY(db.appendSample(sampleWith(23.0, 1)));
+        }
+        // 同大版本必须能重新打开并读到数据。
+        UserDatabase db(root_());
+        QVERIFY(db.openForSession(QStringLiteral("userG"), keyOf('g')));
+        QCOMPARE(db.queryRecent().size(), 1);
+    }
 };
 
 QTEST_GUILESS_MAIN(UserDatabaseTest)
