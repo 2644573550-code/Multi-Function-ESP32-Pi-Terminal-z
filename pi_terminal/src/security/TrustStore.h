@@ -40,6 +40,8 @@ public:
     ~TrustStore();
 
     QString path() const { return path_; }
+    // 存储文件是否存在（不代表内容可用；损坏时 usable 为 false）。
+    bool exists() const;
 
     // 失败返回空 QByteArray；publicKey 必须是 65 字节且 0x04 开头。
     static QByteArray fingerprintOf(const QByteArray &publicKey);

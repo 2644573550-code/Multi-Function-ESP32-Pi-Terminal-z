@@ -38,6 +38,11 @@ TrustStore::TrustStore(QString path)
 
 TrustStore::~TrustStore() = default;
 
+bool TrustStore::exists() const
+{
+    return QFile::exists(path_);
+}
+
 bool TrustStore::isValidPublicKey(const QByteArray &publicKey)
 {
     return publicKey.size() == kPublicKeyBytes && quint8(publicKey.at(0)) == 0x04;
@@ -100,7 +105,15 @@ bool TrustStore::ensureLoaded(QString *error) const
         return false;
     }
 
-    const QJsonArray array = root.value(QStringLiteral("records")).toArray();
+    // `records` 存在但不是数组 → 类型损坏。**不能**当成空库：那等于
+    // 一次篡改就静默清空信任。`records` 缺失视为空库（新文件即如此写法）。
+    const QJsonValue recordsValue = root.value(QStringLiteral("records"));
+    if (!recordsValue.isUndefined() && !recordsValue.isArray()) {
+        corrupted_ = true;
+        setError(error, QStringLiteral("trust store records field is not an array"));
+        return false;
+    }
+    const QJsonArray array = recordsValue.toArray();
     for (const QJsonValue &value : array) {
         const QJsonObject object = value.toObject();
         Record record;
