@@ -1,4 +1,6 @@
 #pragma once
+#include <functional>
+
 #include <QObject>
 #include <QVariantList>
 #include <QJsonObject>
@@ -57,6 +59,14 @@ public:
     // 登录/切用户/退出时调用；空字符串表示无人登录（业务数据全部拒绝）。
     void setActiveUserId(const QString &userId);
     QString activeUserId() const { return activeUserId_; }
+
+    // 观测值写入可信存储（报告 §6.1）。由 TerminalApplication 接到
+    // SessionManager；未设置时不写历史，绝不退回模块侧明文 JSON。
+    std::function<bool(const QString &instance, double value)> observationSink;
+
+    // 模块页热更新：包版本变化后重新加载模块与页面，不重启终端。
+    // 返回 true 表示已按新版本重建（旧 worker 先停、旧页面先卸）。
+    bool refreshModule(const QString &instance);
 signals:
     void cardsChanged();
     void pageMustClose(QString instance);
@@ -69,6 +79,7 @@ signals:
     void sessionDisconnected(QString instance);
     void hotspotLeaseRequested(QString instance);
     void hotspotLeaseReleased(QString instance);
+    void moduleRefreshed(QString instance, QString version);
     void bridgeConnectionChanged();
     void bridgeUnavailable();
 public slots:

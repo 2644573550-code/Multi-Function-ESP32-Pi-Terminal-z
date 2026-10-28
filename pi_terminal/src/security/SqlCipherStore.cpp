@@ -31,7 +31,29 @@ bool SqlCipherStore::open(const QString &path, const QByteArray &key) {
 
     // 先设 key 再第一次访问；顺序反了会拿到明文错误。
     sqlite3_key(db_, key.constData(), key.size());
-    sqlite3_exec(db_, "PRAGMA cipher_memory_security = ON", nullptr, nullptr, nullptr);
+
+    // §6.3：禁用不安全的明文临时文件路径。
+    //   cipher_memory_security —— 密钥与中间态不落内存交换
+    //   temp_store=MEMORY      —— 排序/临时表不写 /tmp 明文
+    //   journal_mode=DELETE    —— 不用 WAL（WAL 是明文 sidecar 文件）
+    //   secure_delete=ON       —— 删除的页当场清零，不留在空闲页里
+    // 任一条设置失败即失败关闭：宁可打不开库，也不留明文落盘面。
+    const char *kHardening[] = {
+        "PRAGMA cipher_memory_security = ON",
+        "PRAGMA temp_store = MEMORY",
+        "PRAGMA journal_mode = DELETE",
+        "PRAGMA secure_delete = ON",
+    };
+    for (const char *pragma : kHardening) {
+        if (sqlite3_exec(db_, pragma, nullptr, nullptr, nullptr) != SQLITE_OK) {
+            lastCode_ = sqlite3_errcode(db_);
+            lastError_ = QStringLiteral("hardening pragma failed: ") + QString::fromLatin1(pragma);
+            errorCode_ = StorageCode::Unavailable;
+            sqlite3_close(db_);
+            db_ = nullptr;
+            return false;
+        }
+    }
 
     // 必须真正读一页才知道 key 对不对：sqlite3_open 本身永远成功。
     rc = sqlite3_exec(db_, "SELECT count(*) FROM sqlite_master", nullptr, nullptr, nullptr);
@@ -112,6 +134,10 @@ QString SqlCipherStore::columnText(void *statement, int index) const {
 qint64 SqlCipherStore::columnInt(void *statement, int index) const {
     return sqlite3_column_int64(static_cast<sqlite3_stmt *>(statement), index);
 }
+int SqlCipherStore::changes() const {
+    return db_ ? sqlite3_changes(db_) : 0;
+}
+
 double SqlCipherStore::columnDouble(void *statement, int index) const {
     return sqlite3_column_double(static_cast<sqlite3_stmt *>(statement), index);
 }

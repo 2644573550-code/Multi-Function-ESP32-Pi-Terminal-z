@@ -1,10 +1,15 @@
 // UT-005 / T-10：SQLCipher 加密、每用户隔离、错误 key 拒绝、跨用户拒访。
 #include "security/SqlCipherStore.h"
+#include "security/AuditLog.h"
 #include "security/UserDatabase.h"
 
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
+#include <cmath>
+
+#include <QDateTime>
+
 #include <QtTest>
 
 using namespace security;
@@ -172,6 +177,145 @@ private slots:
         QVERIFY(db.openForSession(QStringLiteral("userG"), keyOf('g')));
         QCOMPARE(db.queryRecent().size(), 1);
     }
+
+    // 报告 §6.1：模块历史必须落在每用户加密库里，不再写明文 JSON。
+    void moduleHistoryIsStoredEncryptedAndAggregated() {
+        UserDatabase db(root_());
+        QVERIFY(db.openForSession(QStringLiteral("userH"), keyOf('h')));
+
+        const qint64 base = 1717000000000LL;
+        QVERIFY(db.addHistorySample(base + 1000, 20.0));
+        QVERIFY(db.addHistorySample(base + 2000, 24.0));
+        QVERIFY(db.addHistorySample(base + 3000, 18.0));
+
+        // 同一分钟内必须聚成一个桶：count=3, sum=62, low=18, high=24。
+        const auto series = db.historySeries(base + 60000, 3600000, 60000);
+        QCOMPARE(series.size(), 1);
+        QCOMPARE(series.first().count, 3);
+        QCOMPARE(series.first().sum, 62.0);
+        QCOMPARE(series.first().low, 18.0);
+        QCOMPARE(series.first().high, 24.0);
+
+        // 越界与非法值必须丢弃，不能进历史。
+        QVERIFY(!db.addHistorySample(base + 4000, 999.0));
+        QVERIFY(!db.addHistorySample(base + 4000, std::nan("")));
+        QVERIFY(!db.addHistorySample(0, 20.0));
+
+        // 库里不得出现明文数值之外的可读 JSON；文件头也不能是 SQLite。
+        const QString path = db.databasePathFor(QStringLiteral("userH"));
+        db.close();
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QByteArray head = file.read(16);
+        QVERIFY2(!head.startsWith("SQLite format"), "history DB must stay encrypted");
+        file.close();
+
+        // 重新打开仍能读到聚合结果（持久化生效）。
+        QVERIFY(db.openForSession(QStringLiteral("userH"), keyOf('h')));
+        QCOMPARE(db.historySeries(base + 60000, 3600000, 60000).size(), 1);
+        QVERIFY(!db.legacyHistoryMigrated());
+        QVERIFY(db.markLegacyHistoryMigrated());
+        QVERIFY(db.legacyHistoryMigrated());
+    }
+
+    // 保留期外的桶必须被清理，避免无限增长。
+    void oldHistoryIsPruned() {
+        UserDatabase db(root_());
+        QVERIFY(db.openForSession(QStringLiteral("userI"), keyOf('i')));
+        const qint64 now = 1717000000000LL;
+        const qint64 week = 7LL * 24 * 60 * 60000;
+        QVERIFY(db.addHistorySample(now - week - 120000, 21.0));   // 太旧
+        QVERIFY(db.addHistorySample(now - 60000, 22.0));           // 保留
+        QCOMPARE(db.pruneHistory(now, week), 1);
+        const auto remaining = db.historySeries(now, week, 60000);
+        QCOMPARE(remaining.size(), 1);
+    }
+
+
+    // §6.3：明文临时文件面必须被关掉。逐条 PRAGMA 回读，不能只看代码里写了。
+    void hardeningPragmasAreActive() {
+        UserDatabase db(root_());
+        QVERIFY(db.openForSession(QStringLiteral("userJ"), keyOf('j')));
+
+        // 用同一个库路径另开一个 store 读 PRAGMA 值。
+        const QString path = db.databasePathFor(QStringLiteral("userJ"));
+        db.close();
+
+        SqlCipherStore store;
+        QVERIFY(store.open(path, keyOf('j')));
+        struct Expect { const char *sql; const char *want; };
+        const Expect checks[] = {
+            {"PRAGMA temp_store", "2"},        // 2 = MEMORY
+            {"PRAGMA journal_mode", "delete"}, // 非 WAL
+            {"PRAGMA secure_delete", "1"},
+        };
+        for (const auto &check : checks) {
+            void *stmt = nullptr;
+            QVERIFY2(store.prepare(QString::fromLatin1(check.sql), &stmt), check.sql);
+            QVERIFY2(store.step(stmt), check.sql);
+            const QString actual = store.columnText(stmt, 0).toLower();
+            store.finalize(stmt);
+            QVERIFY2(actual == QLatin1String(check.want),
+                     qPrintable(QStringLiteral("%1 = %2, want %3")
+                                    .arg(QString::fromLatin1(check.sql), actual,
+                                         QString::fromLatin1(check.want))));
+        }
+    }
+
+
+    // 报告 §3.2：审计必须记动作与结果，且**不得**接受 PIN/健康值/卡号。
+    void auditRecordsActionsWithoutSecrets() {
+        UserDatabase db(root_());
+        QVERIFY(db.openForSession(QStringLiteral("userK"), keyOf('k')));
+        AuditLog *log = db.audit();
+        QVERIFY(log);
+
+        QVERIFY(log->record(QStringLiteral("user-k"), AuditAction::GrantDevice,
+                            QStringLiteral("device-1"), AuditResult::Ok));
+        QVERIFY(log->record(QStringLiteral("user-k"), AuditAction::RevokeBridge,
+                            QStringLiteral("bridge-a"), AuditResult::Denied));
+        QCOMPARE(log->count(), 2);
+
+        // 白名单：纯数字（可能是 PIN/卡号）与含空格的自由文本（可能是读数）都拒写。
+        QVERIFY(!log->record(QStringLiteral("user-k"), AuditAction::GrantDevice,
+                             QStringLiteral("123456"), AuditResult::Ok));
+        QVERIFY(!log->record(QStringLiteral("user-k"), AuditAction::GrantDevice,
+                             QStringLiteral("37.5 C"), AuditResult::Ok));
+        QVERIFY(!log->record(QStringLiteral("user-k"), AuditAction::GrantDevice,
+                             QStringLiteral(""), AuditResult::Ok));
+        QCOMPARE(log->count(), 2);   // 拒绝的三条没有落库
+
+        const auto recent = log->recent(10);
+        QCOMPARE(recent.size(), 2);
+        // 最新一条在前。
+        QCOMPARE(recent.first().action, QString(AuditAction::RevokeBridge));
+        QCOMPARE(recent.first().result, QString(AuditResult::Denied));
+
+        // 审计随库加密：文件不得是明文 SQLite。
+        const QString path = db.databasePathFor(QStringLiteral("userK"));
+        db.close();
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QVERIFY(!file.read(16).startsWith("SQLite format"));
+        file.close();
+
+        // 重新打开后审计仍在（持久化）。
+        QVERIFY(db.openForSession(QStringLiteral("userK"), keyOf('k')));
+        QCOMPARE(db.audit()->count(), 2);
+    }
+
+    // 审计保留期：过期记录可被清理。
+    void auditPruneRemovesOldEntries() {
+        UserDatabase db(root_());
+        QVERIFY(db.openForSession(QStringLiteral("userL"), keyOf('l')));
+        AuditLog *log = db.audit();
+        QVERIFY(log->record(QStringLiteral("u"), AuditAction::ChangePin,
+                            QStringLiteral("user-l"), AuditResult::Ok));
+        QCOMPARE(log->count(), 1);
+        QCOMPARE(log->prune(QDateTime::currentMSecsSinceEpoch() + 1000), 1);
+        QCOMPARE(log->count(), 0);
+    }
+
 };
 
 QTEST_GUILESS_MAIN(UserDatabaseTest)

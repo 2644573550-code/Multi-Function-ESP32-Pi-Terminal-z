@@ -59,9 +59,19 @@ ConnectionManager::ConnectionManager(QObject *parent) : QObject(parent), modules
     connect(&modules_, &ModuleManager::error, this, [this](const auto &id, const auto &m) {
         auto s = sessions_.value(id); if (s) state(s, "error", m);
     });
-    connect(&modules_, &ModuleManager::event, this, [this](const auto &id, const auto &, const auto &json) {
+    connect(&modules_, &ModuleManager::event, this, [this](const auto &id, const auto &type, const auto &json) {
         auto s = sessions_.value(id); if (s && !s->stopping) {
-            pages_.update(id, QJsonDocument::fromJson(json.toUtf8()).object().toVariantMap());
+            const QJsonObject payload = QJsonDocument::fromJson(json.toUtf8()).object();
+
+            // 报告 §6.1：模块只发原始观测，历史写进当前用户的加密库。
+            // 模块自己不再写明文 JSON；这里拿不到 DB 就不写，不伪造归属。
+            if (type == QLatin1String("sample")) {
+                const QJsonValue temperature = payload.value(QStringLiteral("temperature_C"));
+                if (temperature.isDouble() && observationSink)
+                    observationSink(id, temperature.toDouble());
+            }
+
+            pages_.update(id, payload.toVariantMap());
             s->message = json.left(2048); emit cardsChanged();
         }
     });
@@ -638,6 +648,33 @@ void ConnectionManager::loadVerified(const QSharedPointer<Session> &s) {
     if (s->ready) { modules_.connected(s->instance, s->activeTransport ? s->activeTransport : (s->lanConnected ? 2 : 1)); state(s, "ready", "模块已连接"); }
     else state(s, "data_lost", "数据连接中断，功能已缓存");
 }
+bool ConnectionManager::refreshModule(const QString &instance) {
+    auto s = sessions_.value(instance);
+    if (!s || s->stopping || !s->loaded || s->packagePath.isEmpty()) return false;
+
+    const QString previousVersion = modules_.packageVersion(instance);
+    // 先卸页面与插件：顺序不能反，否则新页面会指向已释放的 model。
+    pages_.registerPage(instance, {});
+    modules_.unload(instance);
+    pages_.remove(instance);
+
+    const QJsonObject transport = s->profile;
+    if (!modules_.load(instance, s->id, s->packagePath, transport)) {
+        state(s, "error", "热更新失败：模块无法重新加载");
+        return false;
+    }
+    pages_.registerPage(instance, modules_.page(instance));
+    const QString newVersion = modules_.packageVersion(instance);
+    if (s->ready)
+        modules_.connected(instance, s->activeTransport ? s->activeTransport
+                                                        : (s->lanConnected ? 2 : 1));
+    qInfo().noquote() << "module refreshed:" << instance
+                      << previousVersion << "->" << newVersion
+                      << "page schema" << modules_.pageSchemaVersion(instance);
+    emit moduleRefreshed(instance, newVersion);
+    return true;
+}
+
 void ConnectionManager::retry(const QString &id) {
     auto s = sessions_.value(id); if (!s || s->stopping || s->installer || s->state != "error") return;
     s->packagePath.clear(); s->trustKey.clear(); s->incoming.clear();

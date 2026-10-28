@@ -38,6 +38,8 @@ class SystemTools : public QObject {
     Q_PROPERTY(double launcherOpacity READ launcherOpacity NOTIFY changed)
     Q_PROPERTY(double moduleOpacity READ moduleOpacity NOTIFY changed)
     Q_PROPERTY(bool energySaving READ energySaving NOTIFY changed)
+    // 报告 §6.4：记录保留期限（天）。0 表示永久保留。
+    Q_PROPERTY(int retentionDays READ retentionDays NOTIFY changed)
     Q_PROPERTY(QString uiLanguage READ uiLanguage NOTIFY changed)
     Q_PROPERTY(bool musicCliAvailable READ musicCliAvailable NOTIFY musicCliChanged)
     Q_PROPERTY(bool musicNetworkOnline READ musicNetworkOnline NOTIFY musicNetworkChanged)
@@ -101,8 +103,11 @@ public:
     Q_INVOKABLE void setLauncherOpacity(double value);
     Q_INVOKABLE void setModuleOpacity(double value);
     bool energySaving() const { return settings_.value("energySaving", true).toBool(); }
+    int retentionDays() const { return settings_.value("privacy/retentionDays", 90).toInt(); }
     QString uiLanguage() const { return settings_.value("uiLanguage", QStringLiteral("zh")).toString(); }
     Q_INVOKABLE void setEnergySaving(bool value);
+    // 只接受 0/30/90/180；其他值拒绝，避免写入无意义保留期。
+    Q_INVOKABLE bool setRetentionDays(int days);
     Q_INVOKABLE void setUiLanguage(const QString &language);
     // QML 页面持久化少量自有状态。键名必须落在允许的前缀里（当前只有 "time/"），
     // 以免页面脚本改写 trusted/* 等宿主信任记录；写入有大小上限。

@@ -47,6 +47,8 @@ public:
     void finalize(void *statement);
     QString columnText(void *statement, int index) const;
     qint64 columnInt(void *statement, int index) const;
+    // 最近一条语句影响的行数（DELETE/UPDATE 后用于统计）。
+    int changes() const;
     double columnDouble(void *statement, int index) const;
     bool columnIsNull(void *statement, int index) const;
 

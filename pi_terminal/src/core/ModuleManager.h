@@ -27,6 +27,10 @@ public:
     void disconnectRequest(const QString &session, const QJsonObject &request);
     QJsonObject manifest(const QString &session) const;
     QString page(const QString &session) const;
+    // 已加载模块的包版本（manifest 的 package_version 或 version）。
+    QString packageVersion(const QString &session) const;
+    // 页面的 schema 版本；模块未声明时为 1。
+    int pageSchemaVersion(const QString &session) const;
     std::function<bool(const QString &, quint8, const QByteArray &)> sender;
     std::function<bool(const QString &, quint8, const QByteArray &, quint16 *)> controlSender;
 

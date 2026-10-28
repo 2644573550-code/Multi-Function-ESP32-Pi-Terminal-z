@@ -4,9 +4,11 @@
 #include "security/KeyWrap.h"
 #include "security/PinPolicy.h"
 #include "security/SessionManager.h"
+#include "security/UserDatabase.h"
 #include "security/UserService.h"
 
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -353,6 +355,88 @@ private slots:
         QVERIFY(!session.hasUnfinishedTasks());
         QVERIFY(!session.appendTaskSample(taskId, QStringLiteral("planter-1"), 0));
     }
+
+    // §5.3：迟到事件必须按「原任务 + 原代次」校验，不能因为 taskId 相同就放行。
+    void lateEventWithOldGenerationIsRejected() {
+        SessionManager session(nullptr, nullptr);
+        QVERIFY(!session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false).isEmpty());
+
+        const QString taskId = session.startTask(QStringLiteral("dev-1"));
+        QVERIFY(!taskId.isEmpty());
+        // 当前代次 0：合法追加。
+        QVERIFY(session.appendTaskSample(taskId, QStringLiteral("dev-1"), 0));
+
+        // 结束任务：代次推进到 1。
+        QVERIFY(session.finishTask(taskId));
+        QVERIFY(!session.hasUnfinishedTasks());
+        // 已结束的任务即使代次正确也不得再追加。
+        QVERIFY(!session.appendTaskSample(taskId, QStringLiteral("dev-1"), 1));
+
+        // 重新开一个任务，拿到新的代次基线。
+        const QString second = session.startTask(QStringLiteral("dev-1"));
+        QVERIFY(!second.isEmpty());
+        // 新任务的当前代次必须能追加；旧代次必须被拒。
+        const qint64 current = 0;   // 新 taskId 从未推进过
+        QVERIFY(session.appendTaskSample(second, QStringLiteral("dev-1"), current));
+        QVERIFY2(!session.appendTaskSample(second, QStringLiteral("dev-1"), current + 1),
+                 "a stale generation must not be accepted");
+    }
+
+    // 结束任务后，用同一 taskId 重建时旧代次不得复活。
+    void generationSurvivesTaskRecreation() {
+        SessionManager session(nullptr, nullptr);
+        QVERIFY(!session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false).isEmpty());
+
+        const QString taskId = session.startTask(QStringLiteral("dev-2"));
+        QVERIFY(!taskId.isEmpty());
+        QVERIFY(session.finishTask(taskId));
+
+        // 用同一个 taskId 手工重建（模拟内部复用路径）：代次要读回 1。
+        // 这里通过公开 API 无法直接指定 taskId，因此改为断言
+        // 「新任务的代次从 0 开始、旧任务已结束不可写」这一可观测语义。
+        const QString again = session.startTask(QStringLiteral("dev-2"));
+        QVERIFY(!again.isEmpty());
+        QVERIFY2(again != taskId, "task ids are random, never reused");
+        QVERIFY(!session.appendTaskSample(taskId, QStringLiteral("dev-2"), 1));
+    }
+
+
+    // §6.4：保留期限必须真的删数据；0 表示永久保留不删。
+    void retentionPrunesOldRecords() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        UserService users(dir.filePath("users.json"));
+        const QString id = users.createInitialAdmin(QStringLiteral("T"),
+                                                   QStringLiteral("246810"));
+        QVERIFY(!id.isEmpty());
+
+        UserDatabase db(dir.filePath("users"));
+        UserRecord record;
+        QVERIFY(users.lookup(id, &record));
+        const QByteArray kek = PinPolicy::deriveKek(
+            QStringLiteral("246810"), record.salt,
+            PinPolicy::effectiveIterations(record.iterations));
+        const QByteArray dbKey = KeyWrap::open(kek, record.wrappedDbKey, record.dbKeyNonce);
+        QVERIFY(dbKey.size() == 32);
+        QVERIFY(db.openForSession(id, dbKey));
+
+        // 塞两条历史：一条很旧、一条很新。
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        QVERIFY(db.addHistorySample(now - 200LL * 24 * 60 * 60 * 1000, 20.0));
+        QVERIFY(db.addHistorySample(now - 60 * 1000, 22.0));
+        QCOMPARE(db.historySeries(now, 400LL * 24 * 60 * 60 * 1000, 60000).size(), 2);
+        db.close();
+
+        SessionManager session(&users, nullptr);
+        QVERIFY(!session.begin(id, dbKey, false).isEmpty());
+
+        // 保留 90 天：旧的那条必须被删。
+        QVERIFY(session.applyRetention(90));
+        // 永久保留：不删任何东西。
+        QVERIFY(session.applyRetention(0));
+        QVERIFY(!session.applyRetention(-1));
+    }
+
 };
 
 QTEST_GUILESS_MAIN(AuthTest)

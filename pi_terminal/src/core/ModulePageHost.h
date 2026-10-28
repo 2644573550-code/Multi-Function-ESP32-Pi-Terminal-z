@@ -22,6 +22,8 @@ class ModulePageHost : public QObject {
     Q_OBJECT
     Q_PROPERTY(QObject *page READ page NOTIFY pageChanged)
     Q_PROPERTY(bool hasPage READ hasPage NOTIFY pageChanged)
+    // 页面加载失败的原因（已本地化前的原始错误串）；成功时为空。
+    Q_PROPERTY(QString lastError READ lastError NOTIFY pageChanged)
 
 public:
     explicit ModulePageHost(QObject *parent = nullptr);
@@ -46,6 +48,7 @@ public:
 
     QObject *page() const { return page_; }
     bool hasPage() const { return page_ != nullptr; }
+    QString lastError() const { return lastError_; }
 
     // 测试用：确认独立引擎里看不到宿主对象。
     Q_INVOKABLE bool hasHostObject(const QString &name) const;
@@ -58,5 +61,6 @@ private:
     QQmlComponent *component_ = nullptr;
     QObject *page_ = nullptr;
     QQuickItem *container_ = nullptr;
+    QString lastError_;
     UserContext userContext_;
 };

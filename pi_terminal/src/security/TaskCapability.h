@@ -18,7 +18,10 @@ public:
     };
 
     // originUserId 在创建时固定，之后不可变更。
-    TaskCapability(Kind kind, QString originUserId, QString taskId, QString deviceId);
+    // generation 由调用方传入：必须是该 taskId 当前已推进到的代次，
+    // 否则同一 taskId 重建时旧代次的迟到回调会被误认成新的合法回调。
+    TaskCapability(Kind kind, QString originUserId, QString taskId, QString deviceId,
+                   qint64 generation = 0);
 
     Kind kind() const { return kind_; }
     QString originUserId() const { return originUserId_; }

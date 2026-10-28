@@ -2,6 +2,7 @@
 #include "core/ConnectionManager.h"
 #include "core/ModuleManager.h"
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QDir>
@@ -246,6 +247,64 @@ private slots:
         QCOMPARE(detached.count(), 1);
         QCOMPARE(manager.cards().size(), 2);
     }
+
+    // 模块页 schema 版本：宿主必须在加载前拒绝不兼容页面，
+    // 而不是让 QML 运行时抛一堆绑定错误。
+    void unsupportedPageSchemaIsRejected() {
+        ConnectionManager manager;
+        manager.setActiveUserId(QStringLiteral("test-user"));
+        QVERIFY(manager.configure(qEnvironmentVariable("TEST_CONFIG")));
+        provideFakeHotspot(manager);
+        connect(&manager, &ConnectionManager::trustRequired, &manager,
+                [&manager](const QString &id, const QString &, const QStringList &) { manager.trust(id, false); });
+
+        // 构造一个声明了未来 schema 的模块目录，直接走 ModuleManager 校验。
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QJsonObject manifest{
+            {"id", "schema.test"}, {"module_id", 80}, {"abi_version", 1},
+            {"host_arch", QJsonArray{QSysInfo::currentCpuArchitecture()}},
+            {"qt_major", 6}, {"unload_contract", "synchronous-stop-v1"},
+            {"library", "libx.so"}, {"qml_page", "qml/Page.qml"},
+            {"qml_schema_version", 99}};
+        QFile mf(dir.filePath("manifest.json"));
+        QVERIFY(mf.open(QIODevice::WriteOnly));
+        mf.write(QJsonDocument(manifest).toJson());
+        mf.close();
+        QDir().mkpath(dir.filePath("qml"));
+        QFile page(dir.filePath("qml/Page.qml"));
+        QVERIFY(page.open(QIODevice::WriteOnly));
+        page.write("import QtQuick\nItem{}\n");
+        page.close();
+
+        ModuleManager modules;
+        QSignalSpy errors(&modules, &ModuleManager::error);
+        QVERIFY(!modules.load(QStringLiteral("schema-check"), 80, dir.path(), {}));
+        QCOMPARE(errors.count(), 1);
+        QVERIFY(errors.first().at(1).toString().contains(QStringLiteral("schema")));
+    }
+
+    // manifest 声称有页面但包里没有文件：必须在加载前拒绝。
+    void missingModulePageIsRejected() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QJsonObject manifest{
+            {"id", "page.test"}, {"module_id", 80}, {"abi_version", 1},
+            {"host_arch", QJsonArray{QSysInfo::currentCpuArchitecture()}},
+            {"qt_major", 6}, {"unload_contract", "synchronous-stop-v1"},
+            {"library", "libx.so"}, {"qml_page", "qml/Absent.qml"}};
+        QFile mf(dir.filePath("manifest.json"));
+        QVERIFY(mf.open(QIODevice::WriteOnly));
+        mf.write(QJsonDocument(manifest).toJson());
+        mf.close();
+
+        ModuleManager modules;
+        QSignalSpy errors(&modules, &ModuleManager::error);
+        QVERIFY(!modules.load(QStringLiteral("page-check"), 80, dir.path(), {}));
+        QCOMPARE(errors.count(), 1);
+        QVERIFY(errors.first().at(1).toString().contains(QStringLiteral("missing")));
+    }
+
 };
 QTEST_GUILESS_MAIN(Tests)
 #include "session_test.moc"

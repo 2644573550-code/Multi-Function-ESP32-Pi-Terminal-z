@@ -15,8 +15,13 @@
 #include <QLibrary>
 #include <QTextStream>
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QLocalServer>
+#include <QLocalSocket>
+
 #include <cstdio>
-#include <unistd.h>
 
 namespace {
 
@@ -68,6 +73,8 @@ public:
                        static_cast<uint32_t>(payload.size())) >= 0;
     }
 
+    bool isLoaded() const { return library_.isLoaded(); }
+
     void shutdown() {
         if (handle_ && onDetach_) onDetach_(handle_);
         if (handle_ && stop_) stop_(handle_);
@@ -77,12 +84,20 @@ public:
     }
 
 private:
+public:
+    // 当前宿主连接。模块的 emit_event 回调可能在任意时刻触发，
+    // 因此用进程内静态指针指向当次连接；无连接时事件直接丢弃（不缓存）。
+    static QLocalSocket *peer;
+private:
+
     static void emitEventFrame(const char *type, const char *json) {
+        if (!peer || peer->state() != QLocalSocket::ConnectedState) return;
         const QJsonObject event{{"type", QString::fromUtf8(type ? type : "")},
                                 {"json", QString::fromUtf8(json ? json : "")}};
         const QByteArray frame = WorkerIpc::encode(
             WorkerIpc::request(0, QStringLiteral("reportState"), event));
-        ::write(STDOUT_FILENO, frame.constData(), frame.size());
+        peer->write(frame);
+        peer->flush();
     }
     static void publishEvent(const char *type, const char *json) { emitEventFrame(type, json); }
     static void publishAction(const char *, const char *) {}
@@ -104,53 +119,120 @@ private:
     decltype(&pi_module_stop) stop_ = nullptr;
 };
 
+QLocalSocket *Worker::peer = nullptr;
+
 }  // namespace
 
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     Worker worker;
 
-    // 通过 stdin 接收宿主请求；stdout 只用于回消息。
-    // 简单同步循环：读一条、处理一条、回一条。worker 不需要并发。
-    // 用 read(2) 而不是 fread：Qt 初始化后 stdio 可能带缓冲，导致宿主
-    // 已写入的数据在 worker 侧迟迟不可见。
-    QByteArray buffer;
-    char chunk[4096];
-    while (true) {
-        const ssize_t got = ::read(STDIN_FILENO, chunk, sizeof(chunk));
-        if (got <= 0) break;
-        buffer.append(chunk, static_cast<int>(got));
-
-        while (buffer.size() >= 4) {
-            const quint32 declared = quint32(quint8(buffer[0])) | (quint32(quint8(buffer[1])) << 8)
-                | (quint32(quint8(buffer[2])) << 16) | (quint32(quint8(buffer[3])) << 24);
-            if (declared > quint32(WorkerIpc::kMaxMessageBytes)) return 2;   // 超长立即退出
-            if (quint32(buffer.size()) < declared + 4) break;              // 等更多字节
-            const QByteArray frame = buffer.left(int(declared) + 4);
-            buffer.remove(0, int(declared) + 4);
-
-            const QJsonObject request = WorkerIpc::decode(frame);
-            if (request.isEmpty()) continue;   // 非法消息直接丢，不猜测解析
-            const QString op = request.value("op").toString();
-            if (!WorkerIpc::opAllowed(op)) continue;
-
-            const QJsonObject body = request.value("body").toObject();
-            QString code = QStringLiteral("OK");
-            if (op == QLatin1String("publishSample")) {
-                if (!worker.load(body.value("library").toString())) code = QStringLiteral("INVALID_MESSAGE");
-                else if (!worker.attach(body.value("transport").toObject())) code = QStringLiteral("INVALID_MESSAGE");
-            } else if (op == QLatin1String("readOwnRecords")) {
-                if (!worker.data(QByteArray::fromBase64(body.value("payload").toString().toLatin1())))
-                    code = QStringLiteral("INVALID_MESSAGE");
-            } else if (op == QLatin1String("stop")) {
-                worker.shutdown();
-            }
-
-            const QByteArray response = WorkerIpc::encode(
-                WorkerIpc::response(static_cast<quint64>(request.value("request_id").toDouble()),
-                                    code, {}));
-            ::write(STDOUT_FILENO, response.constData(), response.size());
+    // 监听单元 RuntimeDirectory 下的 Unix socket。
+    // 路径来源：宿主经环境变量传（降级模式），否则按 session 推导。
+    // 无论哪种，宿主与 worker 必须用同一套 WorkerIpc::socketPath 规则。
+    QString socketPath = qEnvironmentVariable("ORANGE_PI_WORKER_SOCKET");
+    if (socketPath.isEmpty()) {
+        const QString session = qEnvironmentVariable("ORANGE_PI_WORKER_SESSION");
+        if (session.isEmpty()) {
+            // 直接运行且无参数时给一条明确错误，不静默等 stdin。
+            qCritical("module_worker: ORANGE_PI_WORKER_SOCKET or "
+                      "ORANGE_PI_WORKER_SESSION is required");
+            return 2;
         }
+        socketPath = WorkerIpc::socketPath(session);
     }
+
+    QLocalServer server;
+    // 上一次异常退出可能留下 socket 文件，先清掉（同属主才能删）。
+    QFile::remove(socketPath);
+    QDir().mkpath(QFileInfo(socketPath).absolutePath());
+    if (!server.listen(socketPath)) {
+        qCritical("module_worker: cannot listen on %s: %s",
+                  qPrintable(socketPath), qPrintable(server.errorString()));
+        return 3;
+    }
+    // 宿主是普通用户、worker 是 DynamicUser：socket 必须对其他用户可读写，
+    // 否则宿主连不上。目录权限由 unit 的 RuntimeDirectoryMode 控制。
+    QFile::setPermissions(socketPath, QFile::ReadOwner | QFile::WriteOwner
+                                       | QFile::ReadGroup | QFile::WriteGroup
+                                       | QFile::ReadOther | QFile::WriteOther);
+
+    qInfo("module_worker: listening on %s", qPrintable(socketPath));
+
+    // 单连接、同步循环：读一条、处理一条、回一条。worker 不需要并发。
+    QByteArray buffer;
+    while (true) {
+        while (!server.hasPendingConnections()) {
+            server.waitForNewConnection(1000);
+            if (!server.hasPendingConnections()) {
+                // 宿主长时间不连：继续等，但给心跳日志便于诊断。
+                continue;
+            }
+        }
+        QLocalSocket *connection = server.nextPendingConnection();
+        if (!connection) continue;
+        Worker::peer = connection;
+
+        while (connection->waitForReadyRead(-1) || connection->bytesAvailable() > 0) {
+            buffer.append(connection->readAll());
+            if (buffer.isEmpty() && connection->state() != QLocalSocket::ConnectedState) break;
+
+            while (buffer.size() >= 4) {
+                const quint32 declared = quint32(quint8(buffer[0])) | (quint32(quint8(buffer[1])) << 8)
+                    | (quint32(quint8(buffer[2])) << 16) | (quint32(quint8(buffer[3])) << 24);
+                if (declared > quint32(WorkerIpc::kMaxMessageBytes)) {
+                    // 超长立即断开并退出，不尝试恢复。
+                    connection->disconnectFromServer();
+                    delete connection;
+                    Worker::peer = nullptr;
+                    return 2;
+                }
+                if (quint32(buffer.size()) < declared + 4) break;
+                const QByteArray frame = buffer.left(int(declared) + 4);
+                buffer.remove(0, int(declared) + 4);
+
+                const QJsonObject request = WorkerIpc::decode(frame);
+                if (request.isEmpty()) continue;
+                const QString op = request.value("op").toString();
+                if (!WorkerIpc::opAllowed(op)) continue;
+
+                const QJsonObject body = request.value("body").toObject();
+                QString code = QStringLiteral("OK");
+                if (op == QLatin1String("publishSample")) {
+                    // 第一次 publishSample 带 library：加载并 attach。
+                    // 之后的 publishSample 是业务数据（宿主 sendData 走这个 op）。
+                    if (!body.value("library").toString().isEmpty()) {
+                        // 库加载失败与 attach 失败用不同错误码：
+                        // 前者是部署/路径问题，后者是模块自身拒绝。
+                        if (!worker.load(body.value("library").toString()))
+                            code = QStringLiteral("LIBRARY_UNAVAILABLE");
+                        else if (!worker.attach(body.value("transport").toObject()))
+                            code = QStringLiteral("ATTACH_REJECTED");
+                    } else if (!worker.data(
+                                   QByteArray::fromBase64(body.value("payload").toString().toLatin1()))) {
+                        code = QStringLiteral("INVALID_MESSAGE");
+                    }
+                } else if (op == QLatin1String("readOwnRecords")) {
+                    if (!worker.data(QByteArray::fromBase64(body.value("payload").toString().toLatin1())))
+                        code = QStringLiteral("INVALID_MESSAGE");
+                } else if (op == QLatin1String("stop")) {
+                    worker.shutdown();
+                }
+
+                const QByteArray response = WorkerIpc::encode(
+                    WorkerIpc::response(static_cast<quint64>(request.value("request_id").toDouble()),
+                                        code, {}));
+                connection->write(response);
+                connection->flush();
+            }
+        }
+        Worker::peer = nullptr;
+        connection->disconnectFromServer();
+        delete connection;
+        // stop 之后宿主会关连接；若是 stop 请求则退出进程。
+        if (!worker.isLoaded()) break;
+    }
+
+    QFile::remove(socketPath);
     return 0;
 }

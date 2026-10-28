@@ -47,9 +47,11 @@ bool ModulePageHost::load(const QUrl &source, QObject *sessionModel, const QVari
     // 主题与 i18n 显式传入，不依赖宿主 context。
     context->setContextProperty(QStringLiteral("hostTheme"), theme);
 
+    lastError_.clear();
     component_ = new QQmlComponent(engine_, source, QQmlComponent::PreferSynchronous, this);
     if (component_->isError()) {
-        qWarning().noquote() << "module page failed to load:" << component_->errorString();
+        lastError_ = component_->errorString();
+        qWarning().noquote() << "module page failed to load:" << lastError_;
         delete component_;
         component_ = nullptr;
         emit pageChanged();
@@ -67,7 +69,8 @@ bool ModulePageHost::load(const QUrl &source, QObject *sessionModel, const QVari
         }
     }
     if (!page_) {
-        qWarning().noquote() << "module page created nothing:" << component_->errorString();
+        lastError_ = component_->errorString();
+        qWarning().noquote() << "module page created nothing:" << lastError_;
         delete component_;
         component_ = nullptr;
         emit pageChanged();

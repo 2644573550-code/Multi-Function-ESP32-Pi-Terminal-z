@@ -1,4 +1,7 @@
 #include "security/UserDatabase.h"
+#include "security/AuditLog.h"
+
+#include <cmath>
 
 #include "security/SqlCipherStore.h"
 
@@ -38,6 +41,27 @@ CREATE TABLE IF NOT EXISTS samples(
     battery_pct INTEGER
 );
 CREATE INDEX IF NOT EXISTS samples_by_time ON samples(received_at_ms);
+-- 模块历史的可信聚合（替代模块侧明文 JSON，报告 §6.1）。
+-- 一条记录 = 一个按分钟对齐的桶；模块只发原始观测，聚合在宿主完成。
+CREATE TABLE IF NOT EXISTS module_history(
+    bucket_ms INTEGER PRIMARY KEY,
+    sum_value REAL NOT NULL,
+    low_value REAL NOT NULL,
+    high_value REAL NOT NULL,
+    sample_count INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS module_history_by_time ON module_history(bucket_ms);
+-- 审计（报告 §3.2）：只记动作与结果，不记任何值。
+-- 禁止此表出现 PIN、token、卡号、健康数值；写入侧有白名单校验。
+CREATE TABLE IF NOT EXISTS audit(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at_ms INTEGER NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target TEXT NOT NULL,
+    result TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS audit_by_time ON audit(at_ms);
 )SQL";
 
 }  // namespace
@@ -105,6 +129,8 @@ bool UserDatabase::checkCipherMajor(const QString &currentMajor) {
 }
 
 void UserDatabase::close() {
+    delete audit_;
+    audit_ = nullptr;
     delete store_;
     store_ = nullptr;
     openUserId_.clear();
@@ -162,6 +188,133 @@ QVector<UserDatabase::Record> UserDatabase::queryRecent(int limit) const {
     }
     store_->finalize(stmt);
     return records;
+}
+
+AuditLog *UserDatabase::audit() {
+    if (!isOpen()) return nullptr;
+    if (!audit_) audit_ = new AuditLog(store_);
+    return audit_;
+}
+
+bool UserDatabase::addHistorySample(qint64 observedAtMs, double value) {
+    if (!isOpen() || observedAtMs <= 0) return false;
+    // 与模块侧相同的物理合理区间；越界样本丢弃而不是写进历史。
+    if (!std::isfinite(value) || value < -50.0 || value > 100.0) return false;
+
+    const qint64 bucket = observedAtMs / 60000 * 60000;
+    void *stmt = nullptr;
+    // 一条 UPSERT 完成"并入当前分钟桶"。SQLCipher 3.4.1 基于 SQLite 3.15.2，
+    // 不支持 ON CONFLICT DO UPDATE，因此走"先查后写"两步。
+    if (!store_->prepare(QStringLiteral(
+            "SELECT sum_value, low_value, high_value, sample_count FROM module_history"
+            " WHERE bucket_ms = ?"), &stmt))
+        return false;
+    store_->bindInt(stmt, 1, bucket);
+    bool exists = false;
+    double sum = 0, low = value, high = value;
+    int count = 0;
+    if (store_->step(stmt)) {
+        exists = true;
+        sum = store_->columnDouble(stmt, 0);
+        low = store_->columnDouble(stmt, 1);
+        high = store_->columnDouble(stmt, 2);
+        count = int(store_->columnInt(stmt, 3));
+    }
+    store_->finalize(stmt);
+
+    sum += value;
+    low = qMin(low, value);
+    high = qMax(high, value);
+    ++count;
+
+    const QString sql = exists
+        ? QStringLiteral("UPDATE module_history SET sum_value=?, low_value=?, high_value=?,"
+                         " sample_count=? WHERE bucket_ms=?")
+        : QStringLiteral("INSERT INTO module_history(bucket_ms, sum_value, low_value,"
+                         " high_value, sample_count) VALUES(?,?,?,?,?)");
+    if (!store_->prepare(sql, &stmt)) return false;
+
+    const bool update = sql.startsWith(QLatin1String("UPDATE"));
+    int index = 1;
+    if (!update) store_->bindInt(stmt, index++, bucket);
+    store_->bindDouble(stmt, index++, sum);
+    store_->bindDouble(stmt, index++, low);
+    store_->bindDouble(stmt, index++, high);
+    store_->bindInt(stmt, index++, count);
+    if (update) store_->bindInt(stmt, index, bucket);
+
+    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;   // SQLITE_DONE
+    store_->finalize(stmt);
+    return ok;
+}
+
+QVector<UserDatabase::HistoryBucket> UserDatabase::historySeries(
+    qint64 nowMs, qint64 spanMs, qint64 stepMs) const {
+    QVector<HistoryBucket> out;
+    if (!isOpen() || stepMs <= 0 || spanMs <= 0) return out;
+
+    const qint64 from = nowMs - spanMs;
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "SELECT bucket_ms, sum_value, low_value, high_value, sample_count"
+            " FROM module_history WHERE bucket_ms >= ? AND bucket_ms <= ?"
+            " ORDER BY bucket_ms"), &stmt))
+        return out;
+    store_->bindInt(stmt, 1, from);
+    store_->bindInt(stmt, 2, nowMs);
+
+    // 按 stepMs 分组聚合，与模块侧 History::series 的语义保持一致。
+    QMap<qint64, HistoryBucket> groups;
+    while (store_->step(stmt)) {
+        const qint64 bucket = store_->columnInt(stmt, 0);
+        const qint64 groupKey = bucket / stepMs * stepMs;
+        HistoryBucket &g = groups[groupKey];
+        g.bucketMs = groupKey;
+        g.sum += store_->columnDouble(stmt, 1);
+        const double low = store_->columnDouble(stmt, 2);
+        const double high = store_->columnDouble(stmt, 3);
+        if (g.count == 0) { g.low = low; g.high = high; }
+        else { g.low = qMin(g.low, low); g.high = qMax(g.high, high); }
+        g.count += int(store_->columnInt(stmt, 4));
+    }
+    store_->finalize(stmt);
+
+    out.reserve(groups.size());
+    for (auto it = groups.cbegin(); it != groups.cend(); ++it) out.append(it.value());
+    return out;
+}
+
+int UserDatabase::pruneHistory(qint64 nowMs, qint64 retentionMs) {
+    if (!isOpen() || retentionMs <= 0) return 0;
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral("DELETE FROM module_history WHERE bucket_ms < ?"), &stmt))
+        return 0;
+    store_->bindInt(stmt, 1, nowMs - retentionMs);
+    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
+    store_->finalize(stmt);
+    return ok ? store_->changes() : 0;
+}
+
+bool UserDatabase::legacyHistoryMigrated() const {
+    if (!isOpen()) return false;
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "SELECT value FROM meta WHERE key='legacy_history_migrated'"), &stmt))
+        return false;
+    const bool migrated = store_->step(stmt) && store_->columnText(stmt, 0) == QLatin1String("1");
+    store_->finalize(stmt);
+    return migrated;
+}
+
+bool UserDatabase::markLegacyHistoryMigrated() {
+    if (!isOpen()) return false;
+    void *stmt = nullptr;
+    if (!store_->prepare(QStringLiteral(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES('legacy_history_migrated','1')"), &stmt))
+        return false;
+    const bool ok = !store_->step(stmt) && store_->lastSqliteCode() == 101;
+    store_->finalize(stmt);
+    return ok;
 }
 
 bool UserDatabase::openForeign(const QString &userId, const QByteArray &dbKey) {

@@ -24,6 +24,10 @@ ModuleManager::~ModuleManager() {
 namespace {
 
 // manifest 校验对两条路径都一样：路径逃逸、ABI、架构都必须先挡住。
+// 宿主支持的模块页面 schema 上限。新增不兼容字段时递增，
+// 旧模块继续用旧版本号运行（宿主只拒绝更高的版本）。
+constexpr int kSupportedQmlSchema = 1;
+
 bool verifyManifest(const QJsonObject &m, int id, const QString &directory, QString *error) {
     auto fail = [error](const QString &s) { if (error) *error = s; return false; };
     if (m.value("module_id").toDouble(-1) != id || id < 1 || id > 255
@@ -32,6 +36,19 @@ bool verifyManifest(const QJsonObject &m, int id, const QString &directory, QStr
         || m.value("qt_major").toInt() != 6
         || m.value("unload_contract").toString() != QLatin1String("synchronous-stop-v1"))
         return fail(QStringLiteral("manifest incompatible"));
+    // 页面 schema 版本：宿主在加载前就要拒绝不兼容页面，
+    // 而不是等 QML 运行时报一堆绑定错误。缺省视为 1（存量模块兼容）。
+    const int pageSchema = m.value("qml_schema_version").toInt(1);
+    if (pageSchema < 1 || pageSchema > kSupportedQmlSchema) {
+        return fail(QStringLiteral("module page schema %1 unsupported (host supports <= %2)")
+                        .arg(pageSchema).arg(kSupportedQmlSchema));
+    }
+    // 页面文件必须真实存在：manifest 写了但包里没有，是最常见的包构建错误。
+    const QString pageRelative = m.value("qml_page").toString();
+    if (!QFileInfo(directory + '/' + pageRelative).isFile()) {
+        return fail(QStringLiteral("module page missing from package: ") + pageRelative);
+    }
+
     for (const auto *key : {"library", "qml_page"}) {
         const QString relative = m.value(QLatin1String(key)).toString();
         const QString path = QFileInfo(directory + '/' + relative).canonicalFilePath();
@@ -207,6 +224,18 @@ void ModuleManager::disconnectRequest(const QString &session, const QJsonObject 
 QJsonObject ModuleManager::manifest(const QString &session) const {
     auto i = instances_.value(session);
     return i ? i->manifest : QJsonObject{};
+}
+
+QString ModuleManager::packageVersion(const QString &session) const {
+    auto i = instances_.value(session);
+    if (!i) return {};
+    const QString v = i->manifest.value("package_version").toString();
+    return v.isEmpty() ? i->manifest.value("version").toString() : v;
+}
+
+int ModuleManager::pageSchemaVersion(const QString &session) const {
+    auto i = instances_.value(session);
+    return i ? i->manifest.value("qml_schema_version").toInt(1) : 0;
 }
 
 QString ModuleManager::page(const QString &session) const {

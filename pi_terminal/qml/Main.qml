@@ -1123,6 +1123,12 @@ ApplicationWindow {
         function onNotification(message){win.notify("",message,false)} }
     Connections {
         target:connectionManager
+        // 模块包更新后不重启终端：重新加载当前模块页。
+        function onModuleRefreshed(instance, version) {
+            if (instance !== activeSession) return
+            notify("", I18n.t("模块已更新到版本 ") + version, false, appTitle);
+            openModule(activeSession)
+        }
         function onBridgeUnavailable() {
             win.notify("",I18n.t("超过5秒未连接控制桥，请检查USB连接。现有无线数据会话不受此提示影响。"),true,I18n.t("控制桥"),"lan")
             systemTools.speak(I18n.t("控制桥已断开，请检查USB连接"))
@@ -1841,6 +1847,23 @@ ApplicationWindow {
                 }
                 SettingsGroup {
                     Layout.fillWidth:true
+                    visible:!settingsQuery || /隐私|保留|清理|记录|privacy|retention|cleanup/i.test(settingsQuery)
+                    iconName:"shield";accentColor:"#4fd4a4";title:I18n.t("隐私与数据");subtitle:I18n.t("记录保留期限")
+                    Flow {Layout.fillWidth:true;spacing:Theme.gap/2
+                        Repeater {
+                            model:[{d:30,t:I18n.t("30 天")},{d:90,t:I18n.t("90 天")},{d:180,t:I18n.t("180 天")},{d:0,t:I18n.t("永久")}]
+                            CarButton {
+                                required property var modelData
+                                text:modelData.t
+                                checked:systemTools.retentionDays===modelData.d
+                                onClicked:systemTools.setRetentionDays(modelData.d)
+                            }
+                        }
+                    }
+                    CarText {text:I18n.t("超过保留期限的健康记录会在下次登录时清理；本机删除不影响已拔出的 USB 备份。");subdued:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                }
+                SettingsGroup {
+                    Layout.fillWidth:true
                     visible:!settingsQuery || /语言|language|中文|english|英文/i.test(settingsQuery)
                     iconName:"language";accentColor:"#27b7c5";title:I18n.t("语言 / Language");subtitle:I18n.t("切换终端界面显示语言")
                     Flow {Layout.fillWidth:true;spacing:Theme.gap/2
@@ -1896,13 +1919,38 @@ ApplicationWindow {
                 Item {
                     id:moduleLoader;objectName:"moduleFunctionLoader"
                     Layout.fillWidth:true
-                    Layout.preferredHeight:Math.max(childrenRect.height, 1)
+                    Layout.preferredHeight:Math.max(childrenRect.height, modulePageError.implicitHeight + Theme.gap * 2)
                     Component.onCompleted:modulePageHost.setContainer(moduleLoader)
                     Connections {
                         target:modulePageHost
                         function onPageChanged() {
                             if (modulePageHost.page)
                                 modulePageHost.setContainer(moduleLoader)
+                        }
+                    }
+                    // 模块页面加载失败时不能只留白：给出可读错误与出口。
+                    Column {
+                        id:modulePageError
+                        anchors.centerIn: parent
+                        width: Math.min(parent.width - Theme.margin * 2, 560 * Theme.scaleFactor)
+                        spacing: Theme.gap / 2
+                        visible: !modulePageHost.hasPage && modulePageHost.lastError.length > 0
+                        CarText {
+                            width: parent.width
+                            text: I18n.t("模块页面加载失败")
+                            color: Theme.warning
+                            fontPixelSize: Theme.fontLabel
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+                        CarText {
+                            width: parent.width
+                            text: modulePageHost.lastError
+                            color: Theme.outline
+                            fontPixelSize: Theme.fontCaption
+                            wrapMode: Text.WrapAnywhere
+                            maximumLineCount: 6
+                            elide: Text.ElideRight
+                            horizontalAlignment: Text.AlignHCenter
                         }
                     }
                 }

@@ -3,6 +3,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QtEndian>
+#include <QtGlobal>
 
 namespace WorkerIpc {
 
@@ -23,6 +24,28 @@ int jsonDepth(const QJsonValue &value) {
     return 0;
 }
 }  // namespace
+
+QString safeToken(const QString &session) {
+    // session 是内部标识，仍需过滤成 systemd 允许的单元名字符集。
+    QString safe;
+    for (const QChar c : session)
+        if (c.isLetterOrNumber() || c == QLatin1Char('_')) safe.append(c);
+    if (safe.isEmpty()) safe = QStringLiteral("default");
+    return safe;
+}
+
+QString unitName(const QString &session) {
+    return QStringLiteral("orange-pi-worker@%1.service").arg(safeToken(session));
+}
+
+QString socketPath(const QString &session) {
+    // 显式覆盖优先（测试与开发构建用；生产不给这个变量）。
+    const QString override = qEnvironmentVariable("ORANGE_PI_WORKER_SOCKET");
+    if (!override.isEmpty()) return override;
+    // systemd RuntimeDirectory=<name> 落在 /run/<name>。
+    // 必须与 unit 里的 RuntimeDirectory=orange-pi-worker-%i 完全一致。
+    return QStringLiteral("/run/orange-pi-worker-%1/").arg(safeToken(session)) + QLatin1String(SocketName);
+}
 
 QByteArray encode(const QJsonObject &message) {
     const QByteArray payload = QJsonDocument(message).toJson(QJsonDocument::Compact);

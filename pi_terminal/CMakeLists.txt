@@ -14,6 +14,8 @@ target_include_directories(pi_module_sdk INTERFACE $<BUILD_INTERFACE:${CMAKE_CUR
 target_compile_features(pi_module_sdk INTERFACE cxx_std_17)
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Network Bluetooth Qml Quick QuickControls2 SerialPort OpenGL WebEngineQuick WebEngineWidgets WebEngineCore QuickWidgets WebChannel Concurrent Svg PrintSupport Multimedia TextToSpeech StateMachine)
 find_package(Qt6 6.4 REQUIRED COMPONENTS ShaderTools)
+# PBR AEAD（T-07）与 PIN/DB key 封装都用 OpenSSL，早期就要找到。
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/vlc
                  ${CMAKE_CURRENT_BINARY_DIR}/third_party/vlc)
 set(VIPER_EMBEDDED ON CACHE BOOL "Build the Viper browser engine as embedded terminal components" FORCE)
@@ -27,9 +29,12 @@ add_library(terminal_protocol STATIC
     src/protocol/pibridge_protocol.h
     src/protocol/control_event.cpp
     src/protocol/control_event.h
+    src/protocol/pbr_aead.cpp src/protocol/pbr_aead.h
+    src/protocol/pbr_session.cpp src/protocol/pbr_session.h
+    src/protocol/pbr_handshake.cpp src/protocol/pbr_handshake.h
     src/protocol/data_checksum.h)
 target_include_directories(terminal_protocol PUBLIC src)
-target_link_libraries(terminal_protocol PUBLIC Qt6::Core)
+target_link_libraries(terminal_protocol PUBLIC Qt6::Core OpenSSL::Crypto)
 target_compile_options(terminal_protocol PRIVATE -Wall -Wextra -Wpedantic)
 
 # 物理槽位路由：纯 Qt Core，不依赖网络/蓝牙，便于单测。
@@ -54,7 +59,9 @@ set(TERMINAL_SECURITY_SOURCES
     src/security/TaskCapability.cpp src/security/TaskCapability.h
     src/security/CardMatcher.cpp src/security/CardMatcher.h src/security/CardIndex.h
     src/security/SqlCipherStore.cpp src/security/SqlCipherStore.h
-    src/security/UserDatabase.cpp src/security/UserDatabase.h)
+    src/security/UserDatabase.cpp src/security/UserDatabase.h
+    src/security/AuditLog.cpp src/security/AuditLog.h
+    src/security/PermissionMatrix.cpp src/security/PermissionMatrix.h)
 
 # 只有 HostIdentity（ECDSA P-256）需要 mbedtls。缺失时跳过该文件，
 # 其余安全组件照常构建。CI 上缺 mbedtls 会让身份用例静默消失，需在下游显式断言。
@@ -72,7 +79,6 @@ endif()
 
 # SQLCipher 路线由 F 裁决（§0.1）：直接调 C API，不走 Qt SQL 插件。
 # 找不到库时必须 FATAL_ERROR —— 不得静默降级成普通 SQLite。
-find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 find_library(SQLCIPHER_LIB NAMES sqlcipher
     HINTS ${SQLCIPHER_ROOT}/lib ${SQLCIPHER_ROOT}/lib/x86_64-linux-gnu)
 find_path(SQLCIPHER_INCLUDE_DIR sqlite3.h
@@ -120,7 +126,8 @@ add_library(terminal_core STATIC
     src/core/ModuleWorkerLauncher.cpp src/core/ModuleWorkerLauncher.h
     src/core/ModuleWorkerClient.cpp src/core/ModuleWorkerClient.h
     src/core/ModulePageHost.cpp src/core/ModulePageHost.h
-    src/core/LaneGate.cpp src/core/LaneGate.h)
+    src/core/LaneGate.cpp src/core/LaneGate.h
+    src/core/PowerStatus.cpp src/core/PowerStatus.h)
 target_include_directories(terminal_core PUBLIC src src/modules/api)
 target_link_libraries(terminal_core PUBLIC terminal_transports terminal_security terminal_routing Qt6::Core Qt6::Network Qt6::StateMachine Qt6::Qml Qt6::Quick)
 target_compile_definitions(terminal_core PRIVATE PI_PACKAGE_TOOL="${CMAKE_INSTALL_PREFIX}/libexec/orange-pi-terminal/package_tool.py")
@@ -231,7 +238,7 @@ target_link_libraries(terminal_ui PRIVATE gstreamer-1.0 gstapp-1.0 gstvideo-1.0 
 # 模块 worker 入口（T-11）：独立进程加载模块 .so，由 systemd unit 约束沙箱。
 qt_add_executable(module_worker src/core/module_worker_main.cpp src/core/WorkerIpc.cpp)
 target_include_directories(module_worker PRIVATE src)
-target_link_libraries(module_worker PRIVATE Qt6::Core)
+target_link_libraries(module_worker PRIVATE Qt6::Core Qt6::Network)
 target_compile_options(module_worker PRIVATE -Wall -Wextra -Wpedantic)
 
 qt_add_executable(kdf_bench tools/kdf_bench.cpp)
@@ -348,6 +355,19 @@ if(BUILD_TESTING)
     target_include_directories(orange_pi_terminal PRIVATE tests)
     target_link_libraries(orange_pi_terminal PRIVATE Qt6::Test)
     target_compile_definitions(orange_pi_terminal PRIVATE TERMINAL_GUI_AUDIT)
+    add_executable(pbr_aead_test tests/pbr_aead_test.cpp)
+    target_link_libraries(pbr_aead_test PRIVATE terminal_protocol Qt6::Test)
+    target_compile_definitions(pbr_aead_test PRIVATE
+        VECTORS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../docs/pbr-secure-v1/vectors.json")
+    add_test(NAME pbr_aead_envelope COMMAND pbr_aead_test)
+    add_executable(pbr_session_test tests/pbr_session_test.cpp)
+    target_link_libraries(pbr_session_test PRIVATE terminal_protocol Qt6::Test)
+    add_test(NAME pbr_replay_and_dedup COMMAND pbr_session_test)
+    add_executable(pbr_handshake_test tests/pbr_handshake_test.cpp)
+    target_link_libraries(pbr_handshake_test PRIVATE terminal_protocol Qt6::Test)
+    target_compile_definitions(pbr_handshake_test PRIVATE
+        VECTORS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../docs/pbr-secure-v1/vectors.json")
+    add_test(NAME pbr_handshake_derivation COMMAND pbr_handshake_test)
     add_executable(protocol_test tests/protocol_test.cpp)
     target_link_libraries(protocol_test PRIVATE terminal_protocol)
     add_test(NAME pibridge_protocol COMMAND protocol_test)
@@ -415,6 +435,13 @@ if(BUILD_TESTING)
     add_test(NAME login_lock_user_pages COMMAND login_qml_test)
     set_tests_properties(login_lock_user_pages PROPERTIES LABELS "interface"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software" TIMEOUT 60)
+    add_executable(module_worker_ipc_test tests/module_worker_ipc_test.cpp)
+    target_include_directories(module_worker_ipc_test PRIVATE src)
+    target_compile_definitions(module_worker_ipc_test PRIVATE
+        EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/modules")
+    target_link_libraries(module_worker_ipc_test PRIVATE terminal_core Qt6::Test)
+    add_dependencies(module_worker_ipc_test module_worker example_module)
+    add_test(NAME worker_socket_ipc COMMAND module_worker_ipc_test)
     add_executable(module_worker_async_test tests/module_worker_async_test.cpp)
     target_include_directories(module_worker_async_test PRIVATE src)
     target_link_libraries(module_worker_async_test PRIVATE terminal_core Qt6::Test)
@@ -427,6 +454,12 @@ if(BUILD_TESTING)
     target_link_libraries(card_matcher_test PRIVATE terminal_security Qt6::Test)
     add_test(NAME card_index_matching COMMAND card_matcher_test)
     # T-12 Pi 侧验收（§0.8.7）：未配对拒发、挑战-响应失败拒发、指纹不匹配拒绝。
+    add_executable(power_status_test tests/power_status_test.cpp)
+    target_link_libraries(power_status_test PRIVATE terminal_core Qt6::Test)
+    add_test(NAME power_status_semantics COMMAND power_status_test)
+    add_executable(permission_matrix_test tests/permission_matrix_test.cpp)
+    target_link_libraries(permission_matrix_test PRIVATE terminal_security Qt6::Test)
+    add_test(NAME permission_mutual_exclusion COMMAND permission_matrix_test)
     add_executable(business_security_test tests/business_security_test.cpp)
     target_link_libraries(business_security_test PRIVATE
         terminal_transports terminal_protocol Qt6::Test Qt6::Network Qt6::Bluetooth)
@@ -510,6 +543,13 @@ if(BUILD_TESTING)
     endif()
 endif()
 install(TARGETS orange_pi_terminal RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT TerminalRuntime)
+# T-11：worker 二进制必须安装，否则 systemd unit 永远起不来，
+# 产品只能走 QProcess 降级路径（无隔离）。
+install(TARGETS module_worker RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/orange-pi-terminal
+        COMPONENT TerminalRuntime)
+# systemd 单元随安装包提供；安装到系统目录需用户执行一次 sudo。
+install(FILES packaging/orange-pi-worker@.service
+        DESTINATION share/orange-pi-terminal/systemd COMPONENT TerminalRuntime)
 install(TARGETS terminal_music terminal_system terminal_ui LIBRARY DESTINATION ${TERMINAL_LIBRARY_DIR} COMPONENT TerminalRuntime)
 install(FILES music_api/server.cjs music_api/package.json music_api/package-lock.json DESTINATION libexec/orange-pi-terminal/music-api)
 install(DIRECTORY music_api/node_modules/ DESTINATION libexec/orange-pi-terminal/music-api/node_modules OPTIONAL)

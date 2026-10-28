@@ -70,6 +70,13 @@ public:
     // 追加样本：同时校验任务归属、设备与代次。
     bool appendTaskSample(const QString &taskId, const QString &deviceId, qint64 generation);
 
+    // 模块观测入可信存储（报告 §6.1）：QML/模块都拿不到 DB，只有这里能写。
+    // 观察值缺失或库未打开时返回 false，不静默吞掉。
+    Q_INVOKABLE bool recordObservation(const QString &deviceId, double value);
+
+    // 报告 §6.4：按保留期限清理本用户历史。0 表示永久保留（直接返回 true）。
+    Q_INVOKABLE bool applyRetention(int retentionDays);
+
     QString activeUserId() const { return activeUserId_; }
     QString activeDisplayName() const { return activeDisplayName_; }
     bool locked() const { return locked_; }
@@ -109,6 +116,8 @@ private:
     QString activeDisplayName_;
     QString tokenHex_;   // 与 begin() 返回值同一形态，避免调用侧还去做编码转换
     QByteArray dbKey_;
+    // 可信存储句柄：只在 SessionManager 内部持有，QML 与模块都拿不到。
+    UserDatabase *database_ = nullptr;
     bool locked_ = false;
     bool admin_ = false;
     QString message_;

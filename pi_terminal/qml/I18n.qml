@@ -472,5 +472,13 @@ QtObject {
         "需要管理员权限":"Administrator permission required"
 ,
         "正在验证":"Verifying"
+,
+        "模块页面加载失败":"Failed to load the module page"
+,
+        "模块已更新到版本 ":"Module updated to version "
+,
+        "隐私与数据":"Privacy & data", "记录保留期限":"Record retention",
+        "30 天":"30 days", "90 天":"90 days", "180 天":"180 days", "永久":"Forever",
+        "超过保留期限的健康记录会在下次登录时清理；本机删除不影响已拔出的 USB 备份。":"Health records past the retention window are cleaned up on the next sign-in; local deletion does not affect USB backups you have already removed."
 })
 }

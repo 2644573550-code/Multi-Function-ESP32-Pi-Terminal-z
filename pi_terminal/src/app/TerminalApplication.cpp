@@ -56,6 +56,10 @@ int TerminalApplication::initialize(const QCommandLineParser &options) {
     // 否则 lane 门控拿不到用户，所有业务数据都会被拒。
     QObject::connect(&session_, &security::SessionManager::changed, &connection_, [this] {
         connection_.setActiveUserId(session_.activeUserId());
+    // 报告 §6.1：模块观测写进当前用户的加密库，模块侧不再写明文 JSON。
+    connection_.observationSink = [this](const QString &, double value) {
+        return session_.recordObservation(QStringLiteral("module"), value);
+    };
     });
     connection_.setActiveUserId(session_.activeUserId());
     // 自动化审计（--ui-test）以无用户配置启动，门控会拒绝业务数据；

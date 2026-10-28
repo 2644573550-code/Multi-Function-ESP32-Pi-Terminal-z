@@ -1,4 +1,8 @@
 #include "security/SessionManager.h"
+#include <QDateTime>
+
+#include "security/AuditLog.h"
+#include "security/UserDatabase.h"
 
 #include "security/AuthService.h"
 #include "security/UserService.h"
@@ -145,9 +149,14 @@ QString SessionManager::startTask(const QString &deviceId) {
     QByteArray raw(8, Qt::Uninitialized);
     for (int i = 0; i < raw.size(); ++i) raw[i] = static_cast<char>(QRandomGenerator::system()->bounded(256));
     const QString taskId = QString::fromLatin1(raw.toHex());
+    // 代次必须真正传给 TaskCapability：否则同一 taskId 重建时，
+    // 旧代次的迟到回调会因为内部 generation_ 恒为 0 而被当成合法回调。
     const qint64 generation = taskGenerations_.value(taskId, 0);
-    tasks_.insert(taskId, new TaskCapability(TaskCapability::Kind::Task, activeUserId_, taskId, deviceId));
-    taskGenerations_.insert(taskId, generation);
+    tasks_.insert(taskId,
+                  new TaskCapability(TaskCapability::Kind::Task, activeUserId_, taskId,
+                                     deviceId, generation));
+    // 没有已推进的代次时保持 0；有则沿用，让 canAppend 能区分新旧代次。
+    if (!taskGenerations_.contains(taskId)) taskGenerations_.insert(taskId, generation);
     return taskId;
 }
 
@@ -187,6 +196,7 @@ bool SessionManager::appendTaskSample(const QString &taskId, const QString &devi
 }
 
 void SessionManager::clear() {
+    if (database_) { database_->close(); delete database_; database_ = nullptr; }
     for (TaskCapability *task : tasks_) {
         task->revoke();
         delete task;
@@ -214,6 +224,51 @@ bool SessionManager::validate(const QString &token) const {
         diff |= static_cast<unsigned char>(candidate[i] ^ expected[i]);
     }
     return diff == 0;
+}
+
+bool SessionManager::recordObservation(const QString &deviceId, double value) {
+    // 锁屏不阻止任务追加（f-day1 §5），但拒绝写入时需要明确失败。
+    if (activeUserId_.isEmpty() || deviceId.isEmpty()) return false;
+    if (!database_) {
+        database_ = new UserDatabase();
+        if (!database_->openForSession(activeUserId_, dbKey_)) {
+            delete database_;
+            database_ = nullptr;
+            return false;
+        }
+    }
+    if (!database_->isOpen()) return false;
+    return database_->addHistorySample(QDateTime::currentMSecsSinceEpoch(), value);
+}
+
+bool SessionManager::applyRetention(int retentionDays) {
+    if (retentionDays < 0) return false;
+    if (retentionDays == 0) return true;   // 0 = 永久保留，不需要清理
+    if (activeUserId_.isEmpty()) return false;
+    if (!database_) {
+        database_ = new UserDatabase();
+        if (!database_->openForSession(activeUserId_, dbKey_)) {
+            delete database_;
+            database_ = nullptr;
+            return false;
+        }
+    }
+    if (!database_->isOpen()) return false;
+
+    const QDateTime now = QDateTime::currentDateTime();
+    const qint64 cutoff = now.addDays(-retentionDays).toMSecsSinceEpoch();
+    const int removed = database_->pruneHistory(now.toMSecsSinceEpoch(),
+                                               qint64(retentionDays) * 24 * 60 * 60 * 1000);
+    // 审计里也清理同一窗口，避免审计本身无限增长。
+    if (AuditLog *log = database_->audit()) log->prune(cutoff);
+
+    // 清理动作本身要留审计（不含条数以外的任何值）。
+    if (AuditLog *log = database_->audit()) {
+        log->record(activeUserId_, QStringLiteral("data.prune"),
+                    QStringLiteral("history"), QStringLiteral("ok"));
+    }
+    if (removed > 0) emit changed();
+    return true;
 }
 
 QByteArray SessionManager::dbKey() const { return locked_ ? QByteArray{} : dbKey_; }

@@ -91,11 +91,16 @@ private slots:
         QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(path));
         const QString text = QString::fromUtf8(file.readAll());
         // §0.4 的六条必须全部在 unit 里真正声明。
+        // ProtectHome 用 read-only 而不是 yes：模块 .so 解包在用户数据目录下，
+        // 完全屏蔽会让 worker 加载不到库。写权限仍然没有。
         for (const auto *directive : {"DynamicUser=yes", "PrivateNetwork=yes", "PrivateTmp=yes",
-                                      "ProtectHome=yes", "ProtectSystem=strict", "NoNewPrivileges=yes",
-                                      "RestrictAddressFamilies=AF_UNIX"}) {
+                                      "ProtectHome=read-only", "ProtectSystem=strict",
+                                      "NoNewPrivileges=yes", "RestrictAddressFamilies=AF_UNIX"}) {
             QVERIFY2(text.contains(QLatin1String(directive)), directive);
         }
+        // RuntimeDirectory 必须让宿主（普通用户）能穿越，否则连不上 socket。
+        QVERIFY2(text.contains(QLatin1String("RuntimeDirectoryMode=0755")),
+                 "host must be able to traverse the runtime dir to reach the socket");
         // DynamicUser 下不得手工改属主：只检查真正的指令行，注释里的说明不算。
         for (const QString &line : text.split(QLatin1Char('\n'))) {
             const QString trimmed = line.trimmed();
