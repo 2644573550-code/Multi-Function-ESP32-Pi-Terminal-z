@@ -188,20 +188,38 @@ iterations=600000 median=760 ms min=758 ms max=768 ms
 OK: within 2000 ms
 ```
 
-**ARM64 qemu 对照**（含模拟开销校正）
+**⚠️ 关键发现：`QPasswordDigestor` 比裸 OpenSSL 慢 8.5 倍**
 
-| 场景 | 耗时 |
+同进程内对照（`/tmp/opencode/cmp.cpp`，输出字节完全一致 `same=1`）：
+
+| 实现 | 600k 迭代耗时 |
 |---|---|
-| x86_64 原生（裸 OpenSSL） | 96 ms |
-| x86_64 用 qemu 模拟（量化开销） | 1424 ms → **模拟慢 14.8 倍** |
-| ARM64 用 qemu 模拟 | 2694 ms |
-| **ARM64 原生推算** | **182 ms** |
-| **Pi 3B 推算（×3~5 慢）** | **545 ~ 908 ms** |
+| `QPasswordDigestor::deriveKeyPbkdf2` | **760 ms** |
+| `PKCS5_PBKDF2_HMAC`（OpenSSL） | **90 ms** |
 
-**结论：Pi 3B 预计 0.5~0.9 秒，远低于文档 2 秒线，当前 600k 参数不需要改。**
+原因：Qt 6.5 的 `QPasswordDigestor` 逐块调用 `QCryptographicHash`，每块重建 HMAC 上下文；
+OpenSSL 有专用优化路径。**正确性两者完全一致**（RFC 6070 向量已验，见下）。
 
-> 这条结论推翻了「可能超 2 秒」的担心。但推算不是实测，Pi 上仍须跑一次
-> `./build/kdf_bench` 记录真实数字。
+**这只影响性能，不影响安全。** 但 Pi 上推算因此完全不同：
+
+| 路径 | x86 原生 | ARM64 推算 | **Pi 3B 推算** |
+|---|---|---|---|
+| 裸 OpenSSL | 90 ms | 182 ms | **545~908 ms** ✅ |
+| **Qt 路径（当前实现）** | **760 ms** | ~1430 ms | **4.3~7.1 秒** ⚠️ |
+
+**当前实现按 §0.2 用 `QPasswordDigestor`，因此 Pi 上很可能 4~7 秒一次。**
+文档 §0.2 预估 0.5~1.5 秒、超过 2 秒要提 PR —— **这条大概率会被突破**。
+
+**RFC 6070 向量验证**（`auth_service_test` 的 `pbkdf2MatchesRfc6070`）
+
+```
+PASS: pbkdf2MatchesRfc6070(c=1)          0c60c80f...fe037a6
+PASS: pbkdf2MatchesRfc6070(c=2)          ea6c014d...d8de8957
+PASS: pbkdf2MatchesRfc6070(c=4096)       4b007901...65a429c1
+PASS: pbkdf2MatchesRfc6070(c=4096-longpw) 3d2eec4f...07038
+```
+
+`QPasswordDigestor` **完全符合 RFC 6070**，所以问题只在速度。
 
 **认证/限速单测**（`ctest -R user_pin_session`）
 
@@ -239,8 +257,11 @@ Pi 上若 `/home` 是 FAT32/exFAT，权限位会静默失效——须实测确�
 | 锁定状态跨重启 | **PASS** |
 | 首次管理员本地受控、无默认 PIN | **PASS** |
 | 注册表不含 PIN / 权限 0600 | **PASS**（ext4） |
-| KDF 延迟（x86_64 原生） | **PASS**（760 ms） |
-| KDF 延迟（ARM64 推算） | **PASS**（545~908 ms，非实测） |
+| KDF 正确性（RFC 6070 向量） | **PASS**（4/4） |
+| KDF 延迟（x86_64 原生，Qt 实现） | **760 ms**（合规但慢 8.5 倍） |
+| KDF 延迟（x86_64 原生，裸 OpenSSL） | 90 ms（对照，未采用） |
+| KDF 延迟（ARM64 推算，Qt 实现） | **~1430 ms** |
+| **Pi 3B 推算（Qt 实现）** | **4.3~7.1 秒 —— 大概率超 §0.2 的 2 秒线** |
 | Pi 3B 上 600k 迭代**真机**延迟 | **NOT_RUN** |
 | Pi 3B 上内存峰值 | **NOT_RUN** |
 | Pi 上 `/home` 文件系统与权限位 | **NOT_RUN** |
@@ -261,7 +282,7 @@ Pi 上若 `/home` 是 FAT32/exFAT，权限位会静默失效——须实测确�
 | ARM64 上错误 key 是否返回 26 | 未验证 | **是** | qemu 实测 `rc=26` |
 | SQLCipher 在 ARM64 是否可用 | 未验证 | **可用** | 4.5.6 arm64 包实测 |
 | `systemd-analyze verify` | NOT_RUN | **PASS** | 本机 systemd 259 |
-| KDF 会不会超 2 秒 | 担心可能 | **不会**（推算 0.5~0.9s） | qemu 开销校正 |
+| KDF 会不会超 2 秒 | 担心可能 | **会**（Qt 实现推算 4.3~7.1s） | 同进程对照实测 Qt 慢 8.5x |
 | 文件系统权限位 | 未知 | **ext4 可靠** | `findmnt` |
 | systemd 版本是否支持 DynamicUser | 推断 | **确认**（232 起，Bookworm 是 252） | 版本资料 |
 

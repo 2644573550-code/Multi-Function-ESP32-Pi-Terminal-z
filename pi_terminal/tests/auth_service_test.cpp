@@ -6,7 +6,9 @@
 #include "security/SessionManager.h"
 #include "security/UserService.h"
 
+#include <QCryptographicHash>
 #include <QDir>
+#include <QPasswordDigestor>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -23,6 +25,60 @@ private slots:
         QVERIFY(dir_.isValid());
         // §0.2：生产常量是硬编码下限，单测小值不得成为降低它的入口。
         QVERIFY2(PinPolicy::kProductionIterations >= 600000, "production iteration floor was lowered");
+    }
+
+    // RFC 6070 官方测试向量：确认 KDF 实现本身符合标准，
+    // 不是"跑通了就算对"。任何换实现（Qt → OpenSSL）都必须先过这一组。
+    void pbkdf2MatchesRfc6070_data() {
+        QTest::addColumn<int>("iterations");
+        QTest::addColumn<int>("outputLength");
+        QTest::addColumn<QByteArray>("password");
+        QTest::addColumn<QByteArray>("salt");
+        QTest::addColumn<QByteArray>("expected");
+
+        // RFC 6070 §2，PBKDF2-HMAC-SHA1。PinPolicy 用 SHA256，但 KDF 骨架
+        // 与算法无关；这组向量保证"迭代次数/输出长度/块拼接"这三处没错。
+        QTest::newRow("c=1") << 1 << 20 << QByteArray("password") << QByteArray("salt")
+            << QByteArray::fromHex("0c60c80f961f0e71f3a9b524af6012062fe037a6");
+        QTest::newRow("c=2") << 2 << 20 << QByteArray("password") << QByteArray("salt")
+            << QByteArray::fromHex("ea6c014dc72d6f8ccd1ed92ace1d41f0d8de8957");
+        QTest::newRow("c=4096") << 4096 << 20 << QByteArray("password") << QByteArray("salt")
+            << QByteArray::fromHex("4b007901b765489abead49d926f721d065a429c1");
+        QTest::newRow("c=4096-longpw") << 4096 << 25
+            << QByteArray("passwordPASSWORDpassword")
+            << QByteArray("saltSALTsaltSALTsaltSALTsaltSALTsalt")
+            << QByteArray::fromHex("3d2eec4fe41c849b80c8d83662c0e44a8b291a964cf2f07038");
+    }
+
+    void pbkdf2MatchesRfc6070() {
+        QFETCH(int, iterations);
+        QFETCH(int, outputLength);
+        QFETCH(QByteArray, password);
+        QFETCH(QByteArray, salt);
+        QFETCH(QByteArray, expected);
+
+        // 直接用 Qt 的 KDF（与 PinPolicy 同一底层），算法用 SHA1 以对齐 RFC 6070。
+        const QByteArray actual = QPasswordDigestor::deriveKeyPbkdf2(
+            QCryptographicHash::Sha1, password, salt, iterations, outputLength);
+        QCOMPARE(actual.toHex(), expected.toHex());
+    }
+
+    void productionKdfUsesSha256And32Bytes() {
+        // 生产参数必须与 §0.2 冻结值一致：SHA256、输出 32 字节。
+        const QByteArray salt = PinPolicy::salt16();
+        QCOMPARE(salt.size(), 16);
+        const QByteArray kek = PinPolicy::deriveKek(QStringLiteral("246810"), salt, 1000);
+        QCOMPARE(kek.size(), 32);
+        // 同 PIN + 同 salt 必须稳定；不同 salt 必须不同。
+        QCOMPARE(PinPolicy::deriveKek(QStringLiteral("246810"), salt, 1000), kek);
+        QVERIFY(PinPolicy::deriveKek(QStringLiteral("246810"), PinPolicy::salt16(), 1000) != kek);
+    }
+
+    void invalidPinProducesNoKey() {
+        // 失败关闭：非法 PIN 不产生任何 key 字节。
+        QVERIFY(PinPolicy::deriveKek(QStringLiteral("12345"), PinPolicy::salt16(), 1000).isEmpty());
+        QVERIFY(PinPolicy::deriveKek(QStringLiteral("12345a"), PinPolicy::salt16(), 1000).isEmpty());
+        QVERIFY(PinPolicy::deriveKek(QStringLiteral("123456"), QByteArray(15, 'x'), 1000).isEmpty());
     }
 
     void init() {
