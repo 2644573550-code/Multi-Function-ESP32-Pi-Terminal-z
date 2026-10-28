@@ -1,8 +1,17 @@
 #include "security/SessionManager.h"
 
+#include "security/AuthService.h"
+#include "security/UserService.h"
+
 #include <QRandomGenerator>
 
-SessionManager::SessionManager(QObject *parent) : QObject(parent) {}
+namespace security {
+
+
+SessionManager::SessionManager(UserService *users, AuthService *auth, QObject *parent)
+    : QObject(parent), usersService_(users), authService_(auth) {
+    refreshUsers();
+}
 
 SessionManager::~SessionManager() {
     clear();
@@ -31,13 +40,16 @@ void SessionManager::lock() {
     // 前台能力立即失效；任务能力保留（仍可向原用户追加）。
     locked_ = true;
     emit changed();
+    emit lockStateChanged();
 }
 
 void SessionManager::unlock(const QString &wantUserId) {
     // 锁屏后必须重输 PIN；调用方只有在 verifyPin 成功后才应走到这里。
     if (!locked_ || wantUserId != activeUserId_) return;
     locked_ = false;
+    setMessage(QString());
     emit changed();
+    emit lockStateChanged();
 }
 
 void SessionManager::logout() {
@@ -46,6 +58,86 @@ void SessionManager::logout() {
     clear();
     emit sessionInvalidated();
     emit changed();
+    emit lockStateChanged();
+}
+
+// ---- QML 入口 ----
+
+void SessionManager::refreshUsers() {
+    users_.clear();
+    if (!usersService_) { emit usersChanged(); return; }
+    // 只暴露低敏字段：不含 salt/verifier/wrapped key。
+    for (const auto &user : usersService_->listUsers()) {
+        if (user.disabled) continue;   // 停用用户不出现在选择列表
+        users_.append(QVariantMap{{"userId", user.userId},
+                                  {"displayName", user.displayName},
+                                  {"admin", user.admin}});
+    }
+    emit usersChanged();
+    emit changed();   // hasUsers 依赖它
+}
+
+QString SessionManager::login(const QString &userId, const QString &pin) {
+    if (!authService_) return QStringLiteral("STORAGE_UNAVAILABLE");
+    // 已有会话时先要求收尾任务，再由调用方显式退出。
+    if (hasUnfinishedTasks()) {
+        setMessage(QStringLiteral("BUSY"));
+        return QStringLiteral("BUSY");
+    }
+    const AuthService::Result result = authService_->verifyPin(userId, pin);
+    if (result.code != QLatin1String(AuthResult::Ok)) {
+        // 只回传 code 与可公开的剩余等待时间，不回显账号是否存在。
+        setMessage(result.code, result.retryAfterMs);
+        return result.code;
+    }
+    // 认证成功：建立唯一会话。
+    if (begin(result.userId, result.dbKey, result.admin).isEmpty()) {
+        setMessage(QStringLiteral("BUSY"));
+        return QStringLiteral("BUSY");
+    }
+    for (const auto &user : usersService_ ? usersService_->listUsers()
+                                          : QList<UserService::PublicUser>{}) {
+        if (user.userId == result.userId) activeDisplayName_ = user.displayName;
+    }
+    setMessage(QString());
+    emit changed();
+    emit lockStateChanged();
+    return QString();
+}
+
+QString SessionManager::unlockWithPin(const QString &pin) {
+    if (!locked_) return QString();
+    if (!authService_ || activeUserId_.isEmpty()) return QStringLiteral("SESSION_EXPIRED");
+    const AuthService::Result result = authService_->verifyPin(activeUserId_, pin);
+    if (result.code != QLatin1String(AuthResult::Ok)) {
+        setMessage(result.code, result.retryAfterMs);
+        return result.code;
+    }
+    // DB key 必须重新解封成功才允许解锁：PIN 对了但库打不开说明状态异常。
+    if (result.dbKey != dbKey_) {
+        setMessage(QStringLiteral("STORAGE_UNAVAILABLE"));
+        return QStringLiteral("STORAGE_UNAVAILABLE");
+    }
+    locked_ = false;
+    setMessage(QString());
+    emit changed();
+    emit lockStateChanged();
+    return QString();
+}
+
+void SessionManager::lockNow() {
+    lock();
+}
+
+void SessionManager::signOut() {
+    logout();
+    refreshUsers();
+}
+
+void SessionManager::setMessage(const QString &code, int retryAfterMs) {
+    message_ = code;
+    retryAfterMs_ = retryAfterMs;
+    emit messageChanged();
 }
 
 QString SessionManager::startTask(const QString &deviceId) {
@@ -94,6 +186,7 @@ void SessionManager::clear() {
     tasks_.clear();
     taskGenerations_.clear();
     activeUserId_.clear();
+    activeDisplayName_.clear();
     admin_ = false;
     locked_ = false;
     tokenHex_.fill(QLatin1Char('\0'));
@@ -116,3 +209,5 @@ bool SessionManager::validate(const QString &token) const {
 }
 
 QByteArray SessionManager::dbKey() const { return locked_ ? QByteArray{} : dbKey_; }
+
+}  // namespace security

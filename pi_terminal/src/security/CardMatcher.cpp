@@ -2,6 +2,9 @@
 
 #include "security/UserDatabase.h"
 
+namespace security {
+
+
 namespace {
 // D 未交付前的默认派生：直接判失败，绝不退回明文 UID 比较。
 // 调用方必须注入真实 deriveUidIndex；注入前整条 RFID 路径失败关闭。
@@ -76,3 +79,5 @@ bool CardBindingWindow::consume(qint64 nowMs) {
     openedAtMs_ = -1;
     return true;
 }
+
+}  // namespace security

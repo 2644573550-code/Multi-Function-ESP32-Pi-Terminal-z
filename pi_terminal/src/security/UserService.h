@@ -3,6 +3,9 @@
 #include <QList>
 #include <QString>
 
+namespace security {
+
+
 // 用户注册表：AppConfigLocation/users.json，0600，明文（内容本身不含可逆秘密）。
 //
 // 为什么不放进每用户 SQLCipher 库：PIN 用来解封 DB key，但库要先有 key 才能打开。
@@ -57,3 +60,5 @@ private:
     bool save(const QList<UserRecord> &records) const;
     QString registryPath_;
 };
+
+}  // namespace security

@@ -2,6 +2,9 @@
 #include <QByteArray>
 #include <QString>
 
+namespace security {
+
+
 // 前台能力与任务能力分离（f-day1 §5）。
 //
 // 锁屏只撤销**前台**能力：任务仍可向**原用户的同一任务**追加样本，
@@ -48,3 +51,5 @@ private:
     qint64 generation_ = 0;
     bool revoked_ = false;
 };
+
+}  // namespace security

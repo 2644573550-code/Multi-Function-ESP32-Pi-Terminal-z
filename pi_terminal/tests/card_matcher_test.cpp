@@ -11,6 +11,8 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+using namespace security;
+
 namespace {
 
 // 与 F-REVIEW-2 §5.3.2 DR-14 描述一致的派生，仅用于测试替身。
@@ -166,3 +168,6 @@ private slots:
 
 QTEST_GUILESS_MAIN(CardMatcherTest)
 #include "card_matcher_test.moc"
+
+using namespace security;
+

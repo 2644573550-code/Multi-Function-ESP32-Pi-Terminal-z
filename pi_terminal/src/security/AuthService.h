@@ -2,6 +2,9 @@
 #include <QByteArray>
 #include <QString>
 
+namespace security {
+
+
 class UserService;
 
 // 认证结果。错误提示不区分「账号不存在」与「PIN 错误」（f-day1 §2）。
@@ -47,3 +50,5 @@ private:
     QString lockStatePath_;
     mutable qint64 lastAttemptMs_ = 0;
 };
+
+}  // namespace security

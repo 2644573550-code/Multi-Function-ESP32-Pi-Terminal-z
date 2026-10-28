@@ -14,6 +14,8 @@
 #include <algorithm>
 #include <vector>
 
+using namespace security;
+
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     QTextStream out(stdout);

@@ -3,6 +3,9 @@
 #include <QPasswordDigestor>
 #include <QRandomGenerator>
 
+namespace security {
+
+
 namespace PinPolicy {
 
 bool validPin(const QString &pin) {
@@ -44,3 +47,5 @@ bool verifyMatches(const QByteArray &stored, const QByteArray &kek) {
 }
 
 }  // namespace PinPolicy
+
+}  // namespace security

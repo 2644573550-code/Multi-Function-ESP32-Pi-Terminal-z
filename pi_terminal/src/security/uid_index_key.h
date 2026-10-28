@@ -1,6 +1,9 @@
 #pragma once
 #include <QByteArray>
 
+namespace security {
+
+
 // 整机单钥，供 D 的 deriveUidIndex() 取 HMAC 密钥。
 // 位置：AppConfigLocation/uid_index.key，0600。
 // 不放 AppLocalDataLocation —— 那是 ModuleManager::dataDirectory() 交给模块的目录。
@@ -13,3 +16,5 @@ bool ensureUidIndexKey();
 // 轮换会让所有旧 UID 索引失效，须重新绑卡；不静默迁移。
 // 失败时不破坏现有密钥。
 bool rotateUidIndexKey();
+
+}  // namespace security

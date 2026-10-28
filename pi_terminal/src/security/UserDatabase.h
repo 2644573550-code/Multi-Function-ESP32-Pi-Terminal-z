@@ -3,6 +3,9 @@
 #include <QString>
 #include <QVector>
 
+namespace security {
+
+
 class SqlCipherStore;
 
 // 一条传感器样本。字段与 f-day1 §6 一致：缺失值必须是 null，不能用 0 伪造。
@@ -74,3 +77,5 @@ private:
     QString openUserId_;
     SqlCipherStore *store_ = nullptr;
 };
+
+}  // namespace security

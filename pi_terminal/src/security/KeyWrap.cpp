@@ -4,6 +4,9 @@
 
 #include <QRandomGenerator>
 
+namespace security {
+
+
 namespace KeyWrap {
 
 QByteArray seal(const QByteArray &kek, const QByteArray &dbKey, QByteArray *nonceOut) {
@@ -71,3 +74,5 @@ QByteArray open(const QByteArray &kek, const QByteArray &sealed, const QByteArra
 }
 
 }  // namespace KeyWrap
+
+}  // namespace security

@@ -6,6 +6,8 @@
 #include <QCoreApplication>
 #include <QTextStream>
 
+using namespace security;
+
 namespace AdminInitializer {
 
 int run(const QCommandLineParser &options) {

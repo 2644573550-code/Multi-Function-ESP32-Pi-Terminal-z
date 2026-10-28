@@ -1,6 +1,9 @@
 #pragma once
 #include <QByteArray>
 
+namespace security {
+
+
 // DB key 的封装/解封。AES-256-GCM，KEK 由 PIN 经 PBKDF2 派生。
 // 不用 PIN 本身作 SQLCipher key（§0.1）；PIN 只经这里间接解出 DB key。
 namespace KeyWrap {
@@ -16,3 +19,5 @@ QByteArray seal(const QByteArray &kek, const QByteArray &dbKey, QByteArray *nonc
 QByteArray open(const QByteArray &kek, const QByteArray &sealed, const QByteArray &nonce);
 
 }  // namespace KeyWrap
+
+}  // namespace security

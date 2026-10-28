@@ -3,6 +3,9 @@
 #include <QString>
 #include <QVector>
 
+namespace security {
+
+
 // T-08 的 Z 侧：从 RFID 事件到「选中哪个用户」的匹配逻辑。
 //
 // 文件边界（f-day1 / 05 §4 D8b）：
@@ -38,3 +41,5 @@ private:
     qint64 openedAtMs_ = -1;
     static constexpr qint64 kWindowMs = 30 * 1000;
 };
+
+}  // namespace security

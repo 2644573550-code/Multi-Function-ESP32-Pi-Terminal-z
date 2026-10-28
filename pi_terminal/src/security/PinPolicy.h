@@ -2,6 +2,9 @@
 #include <QByteArray>
 #include <QString>
 
+namespace security {
+
+
 // PIN 与 KDF 策略。参数由 F-REVIEW-2 §5.3.2 Z-2 冻结，不得由配置降低。
 namespace PinPolicy {
 
@@ -31,3 +34,5 @@ QByteArray verifyValue(const QByteArray &kek);
 bool verifyMatches(const QByteArray &stored, const QByteArray &kek);
 
 }  // namespace PinPolicy
+
+}  // namespace security

@@ -5,6 +5,9 @@
 
 #include "security/CardIndex.h"
 
+namespace security {
+
+
 class UserDatabase;
 
 // 按 §0.6 原文：卡↔用户映射存在**各用户库**里。
@@ -39,3 +42,5 @@ public:
 private:
     UserDatabase *database_;
 };
+
+}  // namespace security

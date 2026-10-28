@@ -13,6 +13,9 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 
+namespace security {
+
+
 namespace {
 
 QString defaultRegistryPath() {
@@ -183,3 +186,5 @@ bool UserService::replaceRecord(const UserRecord &record) {
     }
     return false;
 }
+
+}  // namespace security

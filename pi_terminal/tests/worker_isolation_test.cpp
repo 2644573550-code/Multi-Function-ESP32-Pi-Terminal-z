@@ -7,6 +7,7 @@
 #include <QJsonDocument>
 #include <QtTest>
 
+
 class WorkerIsolationTest : public QObject {
     Q_OBJECT
 

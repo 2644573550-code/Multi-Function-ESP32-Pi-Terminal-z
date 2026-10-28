@@ -7,6 +7,9 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 
+namespace security {
+
+
 namespace {
 
 constexpr int kKeyBytes = 32;
@@ -72,3 +75,5 @@ bool rotateUidIndexKey() {
     if (!newKey(&key)) return false;
     return writeKey(keyPath(), key);
 }
+
+}  // namespace security

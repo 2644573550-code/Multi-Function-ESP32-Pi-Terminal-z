@@ -9,6 +9,9 @@
 
 #include <sqlite3.h>
 
+namespace security {
+
+
 namespace {
 
 // 不放 AppLocalDataLocation：那是 ModuleManager::dataDirectory() 交给模块的目录。
@@ -229,3 +232,5 @@ bool UserDatabase::hasCard(const QByteArray &uidIndex) const {
     store_->finalize(stmt);
     return found;
 }
+
+}  // namespace security

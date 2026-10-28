@@ -7,6 +7,8 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+using namespace security;
+
 namespace {
 QByteArray keyOf(char fill) { return QByteArray(32, fill); }
 
@@ -174,3 +176,4 @@ private slots:
 
 QTEST_GUILESS_MAIN(UserDatabaseTest)
 #include "user_database_test.moc"
+

@@ -13,6 +13,9 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 
+namespace security {
+
+
 namespace {
 
 QString defaultLockPath() {
@@ -61,22 +64,29 @@ void AuthService::storeLock(const QString &userId, const LockState &state) {
 }
 
 bool AuthService::terminalRateLimited(qint64 now) const {
+    // 语义是「距上次认证**结束**不足 1 秒」。只看开始时间的话，
+    // PBKDF2 本身要 760ms，紧接着的第二次调用总会被判为超时后放行。
     return lastAttemptMs_ != 0 && now - lastAttemptMs_ < PinPolicy::kTerminalMinIntervalMs;
 }
 
 AuthService::Result AuthService::verifyPin(const QString &userId, const QString &pin) {
-    const qint64 now = nowMs();
+    const qint64 start = nowMs();
     // 终端级限速：未知账号也走这里，所以不能用它判断账号是否存在。
-    if (terminalRateLimited(now)) {
+    if (terminalRateLimited(start)) {
         return {AuthResult::RateLimited, PinPolicy::kTerminalMinIntervalMs, {}, {}, false};
     }
-    lastAttemptMs_ = now;
+
+    const auto finish = [this, start]() {
+        // 记录结束时间，而不是开始时间。
+        lastAttemptMs_ = qMax(start, nowMs());
+    };
 
     UserRecord record;
     const bool found = users_.lookup(userId, &record);
     LockState state = found ? lockFor(userId) : LockState{};
-    if (found && state.lockedUntilMs > now) {
-        return {AuthResult::RateLimited, static_cast<int>(state.lockedUntilMs - now), {}, {}, false};
+    if (found && state.lockedUntilMs > start) {
+        finish();
+        return {AuthResult::RateLimited, static_cast<int>(state.lockedUntilMs - start), {}, {}, false};
     }
 
     // 账号不存在与 PIN 错误返回同一个 code，不泄漏存在性。
@@ -84,9 +94,10 @@ AuthService::Result AuthService::verifyPin(const QString &userId, const QString 
         if (found) {
             ++state.failures;
             if (state.failures >= PinPolicy::kMaxAccountFailures)
-                state.lockedUntilMs = now + PinPolicy::kAccountLockMs;
+                state.lockedUntilMs = nowMs() + PinPolicy::kAccountLockMs;
             storeLock(userId, state);
         }
+        finish();
         return {AuthResult::AuthFailed, 0, {}, {}, false};
     }
 
@@ -94,15 +105,20 @@ AuthService::Result AuthService::verifyPin(const QString &userId, const QString 
     if (!PinPolicy::verifyMatches(record.verifier, kek)) {
         ++state.failures;
         if (state.failures >= PinPolicy::kMaxAccountFailures)
-            state.lockedUntilMs = now + PinPolicy::kAccountLockMs;
+            state.lockedUntilMs = nowMs() + PinPolicy::kAccountLockMs;
         storeLock(userId, state);
+        finish();
         return {AuthResult::AuthFailed, 0, {}, {}, false};
     }
 
     const QByteArray dbKey = KeyWrap::open(kek, record.wrappedDbKey, record.dbKeyNonce);
-    if (dbKey.isEmpty()) return {AuthResult::AuthFailed, 0, {}, {}, false};
+    if (dbKey.isEmpty()) {
+        finish();
+        return {AuthResult::AuthFailed, 0, {}, {}, false};
+    }
 
     storeLock(userId, {});   // 正确认证才清除该账号失败计数
+    finish();
     return {AuthResult::Ok, 0, dbKey, record.userId, record.admin};
 }
 
@@ -137,3 +153,5 @@ bool AuthService::changePin(const QString &userId, const QString &oldPin, const 
     // 失败时保留旧封装（文档要求"失败保留可用旧封装"）。
     return users_.replaceRecord(updated);
 }
+
+}  // namespace security

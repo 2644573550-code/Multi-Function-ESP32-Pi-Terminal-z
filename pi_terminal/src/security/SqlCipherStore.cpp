@@ -3,6 +3,9 @@
 
 #include <sqlite3.h>
 
+namespace security {
+
+
 SqlCipherStore::SqlCipherStore() = default;
 
 SqlCipherStore::~SqlCipherStore() { close(); }
@@ -128,3 +131,5 @@ QString SqlCipherStore::cipherVersion() const {
     sqlite3_finalize(stmt);
     return version;
 }
+
+}  // namespace security

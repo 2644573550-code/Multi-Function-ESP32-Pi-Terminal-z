@@ -2,14 +2,17 @@
 #include <QByteArray>
 #include <QString>
 
+// sqlite3 是全局 C 类型，不能放进 namespace，否则会造出一个假类型。
+struct sqlite3;
+
+namespace security {
+
 // SQLCipher C API 的最小封装。不走 QSqlDatabase（Qt 6.5.3 SDK 无 SQLCipher 驱动）。
 //
 // 失败语义：
 //   - 找不到库/打不开 -> STORAGE_UNAVAILABLE
 //   - key 不对        -> SQLITE_NOTADB(26)，映射 STORAGE_UNAVAILABLE
 //   - 任何情况都不得 fallback 到明文 SQLite
-struct sqlite3;
-
 namespace StorageCode {
 constexpr auto Ok = "OK";
 constexpr auto Unavailable = "STORAGE_UNAVAILABLE";
@@ -57,3 +60,5 @@ private:
     QString lastError_;
     int lastCode_ = 0;
 };
+
+}  // namespace security

@@ -36,6 +36,13 @@ ApplicationWindow {
     property bool blurInputReady:false
     property bool startupInterfaceReady:false
     property bool startupComplete:false
+    // 登入门禁 + 锁屏 + 无交互自动锁：未登录时挡住整个桌面。
+    SessionGate {
+        id:sessionGate
+        parent:Overlay.overlay
+        z:20000
+        inputSource:win
+    }
     Loader {
         id:startupLoader
         parent:Overlay.overlay
@@ -287,7 +294,10 @@ ApplicationWindow {
     readonly property bool shortScreen: height < 760 * uiScale
     readonly property real edge: width < 600 ? Theme.gap : Theme.margin
     font.pointSize: Theme.body
+    // 有输入就重置锁屏计时（5 分钟无交互自动锁）。
+    onActiveChanged: if(sessionGate) sessionGate.noteInput()
     onActiveFocusItemChanged: {
+        if(sessionGate) sessionGate.noteInput()
         const target=activeFocusItem
         if(target && target.inputMethodHints!==undefined && target.text!==undefined && !target.readOnly)
             systemTools.captureKeyboardTargetItem(target)
@@ -503,7 +513,7 @@ ApplicationWindow {
     function clearForegroundModulePage() {
         if (activeSession !== "") {
             closeModulePopups()
-            moduleLoader.source=""; activeSession=""; activeActions=[]; moduleMessage=""
+            moduleLoader.source=""; modulePageHost.unload(); activeSession=""; activeActions=[]; moduleMessage=""
         }
     }
     function closeModulePopups() {
@@ -672,7 +682,13 @@ ApplicationWindow {
             for(let card of connectionManager.cards)if(card.instance===entry.instance)session=card
             if(!session || !session.ready){showDevicePanel(false);return false}
             activeSession=entry.instance;activeActions=session.actions;moduleMessage=session.message
-            moduleLoader.setSource(connectionManager.pageProvider.page(entry.instance),{sessionModel:connectionManager.pageProvider.model(entry.instance)})
+            // §0.7：模块页在独立引擎里加载，只注入 sessionModel 与只读 userContext。
+            modulePageHost.load(Qt.url(connectionManager.pageProvider.page(entry.instance)),
+                                connectionManager.pageProvider.model(entry.instance),
+                                {background:Theme.background, surface:Theme.surface,
+                                 foreground:Theme.foreground, accent:Theme.accent,
+                                 scale:win.uiScale})
+            moduleLoader.source=""
         }
         section=entry.route;appTitle=entry.title;appIcon=entry.iconName;appEntryId=entry.entryId
         if(section===3)refreshFiles()
@@ -715,7 +731,7 @@ ApplicationWindow {
     }
     function finishMinimizeAnimation() {
         if(phase!=="minimizing")return
-        appMinimized=true;appMinimizeAnimating=false;phase="home";moduleLoader.source="";updateTaskState()
+        appMinimized=true;appMinimizeAnimating=false;phase="home";moduleLoader.source="";modulePageHost.unload();updateTaskState()
         let releases=releaseQueue;releaseQueue=[];Qt.callLater(function(){for(let instance of releases)connectionManager.releasePage(instance)})
     }
     function restoreApp() {
@@ -725,7 +741,9 @@ ApplicationWindow {
         if(activeSession!=="") {
             const page=connectionManager.pageProvider.page(activeSession)
             const model=connectionManager.pageProvider.model(activeSession)
-            if(page!=="" && model) moduleLoader.setSource(page,{sessionModel:model})
+            if(page!=="" && model) modulePageHost.load(Qt.url(page), model,
+                {background:Theme.background, surface:Theme.surface,
+                 foreground:Theme.foreground, accent:Theme.accent, scale:win.uiScale})
             else { activeSession="";activeActions=[];moduleMessage="";section=0;phase="home";updateTaskState();return }
         }
         appMinimizeAnimating=true;phase="restoring";updateTaskState()
@@ -762,7 +780,7 @@ ApplicationWindow {
     function finishTransition() {
         if(phase==="opening"){phase="open";return}
         if(phase!=="closing")return
-        moduleLoader.source="";activeSession="";activeActions=[];moduleMessage="";section=0;phase="home";appMinimized=false;appMaximized=false
+        moduleLoader.source="";modulePageHost.unload();activeSession="";activeActions=[];moduleMessage="";section=0;phase="home";appMinimized=false;appMaximized=false
         const closingId=appEntryId;openTaskIds=openTaskIds.filter(function(id){return id!==closingId})
         for(let i=openTasks.count-1;i>=0;--i)if(openTasks.get(i).entryId===closingId)openTasks.remove(i)
         removeRecent(appEntryId);appEntryId=""
@@ -1857,6 +1875,9 @@ ApplicationWindow {
                     Layout.fillWidth:true
                     Layout.preferredHeight:item ? Math.max(item.implicitHeight, 1) : 0
                     asynchronous:false
+                    // §0.7：模块页走独立 QQmlEngine（modulePageHost），宿主对象
+                    // （connectionManager 等）不在它的 context 里。
+                    // 它的根对象由 C++ 创建，这里用空 Item 占位并把尺寸回传给宿主。
                     onLoaded: {
                         if (item && item.hostUiScale !== undefined)
                             item.hostUiScale = Qt.binding(function() { return win.uiScale })

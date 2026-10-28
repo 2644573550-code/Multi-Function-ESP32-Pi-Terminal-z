@@ -11,6 +11,8 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+using namespace security;
+
 namespace {
 QByteArray hmac(const QByteArray &key, const QByteArray &uid) {
     // f-day1 §3 的派生原文；此测试只用它验证"轮换后旧索引失配"，不是生产实现。
@@ -94,3 +96,4 @@ private slots:
 
 QTEST_GUILESS_MAIN(UidIndexKeyTest)
 #include "uid_index_key_test.moc"
+

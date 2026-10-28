@@ -12,6 +12,8 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+using namespace security;
+
 class AuthTest : public QObject {
     Q_OBJECT
 
@@ -202,7 +204,7 @@ private slots:
     }
 
     void sessionSwitchInvalidatesOldToken() {
-        SessionManager session;
+        SessionManager session(nullptr, nullptr);
         const QString first = session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
         QVERIFY(!first.isEmpty());
         QVERIFY(session.validate(first));
@@ -215,7 +217,7 @@ private slots:
     }
 
     void lockRevokesForegroundAccess() {
-        SessionManager session;
+        SessionManager session(nullptr, nullptr);
         const QString token = session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
         QVERIFY(!session.dbKey().isEmpty());
         session.lock();
@@ -228,7 +230,7 @@ private slots:
     }
 
     void logoutClearsCapability() {
-        SessionManager session;
+        SessionManager session(nullptr, nullptr);
         const QString token = session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), true);
         QSignalSpy invalidated(&session, &SessionManager::sessionInvalidated);
         session.logout();
@@ -250,7 +252,7 @@ private slots:
     }
 
     void lockKeepsTaskAppendButRevokesHistory() {
-        SessionManager session;
+        SessionManager session(nullptr, nullptr);
         session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
         const QString taskId = session.startTask(QStringLiteral("planter-1"));
         QVERIFY(!taskId.isEmpty());
@@ -265,7 +267,7 @@ private slots:
     }
 
     void taskCannotAppendToOtherDevice() {
-        SessionManager session;
+        SessionManager session(nullptr, nullptr);
         session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
         const QString taskId = session.startTask(QStringLiteral("planter-1"));
         // 设备串档必须拒绝。
@@ -273,7 +275,7 @@ private slots:
     }
 
     void switchingUserRequiresFinishingTasks() {
-        SessionManager session;
+        SessionManager session(nullptr, nullptr);
         session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
         const QString taskId = session.startTask(QStringLiteral("planter-1"));
         // 有未完成任务时不得切用户。
@@ -288,7 +290,7 @@ private slots:
     }
 
     void lateEventAfterFinishIsRejected() {
-        SessionManager session;
+        SessionManager session(nullptr, nullptr);
         session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
         const QString taskId = session.startTask(QStringLiteral("planter-1"));
         QVERIFY(session.finishTask(taskId));
@@ -297,7 +299,7 @@ private slots:
     }
 
     void logoutRevokesTasks() {
-        SessionManager session;
+        SessionManager session(nullptr, nullptr);
         session.begin(QStringLiteral("u1"), QByteArray(32, 'a'), false);
         const QString taskId = session.startTask(QStringLiteral("planter-1"));
         session.logout();
@@ -308,3 +310,4 @@ private slots:
 
 QTEST_GUILESS_MAIN(AuthTest)
 #include "auth_service_test.moc"
+
