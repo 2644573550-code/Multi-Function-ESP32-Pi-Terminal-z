@@ -237,10 +237,19 @@ private slots:
         QVERIFY(minuteWheel);
         QCOMPARE(minuteWheel->property("currentIndex").toInt(), 9);
 
-        // 复位按当前输入回到 09:00，并停掉任何在跑的倒计时。
+        // 开始/重置不在正文滚动区里：触摸时滚动区不会把点击吞掉。
+        auto *runBody = page->findChild<QQuickItem *>(QStringLiteral("timerRunPaneBody"));
+        auto *resetButton = page->findChild<QQuickItem *>(QStringLiteral("timerReset"));
+        QVERIFY(runBody);
+        QVERIFY(resetButton);
+        QVERIFY2(!runBody->isAncestorOf(resetButton), "timer reset must sit in the card footer");
+
+        // 复位按当前输入回到 09:00，并停掉任何在跑的倒计时；直接触发按钮的 clicked。
         QMetaObject::invokeMethod(page, "startCountdown");
         QVERIFY(alarmObject->property("timerRunning").toBool());
-        QMetaObject::invokeMethod(page, "resetCountdown");
+        QTest::qWait(1600);
+        QVERIFY(alarmObject->property("timerRemainingMs").toDouble() < 540000.0);
+        QMetaObject::invokeMethod(resetButton, "clicked");
         QVERIFY(!alarmObject->property("timerRunning").toBool());
         QCOMPARE(page->property("timerLabel").toString(), QStringLiteral("09:00"));
         QCOMPARE(alarmObject->property("timerRemainingMs").toDouble(), 540000.0);

@@ -18,6 +18,10 @@ Rectangle {
     property bool scrollBody: false
     // 卡片头部右上角的操作位（时间页的“报时”）。为空时不占位，其它页面头高不变。
     property Component headerAction: null
+    // 卡片底部固定操作条（计时器的开始/重置）。放在正文 Flickable 之外，
+    // 正文再长也不会被裁掉，也不会被滚动的手势吞掉点击。
+    property Component footerAction: null
+    readonly property real footerHeight: footerLoader.item ? footerLoader.item.implicitHeight : 0
     readonly property real headerActionWidth: headerActionLoader.active && headerActionLoader.item
         ? headerActionLoader.item.implicitWidth + Theme.gap / 2 : 0
     default property alias content: body.data
@@ -45,7 +49,7 @@ Rectangle {
     // 内部 Flickable 用同一套账，否则单栏“按内容高”的卡片自己就会溢出半格。
     readonly property real bodyTop: headerHeight + Theme.gap * 1.5
     readonly property real bodyBottomInset: Theme.gap
-    implicitHeight: bodyTop + body.implicitHeight + bodyBottomInset
+    implicitHeight: bodyTop + body.implicitHeight + footerHeight + bodyBottomInset
     // 单栏：卡片按内容高度，布局不得把它压小（压小会裁掉正文）。
     // 双栏：卡片必须能被压到栅格行高，正文改由内部 Flickable 滚动；
     // 这里若继续按内容高给下限，Layout.fillHeight 就会被下限顶回去，
@@ -123,7 +127,7 @@ Rectangle {
         y: card.bodyTop
         width: Math.max(1, card.width - Theme.gap * 2)
         height: card.scrollBody
-                ? Math.max(0, card.height - card.bodyTop - card.bodyBottomInset)
+                ? Math.max(0, card.height - card.bodyTop - card.footerHeight - card.bodyBottomInset)
                 : body.implicitHeight
         contentWidth: width
         contentHeight: body.implicitHeight
@@ -158,6 +162,20 @@ Rectangle {
             GradientStop { position: 0; color: "transparent" }
             GradientStop { position: 1; color: card.color }
         }
+    }
+
+    Loader {
+        id: footerLoader
+        objectName: card.objectName + "Footer"
+        active: card.footerAction !== null
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: Theme.gap
+        anchors.rightMargin: Theme.gap
+        anchors.bottomMargin: Theme.gap
+        height: active && item ? item.implicitHeight : 0
+        sourceComponent: card.footerAction
     }
 
     Rectangle {

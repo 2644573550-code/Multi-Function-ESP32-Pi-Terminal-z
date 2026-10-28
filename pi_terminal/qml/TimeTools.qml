@@ -845,6 +845,28 @@ Item {
                           : root.timerFinished ? I18n.t("计时结束")
                           : I18n.t("准备就绪")
 
+                // 开始/重置固定在卡片底部，不在正文 Flickable 里：真机触摸时滚动区
+                // 会把带轻微位移的点击当成拖动吞掉，按钮就"按了没反应"。
+                footerAction: Component {
+                    RowLayout {
+                        width: parent ? parent.width : implicitWidth
+                        spacing: Theme.gap / 2
+                        CarButton {
+                            objectName: "timerToggle"
+                            Layout.fillWidth: true
+                            accent: !root.timerRunning
+                            text: root.timerRunning ? I18n.t("暂停")
+                                : root.timerRemainingMs > 0 && root.timerRemainingMs < root.timerTotalMs ? I18n.t("继续") : I18n.t("开始")
+                            onClicked: root.timerRunning ? root.pauseCountdown() : root.startCountdown()
+                        }
+                        CarButton {
+                            objectName: "timerReset"
+                            text: I18n.t("重置")
+                            onClicked: root.resetCountdown()
+                        }
+                    }
+                }
+
                 Rectangle {
                     objectName: "timerDisplayBox"
                     Layout.fillWidth: true
@@ -872,23 +894,6 @@ Item {
                         height: parent.height
                         radius: parent.radius
                         color: Theme.accent
-                    }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.gap / 2
-                    CarButton {
-                        objectName: "timerToggle"
-                        Layout.fillWidth: true
-                        accent: !root.timerRunning
-                        text: root.timerRunning ? I18n.t("暂停")
-                            : root.timerRemainingMs > 0 && root.timerRemainingMs < root.timerTotalMs ? I18n.t("继续") : I18n.t("开始")
-                        onClicked: root.timerRunning ? root.pauseCountdown() : root.startCountdown()
-                    }
-                    CarButton {
-                        objectName: "timerReset"
-                        text: I18n.t("重置")
-                        onClicked: root.resetCountdown()
                     }
                 }
             }
